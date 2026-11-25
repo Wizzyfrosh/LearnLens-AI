@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildContextWindow, formatTimestamp, MAX_TRANSCRIPT_CHARS, parseTranscript, parseTranscriptImport } from "./transcript";
+import { buildContextWindow, formatTimestamp, MAX_TRANSCRIPT_CHARS, parseTranscript, parseTranscriptImport, serializeSegmentsAsVtt } from "./transcript";
 
 describe("parseTranscriptImport", () => {
   it("parses SRT cues and preserves timestamps", () => {
@@ -64,5 +64,34 @@ describe("transcript context helpers", () => {
 
   it("returns an empty context for invalid limits", () => {
     expect(buildContextWindow(parseTranscript("hello"), 0)).toBe("");
+  });
+});
+
+
+describe("captured transcript serialization", () => {
+  it("serializes visible caption segments into valid timestamped WebVTT", () => {
+    const segments = [{
+      id: "caption-1",
+      startSeconds: 12.25,
+      endSeconds: 13.5,
+      hasTimestamp: true,
+      text: "A captured lesson segment",
+      source: "visible-captions" as const
+    }];
+    const vtt = serializeSegmentsAsVtt(segments);
+    expect(vtt).toContain("WEBVTT");
+    expect(vtt).toContain("00:00:12.250 --> 00:00:13.500");
+    expect(parseTranscriptImport(vtt).segments[0].text).toBe("A captured lesson segment");
+  });
+
+  it("does not invent timestamps for untimed segments", () => {
+    expect(serializeSegmentsAsVtt([{
+      id: "plain",
+      startSeconds: 0,
+      endSeconds: 0,
+      hasTimestamp: false,
+      text: "Untimed text",
+      source: "manual"
+    }])).toBe("WEBVTT\n");
   });
 });
