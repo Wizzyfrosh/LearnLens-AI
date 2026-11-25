@@ -124,6 +124,9 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
   if (message.type === "LEARNLENS_VIDEO_CONTEXT") {
     const senderTabId = sender.tab?.id;
     if (senderTabId === undefined) return;
+    if (senderTabId === audioCaptureTabId && message.payload?.videoId !== audioCaptureVideoId) {
+      void stopAudioCapture(senderTabId, "Audio transcription stopped because the lesson changed.");
+    }
     void (async () => {
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
       if (tab?.id !== senderTabId) return;
