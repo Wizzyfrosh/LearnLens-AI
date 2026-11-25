@@ -234,7 +234,7 @@ export default function App() {
       }).then(() => {
         setSessionId(video.videoId);
         setSavedSession(true);
-        setStorageNotice("Live captions are being saved automatically on this device.");
+        setStorageNotice("Lesson transcript is being saved automatically on this device.");
       }).catch(() => {
         setStorageNotice("Live captions are available in this session, but automatic local saving failed.");
       });
@@ -320,6 +320,7 @@ export default function App() {
       setAudioCaptureStatus("error");
       setAudioCaptureMessage(cause instanceof Error ? cause.message : "Could not start audio transcription.");
       setAudioCaptureTabId(null);
+      audioCaptureTabIdRef.current = null;
     }
   }
 
