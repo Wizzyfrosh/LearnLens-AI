@@ -27,6 +27,12 @@ jobs:
       - name: Unit tests
         run: npm test
       - name: Production build
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          VITE_FIREBASE_APPCHECK_DEBUG: "true"
         run: npm run build
       - name: Verify Chrome extension package
         run: npm run verify:extension
