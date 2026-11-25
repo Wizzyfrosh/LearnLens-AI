@@ -1,7 +1,7 @@
 import type { ExtensionMessage } from "../shared/messages";
+import { encodePcmToWav, MAX_AUDIO_CHUNK_BYTES } from "../services/audio-wav";
 
 const CHUNK_SECONDS = 4;
-const MAX_AUDIO_CHUNK_BYTES = 1_500_000;
 
 let mediaStream: MediaStream | null = null;
 let audioContext: AudioContext | null = null;
@@ -19,37 +19,6 @@ function report(status: "idle" | "capturing" | "error", message: string): void {
   send({ type: "LEARNLENS_AUDIO_CAPTURE_STATUS", payload: { status, message } });
 }
 
-function encodeWav(samples: Float32Array, sampleRate: number): Blob {
-  const bytesPerSample = 2;
-  const dataLength = samples.length * bytesPerSample;
-  const buffer = new ArrayBuffer(44 + dataLength);
-  const view = new DataView(buffer);
-  const writeText = (offset: number, value: string) => {
-    for (let index = 0; index < value.length; index += 1) view.setUint8(offset + index, value.charCodeAt(index));
-  };
-
-  writeText(0, "RIFF");
-  view.setUint32(4, 36 + dataLength, true);
-  writeText(8, "WAVE");
-  writeText(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * bytesPerSample, true);
-  view.setUint16(32, bytesPerSample, true);
-  view.setUint16(34, 16, true);
-  writeText(36, "data");
-  view.setUint32(40, dataLength, true);
-
-  let offset = 44;
-  for (const sample of samples) {
-    const clamped = Math.max(-1, Math.min(1, sample));
-    view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
-    offset += bytesPerSample;
-  }
-  return new Blob([buffer], { type: "audio/wav" });
-}
 
 function toBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -122,7 +91,7 @@ async function startCapture(streamId: string, videoId: string): Promise<void> {
     chunkerNode.port.onmessage = (event: MessageEvent<{ samples: ArrayBuffer; sampleRate: number }>) => {
       if (!activeVideoId || activeVideoId !== videoId) return;
       const samples = new Float32Array(event.data.samples);
-      const wav = encodeWav(samples, event.data.sampleRate);
+      const wav = encodePcmToWav(samples, event.data.sampleRate);
       if (wav.size > MAX_AUDIO_CHUNK_BYTES) {
         report("error", "An audio chunk exceeded the safe processing limit. Audio capture has been stopped.");
         void stopCapture();
