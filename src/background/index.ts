@@ -59,7 +59,8 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.url || (changeInfo.status === "complete" && tab.active)) {
+  // Ignore URL changes in background tabs; only the active tab owns side-panel context.
+  if (tab.active && (changeInfo.url || changeInfo.status === "complete")) {
     void syncActiveTabContext(tabId);
   }
 });
