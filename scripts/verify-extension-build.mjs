@@ -55,6 +55,10 @@ if (!existsSync(offscreenPath)) {
   }
 }
 
+const audioProcessorPath = resolve(dist, "audio-chunk-processor.js");
+if (!existsSync(audioProcessorPath)) fail("audio-chunk-processor.js is missing; offscreen PCM chunking cannot run");
+else pass("AudioWorklet processor asset");
+
 const panelPath = manifest.side_panel?.default_path
   ? resolve(dist, manifest.side_panel.default_path)
   : null;
