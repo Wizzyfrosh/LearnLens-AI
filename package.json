@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify:extension": "node scripts/verify-extension-build.mjs"
   },
   "dependencies": {
     "firebase": "^13.0.0",
