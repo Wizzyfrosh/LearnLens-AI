@@ -19,8 +19,10 @@ This repository contains the first extension scaffold:
 
 - Chrome Extension Manifest V3 with a side panel
 - React + TypeScript + Vite + Tailwind CSS
-- YouTube watch-page detection and active-video context
-- VTT/SRT/plain-text transcript import
+- YouTube watch-page detection, including same-tab SPA navigation
+- User-started automatic capture of captions rendered by YouTube
+- Live caption segments supplied directly to the lesson tutor and saved locally
+- Optional VTT/SRT/plain-text transcript import fallback
 - Timestamp-preserving transcript parsing
 - Firebase AI Logic hybrid tutor adapter
 - Explicit on-device-only, cloud-only, and prefer-on-device modes
@@ -45,8 +47,9 @@ For hybrid inference, Firebase AI Logic must be enabled in the Firebase console 
 
 ## Important implementation limits
 
-- The extension detects YouTube videos but does not yet automatically retrieve every video's complete transcript.
-- The first transcript path is user-provided VTT, SRT, or plain text. Automatic caption discovery will be added only where the page exposes a supported caption source.
+- Automatic capture currently reads captions that YouTube visibly renders after the learner clicks Start learning. Learners may need to enable CC in the player.
+- This is not yet audio-only speech recognition. Videos with no rendered captions cannot be transcribed by the current capture path.
+- Manual VTT/SRT/TXT import remains an optional fallback.
 - TikTok and Facebook support will be capability-based, not promised for every video.
 - No private endpoint scraping, DRM circumvention, or unauthorized downloads.
 
@@ -60,10 +63,10 @@ For hybrid inference, Firebase AI Logic must be enabled in the Firebase console 
 
 ## Planned next steps
 
-1. Validate this scaffold with a clean install, typecheck, and production build.
-2. Add automated tests for transcript parsing and context-window construction.
-3. Implement reliable YouTube caption access where supported.
-4. Add notes, timestamp bookmarks, and quiz generation.
+1. Verify same-tab YouTube SPA navigation and active lesson metadata in Chrome.
+2. Verify Start learning → rendered captions → live transcript → IndexedDB auto-save → Ask tutor.
+3. Design explicit, permissioned tab-audio transcription for videos without rendered captions; do not silently upload audio.
+4. Add notes, timestamp bookmarks, and quiz generation after transcript capture is reliable.
 5. Add sign-in and optional learning-artifact sync after the core workflow is stable.
 
 ## License
