@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "A context-aware AI learning companion for educational videos.",
   "permissions": ["sidePanel", "activeTab", "storage", "tabCapture", "offscreen"],
-  "host_permissions": ["https://www.youtube.com/*", "https://firebasevertexai.googleapis.com/*"],
+  "host_permissions": ["https://www.youtube.com/*", "https://firebasevertexai.googleapis.com/*", "https://firebaseappcheck.googleapis.com/*"],
   "background": { "service_worker": "assets/background.js", "type": "module" },
   "action": { "default_title": "Open LearnLens AI" },
   "side_panel": { "default_path": "sidepanel.html" },
