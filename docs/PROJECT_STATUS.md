@@ -233,3 +233,16 @@ Next exact task:
 - Chrome runtime QA has not been performed. The visible-caption DOM selector, same-tab SPA navigation, capture stop behavior, and IndexedDB persistence still need real-browser testing.
 - Audio-only speech transcription is not implemented. The current automatic path reads captions rendered by YouTube.
 - Next task: download the artifact from the successful Actions run and test same-tab navigation plus Start learning → live captions → auto-save → Ask tutor in desktop Chrome.
+
+
+## 15. User-reported Chrome runtime QA — 2026-11-25
+
+The user reports that all manual tests for the latest visible-caption capture build passed. The supplied Chrome screenshot independently confirms:
+- YouTube lesson is detected and captions are actively captured.
+- 26 live caption segments are visible in the side panel.
+- The UI reports that captured text is saved automatically on this device.
+- Stop capture control is available while capture is active.
+
+This is a successful manual verification of the visible-caption workflow on the user's Chrome setup. It does not establish audio-only speech recognition, Firebase AI Logic runtime/App Check readiness, or on-device inference behavior.
+
+Next phase: design and implement permissioned audio-only transcription for videos where rendered captions are unavailable. The approved technical direction is Chrome `tabCapture` initiated by an explicit learner action, an MV3 offscreen document, bounded audio chunks, Firebase AI Logic's documented audio-input `generateContent`, and a separate unchecked-by-default cloud-audio consent. App Check must be configured and verified before any lesson audio is uploaded. See Phase 3 in IMPLEMENTATION_PLAN.md.
