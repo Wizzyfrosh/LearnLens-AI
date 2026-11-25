@@ -1,5 +1,11 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
-import { getAI, getGenerativeModel, GoogleAIBackend, InferenceMode } from "firebase/ai";
+import {
+  getAI,
+  getGenerativeModel,
+  GoogleAIBackend,
+  InferenceMode,
+  InferenceSource
+} from "firebase/ai";
 import type { InferencePreference, TutorReply, TranscriptSegment } from "../shared/types";
 import { buildContextWindow } from "./transcript";
 
@@ -60,8 +66,18 @@ export async function askLearnLens(
 
   const result = await model.generateContent(prompt);
   const source = result.response.inferenceSource;
+
+  // Firebase exposes lowercase enum values. Keep LearnLens's UI contract
+  // stable while mapping only the two documented SDK values.
+  const inferenceSource: TutorReply["inferenceSource"] =
+    source === InferenceSource.ON_DEVICE
+      ? "ON_DEVICE"
+      : source === InferenceSource.IN_CLOUD
+        ? "IN_CLOUD"
+        : "UNKNOWN";
+
   return {
     text: result.response.text(),
-    inferenceSource: source === "ON_DEVICE" || source === "IN_CLOUD" ? source : "UNKNOWN"
+    inferenceSource
   };
 }
