@@ -276,3 +276,18 @@ Next:
 2. Add Firebase repository secrets and register the generated App Check debug token.
 3. Download the extension artifact and test tab-audio capture with the learner's explicit consent.
 4. Verify that lesson playback continues, audio transcript segments arrive, and capture stops on tab switch, lesson change, and side-panel close.
+
+
+## 17. Phase 3 CI verification — 2026-11-25
+
+- Latest successful CI run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45654124950
+- Verified commit: `646fc0d1fbc2821a91dc55d455844983e0aef8ef`.
+- TypeScript typecheck: passed.
+- Unit tests: passed, including the PCM/WAV encoder tests.
+- Production build: passed.
+- Chrome extension package smoke check: passed, including the offscreen HTML and AudioWorklet asset checks.
+- Artifact: `learnlens-chrome-extension`, ID `15041563949`, approximately 111 KB, retained for 14 days.
+- The first typecheck caught Firebase AI Logic's required `type` discriminator on multimodal `Part` objects; corrected to `type: "text"` and `type: "inlineData"`.
+- A package-smoke regex issue in the offscreen asset check was corrected before this successful run.
+
+The code is build-verified, not yet runtime-verified. The next user-dependent step is to add Firebase web-app configuration as GitHub Actions secrets, register the App Check debug token, download this artifact, and test actual audio capture/transcription in Chrome.
