@@ -59,15 +59,34 @@ For hybrid inference, Firebase AI Logic must be enabled in the Firebase console 
 - Transcript content is untrusted input and must never be treated as model instructions.
 - Local-only inference uses `ONLY_ON_DEVICE`; it must not silently fall back to cloud.
 - Automatically captured captions and saved lesson transcripts are stored in IndexedDB on this device. Tutor requests send the bounded transcript context needed for the question; cloud processing follows the selected inference mode. On-device-only must never fall back to cloud.
+- Audio transcription is a separate cloud feature: it requires an explicit unchecked-by-default consent, and lesson audio is sent to Firebase AI Logic only after the App Check debug configuration is active.
+- The current Chrome audio path captures tab audio only, converts it into short in-memory WAV chunks, and does not save raw audio files. Audio-derived transcript segments do not claim exact video timestamps.
+- The current App Check configuration is for controlled development/testing only. Never publish an App Check debug token or treat the debug provider as production attestation.
 - Firebase App Check enforcement and a production extension-compatible attestation strategy must be completed before release.
 
 ## Planned next steps
 
 1. Verify same-tab YouTube SPA navigation and active lesson metadata in Chrome.
 2. Verify Start learning → rendered captions → live transcript → IndexedDB auto-save → Ask tutor.
-3. Design explicit, permissioned tab-audio transcription for videos without rendered captions; do not silently upload audio.
+3. Verify explicit-consent tab-audio capture, AudioWorklet playback continuity, WAV chunking, Firebase App Check, and audio transcription in real Chrome.
 4. Add notes, timestamp bookmarks, and quiz generation after transcript capture is reliable.
 5. Add sign-in and optional learning-artifact sync after the core workflow is stable.
+
+
+### GitHub Actions Firebase configuration
+
+The extension build reads Firebase web-app configuration from GitHub Actions repository secrets. Add these under **Repository → Settings → Secrets and variables → Actions → New repository secret**:
+
+- `FIREBASE_API_KEY`
+- `FIREBASE_AUTH_DOMAIN`
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_APP_ID`
+
+The workflow enables the Firebase App Check debug provider for controlled testing. When the extension first initializes App Check, Firebase prints a debug token in the extension's offscreen document console. Register that token under **Firebase Console → App Check → Apps → Manage debug tokens**. Keep the token private; never commit it to GitHub.
+
+For the offscreen document console, open `chrome://extensions`, find LearnLens AI, click its **service worker / Inspect views** link when available, and inspect the offscreen context. The exact inspection link can vary by Chrome version.
+
+Do not enable Firebase AI Logic App Check enforcement until the extension's requests appear as valid in App Check metrics. This debug setup is for testing only, not production attestation.
 
 ## License
 
