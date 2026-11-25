@@ -28,3 +28,5 @@ jobs:
         run: npm test
       - name: Production build
         run: npm run build
+      - name: Verify Chrome extension package
+        run: npm run verify:extension
