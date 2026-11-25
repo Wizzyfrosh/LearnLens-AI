@@ -22,5 +22,5 @@ function publishContext() {
 }
 
 publishContext();
-window.addEventListener("yt-navigate-finish", publishContext);
+document.addEventListener("yt-navigate-finish", publishContext);
 window.addEventListener("popstate", publishContext);
