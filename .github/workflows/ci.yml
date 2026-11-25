@@ -30,3 +30,11 @@ jobs:
         run: npm run build
       - name: Verify Chrome extension package
         run: npm run verify:extension
+
+      - name: Upload Chrome extension build
+        uses: actions/upload-artifact@v4
+        with:
+          name: learnlens-chrome-extension
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
