@@ -166,7 +166,34 @@ export function formatTimestamp(seconds: number): string {
   return `${Math.floor(safe / 60).toString().padStart(2, "0")}:${(safe % 60).toString().padStart(2, "0")}`;
 }
 
-export function buildContextWindow(segments: TranscriptSegment[], maxChars = 12_000): string {
+export function buildContextWindow(
+  segments: TranscriptSegment[],
+  maxChars = 12_000,
+  query = ""
+): string {
+  if (!Number.isFinite(maxChars) || maxChars <= 0 || !segments.length) return "";
+
+  const lines = segments.map((segment) => ({
+    text: segment.hasTimestamp ? `[${formatTimestamp(segment.startSeconds)}] ${segment.text}` : segment.text
+  }));
+  const fullText = lines.map((line) => line.text).join("\n");
+  if (fullText.length <= maxChars) return fullText;
+
+  // Prefer transcript passages that match the learner's question. This avoids
+  // silently dropping relevant material near the end of long lessons.
+  const stopWords = new Set([
+    "the", "and", "for", "with", "that", "this", "what", "when", "where",
+    "which", "who", "why", "how", "does", "did", "are", "was", "were",
+    "can", "could", "would", "should", "about", "from", "into", "then",
+    "than", "have", "has", "had", "you", "your", "explain", "tell"
+  ]);
+  const terms = [...new Set((query.toLowerCase().match(/[a-z0-9]{2,}/g) ?? [])
+    .filter((term) => !stopWords.has(term)))];
+
+  const ranked = lines.map((line, index) => {
+    const normalized = line.text.toLowerCase();
+    const score = terms.reduce((total, term) => {
+      const matches = normalized.match(new RegExp(`\\b${term.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\export function buildContextWindow(segments: TranscriptSegment[], maxChars = 12_000): string {
   if (!Number.isFinite(maxChars) || maxChars <= 0) return "";
   let output = "";
   for (const segment of segments) {
@@ -177,6 +204,38 @@ export function buildContextWindow(segments: TranscriptSegment[], maxChars = 12_
     output += separator + line.slice(0, remaining);
   }
   return output;
+}")}\\b`, "g"));
+      return total + (matches?.length ?? 0);
+    }, 0);
+    return { index, text: line.text, score };
+  });
+
+  const candidates = terms.length && ranked.some((item) => item.score > 0)
+    ? ranked.sort((a, b) => b.score - a.score || a.index - b.index)
+    : ranked;
+
+  const selected: typeof candidates = [];
+  let used = 0;
+  for (const item of candidates) {
+    const cost = item.text.length + (selected.length ? 1 : 0);
+    if (used + cost > maxChars) continue;
+    selected.push(item);
+    used += cost;
+  }
+
+  // If no passage matched the question, sample across the lesson rather than
+  // biasing every generic question toward only the opening minutes.
+  if ((!terms.length || !ranked.some((item) => item.score > 0)) && selected.length > 1) {
+    const step = Math.max(1, Math.floor(ranked.length / selected.length));
+    const sampled = ranked.filter((item, index) => index % step === 0).slice(0, selected.length);
+    if (sampled.length) selected.splice(0, selected.length, ...sampled);
+  }
+
+  return selected
+    .sort((a, b) => a.index - b.index)
+    .map((item) => item.text)
+    .join("\n")
+    .slice(0, maxChars);
 }
 
 
