@@ -284,6 +284,11 @@ export default function App() {
       setAudioCaptureMessage("Please confirm that you understand lesson audio will be sent to Firebase for transcription.");
       return;
     }
+    if (preference === "only_on_device") {
+      setAudioCaptureStatus("error");
+      setAudioCaptureMessage("Audio transcription currently requires Firebase cloud processing. Change the tutor preference from On-device only and separately consent before starting.");
+      return;
+    }
     if (!isAudioTranscriptionConfigured()) {
       setAudioCaptureStatus("error");
       setAudioCaptureMessage("Audio transcription is not configured in this build. Firebase settings and App Check debug mode must be configured before audio can be uploaded.");
@@ -464,6 +469,7 @@ export default function App() {
             <span className={"capture-indicator " + (audioCaptureStatus === "capturing" ? "active" : "")} />
           </div>
           <p>{audioCaptureMessage}</p>
+          <small className="helper-text">This feature always uses cloud transcription. It is unavailable when the tutor is set to On-device only.</small>
           <label className="helper-text audio-consent">
             <input type="checkbox" checked={audioConsent} onChange={(event) => setAudioConsent(event.target.checked)} />
             I agree to send this lesson's tab audio to Firebase AI Logic for transcription. Raw audio chunks are processed temporarily and are not saved as files.
