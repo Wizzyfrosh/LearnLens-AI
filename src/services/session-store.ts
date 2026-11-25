@@ -12,9 +12,31 @@ export interface LearningSession {
   updatedAt: number;
 }
 
+export interface LearningNote {
+  id: string;
+  sessionId: string;
+  videoId: string;
+  title: string;
+  content: string;
+  timestampSeconds: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface LearningBookmark {
+  id: string;
+  sessionId: string;
+  videoId: string;
+  label: string;
+  timestampSeconds: number;
+  createdAt: number;
+}
+
 const DATABASE_NAME = "learnlens-local";
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 const SESSION_STORE = "learningSessions";
+const NOTE_STORE = "learningNotes";
+const BOOKMARK_STORE = "learningBookmarks";
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -26,87 +48,153 @@ function openDatabase(): Promise<IDBDatabase> {
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
     request.onupgradeneeded = () => {
       const database = request.result;
+      const transaction = request.transaction;
       if (!database.objectStoreNames.contains(SESSION_STORE)) {
         const store = database.createObjectStore(SESSION_STORE, { keyPath: "id" });
         store.createIndex("videoId", "videoId", { unique: false });
         store.createIndex("updatedAt", "updatedAt", { unique: false });
         store.createIndex("platform", "platform", { unique: false });
       } else {
-        const store = request.transaction?.objectStore(SESSION_STORE);
+        const store = transaction?.objectStore(SESSION_STORE);
         if (store && !store.indexNames.contains("platform")) {
           store.createIndex("platform", "platform", { unique: false });
         }
       }
+
+      if (!database.objectStoreNames.contains(NOTE_STORE)) {
+        const store = database.createObjectStore(NOTE_STORE, { keyPath: "id" });
+        store.createIndex("sessionId", "sessionId", { unique: false });
+        store.createIndex("videoId", "videoId", { unique: false });
+        store.createIndex("updatedAt", "updatedAt", { unique: false });
+      }
+
+      if (!database.objectStoreNames.contains(BOOKMARK_STORE)) {
+        const store = database.createObjectStore(BOOKMARK_STORE, { keyPath: "id" });
+        store.createIndex("sessionId", "sessionId", { unique: false });
+        store.createIndex("videoId", "videoId", { unique: false });
+        store.createIndex("timestampSeconds", "timestampSeconds", { unique: false });
+      }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const database = request.result;
+      database.onversionchange = () => database.close();
+      resolve(database);
+    };
     request.onerror = () => reject(request.error ?? new Error("Could not open local session storage."));
-    request.onblocked = () => reject(new Error("Local session storage is blocked by another open LearnLens tab."));
+    request.onblocked = () => reject(new Error("Local session storage is blocked by another open LearnLens tab. Close other LearnLens panels and retry."));
   });
 }
 
-export async function saveLearningSession(session: LearningSession): Promise<void> {
-  const database = await openDatabase();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(SESSION_STORE, "readwrite");
-      transaction.objectStore(SESSION_STORE).put(session);
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error ?? new Error("Could not save the learning session."));
-      transaction.onabort = () => reject(transaction.error ?? new Error("Saving the learning session was cancelled."));
-    });
-  } finally {
-    database.close();
-  }
+function runTransaction<T>(
+  storeName: string,
+  mode: IDBTransactionMode,
+  operation: (store: IDBObjectStore, resolve: (value: T) => void, reject: (reason: Error) => void) => void
+): Promise<T> {
+  return openDatabase().then((database) => new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      database.close();
+      callback();
+    };
+    try {
+      const transaction = database.transaction(storeName, mode);
+      operation(transaction.objectStore(storeName), (value) => finish(() => resolve(value)), (error) => finish(() => reject(error)));
+      transaction.onerror = () => finish(() => reject(transaction.error ?? new Error("Local storage transaction failed.")));
+      transaction.onabort = () => finish(() => reject(transaction.error ?? new Error("Local storage transaction was cancelled.")));
+    } catch (error) {
+      finish(() => reject(error instanceof Error ? error : new Error("Could not start local storage transaction.")));
+    }
+  }));
 }
 
-export async function getLatestSessionForVideo(videoId: string): Promise<LearningSession | null> {
-  if (!videoId) return null;
-  const database = await openDatabase();
-  try {
-    return await new Promise<LearningSession | null>((resolve, reject) => {
-      const transaction = database.transaction(SESSION_STORE, "readonly");
-      const request = transaction.objectStore(SESSION_STORE).index("videoId").getAll(videoId);
-      request.onsuccess = () => {
-        const sessions = request.result as LearningSession[];
-        sessions.sort((a, b) => b.updatedAt - a.updatedAt);
-        resolve(sessions[0] ?? null);
-      };
-      request.onerror = () => reject(request.error ?? new Error("Could not load the saved lesson."));
-    });
-  } finally {
-    database.close();
-  }
+export function saveLearningSession(session: LearningSession): Promise<void> {
+  return runTransaction<void>(SESSION_STORE, "readwrite", (store, resolve) => {
+    store.put(session);
+    store.transaction.oncomplete = () => resolve();
+  });
 }
 
-export async function getLatestManualSession(): Promise<LearningSession | null> {
-  const database = await openDatabase();
-  try {
-    return await new Promise<LearningSession | null>((resolve, reject) => {
-      const transaction = database.transaction(SESSION_STORE, "readonly");
-      const request = transaction.objectStore(SESSION_STORE).index("platform").getAll("manual");
-      request.onsuccess = () => {
-        const sessions = (request.result as LearningSession[])
-          .sort((a, b) => b.updatedAt - a.updatedAt);
-        resolve(sessions[0] ?? null);
-      };
-      request.onerror = () => reject(request.error ?? new Error("Could not load the saved lesson."));
-    });
-  } finally {
-    database.close();
-  }
+export function getLatestSessionForVideo(videoId: string): Promise<LearningSession | null> {
+  if (!videoId) return Promise.resolve(null);
+  return runTransaction<LearningSession | null>(SESSION_STORE, "readonly", (store, resolve) => {
+    const request = store.index("videoId").getAll(videoId);
+    request.onsuccess = () => {
+      const sessions = request.result as LearningSession[];
+      sessions.sort((a, b) => b.updatedAt - a.updatedAt);
+      resolve(sessions[0] ?? null);
+    };
+  });
 }
 
-export async function deleteLearningSession(id: string): Promise<void> {
-  const database = await openDatabase();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(SESSION_STORE, "readwrite");
-      transaction.objectStore(SESSION_STORE).delete(id);
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error ?? new Error("Could not delete the saved lesson."));
-      transaction.onabort = () => reject(transaction.error ?? new Error("Deleting the saved lesson was cancelled."));
-    });
-  } finally {
-    database.close();
+export function getLatestManualSession(): Promise<LearningSession | null> {
+  return runTransaction<LearningSession | null>(SESSION_STORE, "readonly", (store, resolve) => {
+    const request = store.index("platform").getAll("manual");
+    request.onsuccess = () => {
+      const sessions = (request.result as LearningSession[]).sort((a, b) => b.updatedAt - a.updatedAt);
+      resolve(sessions[0] ?? null);
+    };
+  });
+}
+
+export function deleteLearningSession(id: string): Promise<void> {
+  return runTransaction<void>(SESSION_STORE, "readwrite", (store, resolve) => {
+    store.delete(id);
+    store.transaction.oncomplete = () => resolve();
+  });
+}
+
+export function saveLearningNote(note: LearningNote): Promise<void> {
+  return runTransaction<void>(NOTE_STORE, "readwrite", (store, resolve) => {
+    store.put(note);
+    store.transaction.oncomplete = () => resolve();
+  });
+}
+
+export function listLearningNotes(sessionId: string): Promise<LearningNote[]> {
+  if (!sessionId) return Promise.resolve([]);
+  return runTransaction<LearningNote[]>(NOTE_STORE, "readonly", (store, resolve) => {
+    const request = store.index("sessionId").getAll(sessionId);
+    request.onsuccess = () => resolve((request.result as LearningNote[]).sort((a, b) => b.updatedAt - a.updatedAt));
+  });
+}
+
+export function searchLearningNotes(sessionId: string, query: string): Promise<LearningNote[]> {
+  const normalized = query.trim().toLocaleLowerCase();
+  return listLearningNotes(sessionId).then((notes) => normalized
+    ? notes.filter((note) => `${note.title}\n${note.content}`.toLocaleLowerCase().includes(normalized))
+    : notes);
+}
+
+export function deleteLearningNote(id: string): Promise<void> {
+  return runTransaction<void>(NOTE_STORE, "readwrite", (store, resolve) => {
+    store.delete(id);
+    store.transaction.oncomplete = () => resolve();
+  });
+}
+
+export function saveLearningBookmark(bookmark: LearningBookmark): Promise<void> {
+  if (!Number.isFinite(bookmark.timestampSeconds) || bookmark.timestampSeconds < 0) {
+    return Promise.reject(new Error("A bookmark requires a valid non-negative lesson timestamp."));
   }
+  return runTransaction<void>(BOOKMARK_STORE, "readwrite", (store, resolve) => {
+    store.put(bookmark);
+    store.transaction.oncomplete = () => resolve();
+  });
+}
+
+export function listLearningBookmarks(sessionId: string): Promise<LearningBookmark[]> {
+  if (!sessionId) return Promise.resolve([]);
+  return runTransaction<LearningBookmark[]>(BOOKMARK_STORE, "readonly", (store, resolve) => {
+    const request = store.index("sessionId").getAll(sessionId);
+    request.onsuccess = () => resolve((request.result as LearningBookmark[]).sort((a, b) => a.timestampSeconds - b.timestampSeconds));
+  });
+}
+
+export function deleteLearningBookmark(id: string): Promise<void> {
+  return runTransaction<void>(BOOKMARK_STORE, "readwrite", (store, resolve) => {
+    store.delete(id);
+    store.transaction.oncomplete = () => resolve();
+  });
 }
