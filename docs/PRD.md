@@ -75,7 +75,7 @@ English-first, global audience, including learners in Nigeria and regions with v
 - Public source repository, open-source license, setup instructions, and public demo video <= 3 minutes.
 
 ### Post-hackathon product
-- Audio-based speech transcription for supported sources, with explicit cloud-processing consent where cloud transcription is required.
+- Audio-based speech transcription for supported sources, using user-initiated Chrome tab audio capture, explicit cloud-processing consent, temporary bounded WAV chunks, and Firebase AI Logic. Audio-only transcript segments must not claim exact video timestamps unless verified timestamp output is implemented.
 - Reliable automatic caption discovery and capture for supported sources.
 - Editable timestamp-linked notes and export.
 - Timestamp bookmarks.
@@ -213,7 +213,7 @@ English-first, global audience, including learners in Nigeria and regions with v
 **Privacy/security:**
 - Minimum Chrome permissions.
 - No cookies, credentials, or unrelated browsing-history access.
-- No microphone recording. Any future tab-audio capture must be initiated by an explicit learner action and clearly disclose whether audio leaves the device.
+- No microphone recording. Tab-audio capture must be initiated by an explicit learner action, use a separate unchecked-by-default cloud-audio consent, disclose Firebase processing, stop on tab/lesson change or panel close, and never persist raw audio by default.
 - Keep transcript local unless user chooses cloud-enabled processing.
 - Treat transcript and model output as untrusted.
 - Prompt-injection defenses; validate generated structured data.
