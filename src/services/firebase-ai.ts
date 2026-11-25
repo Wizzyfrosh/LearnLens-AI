@@ -37,8 +37,12 @@ export async function askLearnLens(
     generationConfig: { temperature: 0.25, maxOutputTokens: 700 }
   });
 
-  if (preference !== "only_in_cloud") {
+  if (preference === "only_on_device") {
     await model.initializeDeviceModel((progress) => onDownloadProgress?.(progress));
+  } else if (preference === "prefer_on_device") {
+    // Start the model download after the learner's click, but don't block the
+    // request: Firebase can use the configured cloud fallback while it downloads.
+    void model.initializeDeviceModel((progress) => onDownloadProgress?.(progress)).catch(() => undefined);
   }
 
   const transcript = buildContextWindow(segments);
