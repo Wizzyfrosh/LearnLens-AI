@@ -3,7 +3,7 @@
 **Last repository inspection:** 2026-11-25  
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
-**Current phase:** Phase 1 CI baseline green; Phase 2 transcript ingestion and local session persistence implemented, awaiting current CI and browser QA.
+**Current phase:** CI green for transcript ingestion and local session persistence; Chrome runtime QA pending.
 
 > Read this file first on every returning session. File existence does not prove runtime completion. Verify against code, CI, and browser behavior.
 
@@ -19,8 +19,8 @@
 - This green run predates the transcript parser/UI changes below. Do not claim those changes passed CI yet.
 - Latest run for transcript test changes was cancelled by concurrency when newer commits arrived.
 - Latest run for current main commit b93fe692575559df9ed5d1a0ccc60b3f07bbb116: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45560716109
-- Latest green run before local-session commits: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45560796006
-- Local-session commits are newer than that green run; latest CI must be checked before claiming they pass.
+- Latest green run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45561154300
+- Verified steps: dependency installation, TypeScript typecheck, unit tests, and production build all succeeded on commit 6eee3e48e69142a06a80e76c370b4e9a66eea59f. This run includes the preceding local-session implementation commits.
 
 ## 2. Completed / code present
 
@@ -47,7 +47,7 @@
 
 ## 3. In progress / requires verification
 
-- [ ] Verify current main commit b93fe692575559df9ed5d1a0ccc60b3f07bbb116 passes CI (typecheck, tests, build).
+- [x] Verify transcript ingestion and IndexedDB implementation passes CI (typecheck, tests, production build) on commit 6eee3e48e69142a06a80e76c370b4e9a66eea59f.
 - [ ] Inspect generated dist and verify manifest asset paths.
 - [ ] Load dist in Chrome and test extension action/side panel.
 - [ ] Verify active YouTube tab context and SPA navigation.
@@ -122,9 +122,9 @@ See IMPLEMENTATION_PLAN.md for the detailed phases and exit criteria.
 
 ## 6. Known caveats
 
-1. Green CI on b2884c2 proves the Firebase inference-source fix only; transcript changes are newer and await CI.
+1. Latest CI passes typecheck, parser unit tests, and production build for transcript and IndexedDB changes; Chrome runtime behavior remains unverified.
 2. Current main has no package lockfile; CI currently uses npm install with legacy peer deps.
-3. IndexedDB session storage has not yet been verified in Chrome; CI only validates compile/tests/build.
+3. IndexedDB session storage has not yet been verified in Chrome; CI validates compile/tests/build only.
 4. Saved manual sessions currently restore the most recent manual import; there is not yet a full session history browser.
 5. Automatic transcript retrieval is not implemented; manual VTT/SRT/TXT is the current route.
 6. TikTok and Facebook are not implemented.
