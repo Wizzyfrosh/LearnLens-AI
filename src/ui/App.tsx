@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2 } from "lucide-react";
 import { askLearnLens } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport } from "../services/transcript";
-import { deleteLearningSession, getLatestSessionForVideo, saveLearningSession } from "../services/session-store";
+import { deleteLearningSession, getLatestManualSession, getLatestSessionForVideo, saveLearningSession } from "../services/session-store";
 import type { InferencePreference, TranscriptSegment, VideoContext } from "../shared/types";
 
 const emptyContext: VideoContext = {
@@ -34,19 +34,24 @@ export default function App() {
 
     chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
       const tab = tabs[0];
-      if (!tab?.url?.includes("youtube.com/watch")) return;
-      const url = new URL(tab.url);
-      const context: VideoContext = {
-        videoId: url.searchParams.get("v") ?? "",
-        title: tab.title?.replace(" - YouTube", "") ?? "YouTube video",
-        url: tab.url,
-        platform: "youtube"
-      };
+      const isYouTubeWatch = Boolean(tab?.url?.includes("youtube.com/watch"));
+      const context: VideoContext = isYouTubeWatch && tab?.url
+        ? {
+            videoId: new URL(tab.url).searchParams.get("v") ?? "",
+            title: tab.title?.replace(" - YouTube", "") ?? "YouTube video",
+            url: tab.url,
+            platform: "youtube"
+          }
+        : emptyContext;
       setVideo(context);
       setSessionId(context.videoId);
 
-      void getLatestSessionForVideo(context.videoId).then((saved) => {
+      const restore = context.videoId
+        ? getLatestSessionForVideo(context.videoId)
+        : getLatestManualSession();
+      void restore.then((saved) => {
         if (cancelled || !saved) return;
+        if (!context.videoId) setVideo({ ...emptyContext, title: saved.title || "Saved imported lesson" });
         setRawTranscript(saved.transcriptText);
         setTranscriptSource(saved.transcriptSource);
         setSessionId(saved.id);
