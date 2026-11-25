@@ -99,6 +99,7 @@ export default function App() {
           <option value="only_on_device">On-device only (never send to cloud)</option>
           <option value="only_in_cloud">Cloud only</option>
         </select>
+        <p className="helper-text">Prefer on-device can fall back to cloud and send transcript context. Choose on-device only to prevent cloud fallback.</p>
         <form onSubmit={submitQuestion}>
           <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about an idea, example, or section in this lesson..." rows={3} />
           <button className="primary-button" type="submit" disabled={busy || !question.trim() || segmentCount === 0}>
@@ -111,7 +112,7 @@ export default function App() {
         {answer && <article className="answer-card"><div className="answer-meta">LEARNLENS RESPONSE <span>{source === "ON_DEVICE" ? "ON DEVICE" : source === "IN_CLOUD" ? "CLOUD" : "SOURCE UNKNOWN"}</span></div><p>{answer}</p></article>}
       </section>
 
-      <footer>Built for focused learning. Your transcript stays in this browser unless you choose cloud inference.</footer>
+      <footer>Transcripts are not stored by LearnLens. Prefer-on-device may use cloud fallback; on-device-only blocks cloud fallback.</footer>
     </main>
   );
 }
