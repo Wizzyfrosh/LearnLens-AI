@@ -87,6 +87,7 @@ async function startCapture(streamId: string, videoId: string): Promise<void> {
     audioContext = new AudioContext();
     playbackSource = audioContext.createMediaStreamSource(mediaStream);
     playbackSource.connect(audioContext.destination);
+    await audioContext.resume();
 
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
