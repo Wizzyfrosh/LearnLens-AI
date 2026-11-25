@@ -62,7 +62,7 @@ export function formatTimestamp(seconds: number): string {
 export function buildContextWindow(segments: TranscriptSegment[], maxChars = 12000): string {
   let output = "";
   for (const segment of segments) {
-    const line = `[${formatTimestamp(segment.startSeconds)}] ${segment.text}`;
+    const line = segment.hasTimestamp ? `[${formatTimestamp(segment.startSeconds)}] ${segment.text}` : segment.text;
     const separator = output ? "\n" : "";
     const remaining = maxChars - output.length - separator.length;
     if (remaining <= 0) break;
