@@ -3,7 +3,7 @@
 **Last repository inspection:** 2026-11-25  
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
-**Current phase:** Automatic YouTube visible-caption capture and SPA context handling are implemented on `main`; current CI and Chrome runtime QA are pending.
+**Current phase:** Automatic YouTube visible-caption capture and SPA context handling are implemented on `main`; latest CI is green, while Chrome runtime QA is pending.
 
 > Read this file first on every returning session. File existence does not prove runtime completion. Verify against code, CI, and browser behavior.
 
@@ -12,15 +12,13 @@
 **Vertical slice:** YouTube SPA detection → user-started visible-caption capture → local transcript → Firebase AI Logic tutor → grounded answer.
 
 ### Latest verified CI
-- Last successful package-smoke run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45563356591
-- Commit: 5398e512007a7447f7648eb9d2a24f13b73352ec
+- Latest successful run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45648407472
+- Commit: e4af940a993cade705faaa5fb6899957b2bac348
 - Result: SUCCESS.
-- Verified steps: dependency installation, typecheck, unit tests, production build, and Chrome extension package smoke check.
-- The smoke check validates Manifest V3 and the presence of referenced service worker, side-panel, content-script, and HTML assets.
-- Active-tab context synchronization was updated to ignore URL changes in inactive tabs.
-- Earlier green run 45561154300 covers transcript ingestion and IndexedDB session implementation (typecheck, tests, production build).
-- Package-smoke run 45563356591 covers the built Manifest V3 package and initial active-tab synchronization.
-- Later active-context broadcast and side-panel synchronization commits are not yet verified by CI; check the latest run before claiming they pass.
+- Verified steps: dependency installation, TypeScript typecheck, unit tests, production build, Chrome extension package smoke check, and artifact upload.
+- The uploaded artifact is named `learnlens-chrome-extension` and is retained for 14 days.
+- This green run includes YouTube SPA context parsing, visible-caption capture messages, WebVTT serialization, the new side-panel workflow, and the generic-title fallback correction.
+- Chrome runtime behavior is not verified by CI and still requires manual testing in desktop Chrome.
 
 ## 2. Completed / code present
 
@@ -66,7 +64,7 @@
 
 ## 4. Not implemented
 
-- [ ] Automatic YouTube transcript/caption retrieval.
+- [ ] Audio-only transcription for videos where YouTube does not render captions.
 - [ ] Formal platform adapter interface.
 - [ ] TikTok and Facebook adapters.
 - [x] IndexedDB persistence / saved learning sessions (initial implementation; browser QA pending).
@@ -223,3 +221,15 @@ Next exact task:
 2. Provide the updated extension artifact for Chrome runtime testing.
 3. Test same-tab navigation and the new Start learning → visible captions → auto-save → Ask tutor workflow.
 4. Only after runtime validation, design and implement audio-only transcription with separate consent and App Check.
+
+
+## 13. Session update — 2026-11-25 (automatic caption capture CI)
+
+- Latest successful CI: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45648407472
+- Verified commit: e4af940a993cade705faaa5fb6899957b2bac348.
+- All workflow steps passed: dependency installation, typecheck, unit tests, production build, Chrome extension package smoke check, and artifact upload.
+- Artifact: learnlens-chrome-extension (ID 15038487577; approximately 102 KB; retained for 14 days).
+- A prior run exposed a unit-test failure for the generic document title "YouTube". The helper was corrected to return "YouTube video", and the subsequent run passed.
+- Chrome runtime QA has not been performed. The visible-caption DOM selector, same-tab SPA navigation, capture stop behavior, and IndexedDB persistence still need real-browser testing.
+- Audio-only speech transcription is not implemented. The current automatic path reads captions rendered by YouTube.
+- Next task: download the artifact from the successful Actions run and test same-tab navigation plus Start learning → live captions → auto-save → Ask tutor in desktop Chrome.
