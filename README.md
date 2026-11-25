@@ -4,6 +4,15 @@
 
 LearnLens AI is a context-aware learning companion for educational videos. It connects a video to its accessible transcript, then helps learners ask grounded questions and understand concepts with timestamp-aware answers.
 
+## Project documentation
+
+Read these files before contributing or handing this project to another AI coding agent:
+
+- [Product Requirements Document](./docs/PRD.md) — complete product vision, features, workflows, architecture, security, and acceptance criteria.
+- [Google #BuildHybridAI 2026 Hackathon Brief](./docs/HACKATHON_BRIEF.md) — official requirements, judging criteria, submission checklist, and AI-agent instructions.
+- [Implementation Plan](./docs/IMPLEMENTATION_PLAN.md) — phased engineering roadmap and definition of done.
+- [Project Status](./docs/PROJECT_STATUS.md) — current checkpoint, completed work, blockers, and exact next task. **Read this first when resuming work.**
+
 ## Current milestone: Chrome extension foundation
 
 This repository contains the first extension scaffold:
