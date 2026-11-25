@@ -246,3 +246,33 @@ The user reports that all manual tests for the latest visible-caption capture bu
 This is a successful manual verification of the visible-caption workflow on the user's Chrome setup. It does not establish audio-only speech recognition, Firebase AI Logic runtime/App Check readiness, or on-device inference behavior.
 
 Next phase: design and implement permissioned audio-only transcription for videos where rendered captions are unavailable. The approved technical direction is Chrome `tabCapture` initiated by an explicit learner action, an MV3 offscreen document, bounded audio chunks, Firebase AI Logic's documented audio-input `generateContent`, and a separate unchecked-by-default cloud-audio consent. App Check must be configured and verified before any lesson audio is uploaded. See Phase 3 in IMPLEMENTATION_PLAN.md.
+
+
+## 16. Phase 3 — audio transcription implementation checkpoint (2026-11-25)
+
+Implemented on `main`:
+- Added explicit learner consent for sending active-tab lesson audio to Firebase AI Logic.
+- Added `tabCapture` and `offscreen` permissions, with service-worker validation of the active YouTube tab.
+- Added an MV3 offscreen document using the `USER_MEDIA` reason.
+- Added an AudioWorklet that passes audio through to the learner while producing independent four-second mono PCM chunks.
+- Encodes each chunk as standalone 16-bit WAV; does not capture video or persist raw audio files.
+- Enforces a 1.5 MB raw chunk ceiling and a maximum of three queued transcription requests.
+- Added Firebase AI Logic transcription-only requests using `gemini-4-hydrogen`, WAV input, cloud-only mode, and an App Check debug-provider gate.
+- All Firebase AI requests now initialize App Check in the debug build; no audio upload occurs unless Firebase web config and the App Check debug build flag are present.
+- Audio transcript segments are marked `audio-transcription` and have `hasTimestamp: false`; no exact lesson timestamps are fabricated.
+- Audio transcript text is saved locally in IndexedDB; raw audio chunks are temporary in-memory payloads.
+- Added PCM-to-WAV unit tests and package checks for the offscreen HTML and AudioWorklet asset.
+- GitHub Actions now reads Firebase config from repository secrets: `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`, `FIREBASE_APP_ID`. The App Check debug build flag is set in the workflow.
+
+Not yet verified:
+- Latest Phase 3 code has not yet received a complete green CI run.
+- User has not yet added Firebase repository secrets or registered an App Check debug token.
+- No real Chrome audio capture test has been performed; AudioWorklet output continuity, WAV upload, transcription quality, and stop cleanup require browser QA.
+- The App Check debug provider is for controlled development/hackathon testing only, not production attestation.
+- Exact audio timestamps are not implemented; current audio transcript segments are untimed.
+
+Next:
+1. Obtain a full green GitHub Actions run for the current implementation.
+2. Add Firebase repository secrets and register the generated App Check debug token.
+3. Download the extension artifact and test tab-audio capture with the learner's explicit consent.
+4. Verify that lesson playback continues, audio transcript segments arrive, and capture stops on tab switch, lesson change, and side-panel close.
