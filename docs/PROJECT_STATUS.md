@@ -3,7 +3,7 @@
 **Last repository inspection:** 2026-11-25  
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
-**Current phase:** Phase 1 foundation stabilization complete at CI level; Phase 2 transcript ingestion improvements in progress.
+**Current phase:** Phase 1 CI baseline green; Phase 2 transcript ingestion and local session persistence implemented, awaiting current CI and browser QA.
 
 > Read this file first on every returning session. File existence does not prove runtime completion. Verify against code, CI, and browser behavior.
 
@@ -19,7 +19,8 @@
 - This green run predates the transcript parser/UI changes below. Do not claim those changes passed CI yet.
 - Latest run for transcript test changes was cancelled by concurrency when newer commits arrived.
 - Latest run for current main commit b93fe692575559df9ed5d1a0ccc60b3f07bbb116: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45560716109
-- Latest run status at checkpoint: queued; await its result.
+- Latest green run before local-session commits: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45560796006
+- Local-session commits are newer than that green run; latest CI must be checked before claiming they pass.
 
 ## 2. Completed / code present
 
@@ -34,6 +35,9 @@
 - [x] Context-window builder with character limit.
 - [x] Expanded Vitest cases for malformed cues, skipped cues, oversized/empty input, format detection, markup stripping, and context limits.
 - [x] Transcript UI displays source filename/paste source, detected format, validation errors/warnings, and first three segment previews.
+- [x] IndexedDB session store with schema versioning and indexes for video ID, platform, and updated time.
+- [x] Explicit save/remove controls for local sessions.
+- [x] Restore the most recent saved session for the active YouTube video, or most recent manual session when no YouTube video is active.
 - [x] Firebase AI Logic adapter calls generateContent.
 - [x] Inference preferences: prefer on-device, on-device-only, cloud-only.
 - [x] SDK inference-source mapping uses `InferenceSource.ON_DEVICE` and `InferenceSource.IN_CLOUD`.
@@ -50,6 +54,8 @@
 - [ ] Verify service worker message lifecycle and suspension/restart.
 - [ ] Verify transcript import/preview in actual Chrome UI.
 - [ ] Add and commit package-lock.json; change CI to npm ci. No lockfile is currently present.
+- [ ] Add IndexedDB integration tests or a testable storage adapter.
+- [ ] Verify local session save/restore/delete in actual Chrome extension runtime.
 - [ ] Configure Firebase project and App Check; runtime not verified.
 - [ ] Test cloud inference and on-device inference on supported Chrome desktop.
 - [ ] Confirm on-device-only never falls back to cloud.
@@ -60,7 +66,7 @@
 - [ ] Automatic YouTube transcript/caption retrieval.
 - [ ] Formal platform adapter interface.
 - [ ] TikTok and Facebook adapters.
-- [ ] IndexedDB persistence / saved learning sessions.
+- [x] IndexedDB persistence / saved learning sessions (initial implementation; browser QA pending).
 - [ ] Timestamp-aware notes and bookmarks.
 - [ ] Markdown/PDF export.
 - [ ] Quiz generation, attempts, scoring, and explanations.
@@ -118,13 +124,15 @@ See IMPLEMENTATION_PLAN.md for the detailed phases and exit criteria.
 
 1. Green CI on b2884c2 proves the Firebase inference-source fix only; transcript changes are newer and await CI.
 2. Current main has no package lockfile; CI currently uses npm install with legacy peer deps.
-3. Automatic transcript retrieval is not implemented; manual VTT/SRT/TXT is the current route.
-4. TikTok and Facebook are not implemented.
-5. Firebase project/App Check and runtime inference are not configured/verified.
-6. UI state and transcript are still in memory; no session persistence exists.
-7. Vite build success alone does not prove Chrome extension runtime correctness.
-8. Review background worker tab activation listener against declared permissions; keep permissions minimal.
-9. Do not claim offline support until model setup and local inference are tested.
+3. IndexedDB session storage has not yet been verified in Chrome; CI only validates compile/tests/build.
+4. Saved manual sessions currently restore the most recent manual import; there is not yet a full session history browser.
+5. Automatic transcript retrieval is not implemented; manual VTT/SRT/TXT is the current route.
+6. TikTok and Facebook are not implemented.
+7. Firebase project/App Check and runtime inference are not configured/verified.
+8. Unsaved UI state remains in memory; only explicitly saved transcript sessions persist locally.
+9. Vite build success alone does not prove Chrome extension runtime correctness.
+10. Review background worker tab activation listener against declared permissions; keep permissions minimal.
+11. Do not claim offline support until model setup and local inference are tested.
 
 ## 7. Session update template
 
