@@ -314,3 +314,16 @@ The code is build-verified, not yet runtime-verified. Audio transcription is exp
 - CI: run 149 for commit `7df2ee3` was in progress at the time of this update. Earlier intermediate runs were cancelled by subsequent commits; do not treat them as test failures or successes.
 - Browser/runtime status: not yet retested. The changes are intended to correct the startup path, but only a real Chrome test can confirm tab audio, continuous playback, four-second chunk production, and Gemini transcription.
 - Next exact task: confirm run 149 passes; download its artifact; reload the extension; test a video with captions disabled; verify playback, capture status, transcript arrival, and stop behavior. If it fails, capture the exact visible LearnLens error text (no screenshot needed).
+
+
+## 20. Audio capture permission and gesture correction — 2026-11-26
+
+- User runtime test exposed Chrome's exact error: "Extension has not been invoked for the current page (see activeTab permission). Chrome pages cannot be captured."
+- Root cause in the previous implementation: the service worker requested chrome.tabCapture.getMediaStreamId({ targetTabId }) only after asynchronous validation, offscreen-document setup, and other awaits. Chrome requires the tab-capture stream request to be initiated directly from a qualifying user gesture.
+- Corrective changes committed:
+  - 688abd9 — add streamId to the side-panel-to-worker start message.
+  - 2c860af — service worker now accepts the stream ID from the side panel and no longer requests it after asynchronous work.
+  - 7268f19 — side-panel click handler invokes chrome.tabCapture.getMediaStreamId() immediately and synchronously before its first await, then forwards the resulting stream ID to the worker for active-tab/video validation and offscreen initialization.
+- This preserves the explicit learner consent gate and existing offscreen processing pipeline.
+- CI and Chrome runtime verification are pending. Do not claim the permission issue is fixed until a fresh artifact is loaded and tested in Chrome.
+- Next exact task: verify latest GitHub Actions run; then test audio capture on the same YouTube tab where LearnLens side panel was opened from the extension toolbar. If the same permission error persists, inspect Chrome's action/side-panel invocation behavior and test the official tabCapture flow against the browser version in use.
