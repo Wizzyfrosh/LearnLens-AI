@@ -35,6 +35,7 @@ export default function App() {
   const [audioCaptureTabId, setAudioCaptureTabId] = useState<number | null>(null);
   const audioCaptureTabIdRef = useRef<number | null>(null);
   const audioQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingAudioChunksRef = useRef(0);
   const [sessionId, setSessionId] = useState("");
   const [savedSession, setSavedSession] = useState(false);
   const [storageNotice, setStorageNotice] = useState("");
@@ -120,6 +121,16 @@ export default function App() {
         if (message.payload.status === "idle" || message.payload.status === "error") setAudioCaptureTabId(null);
         audioCaptureTabIdRef.current = null;
       } else if (message.type === "LEARNLENS_AUDIO_CHUNK") {
+        pendingAudioChunksRef.current += 1;
+        if (pendingAudioChunksRef.current > 3) {
+          setAudioCaptureStatus("error");
+          setAudioCaptureMessage("Audio transcription is slower than capture. It was stopped to prevent an unbounded queue.");
+          if (audioCaptureTabIdRef.current !== null) {
+            chrome.runtime.sendMessage({ type: "LEARNLENS_STOP_AUDIO_CAPTURE", tabId: audioCaptureTabIdRef.current } satisfies ExtensionMessage).catch(() => undefined);
+          }
+          pendingAudioChunksRef.current = 0;
+          return;
+        }
         audioQueueRef.current = audioQueueRef.current.then(async () => {
           const text = await transcribeAudioChunk(message.payload.dataBase64, message.payload.mimeType, message.payload.sequence);
           if (!text) return;
@@ -140,6 +151,8 @@ export default function App() {
           if (audioCaptureTabIdRef.current !== null) {
             chrome.runtime.sendMessage({ type: "LEARNLENS_STOP_AUDIO_CAPTURE", tabId: audioCaptureTabIdRef.current } satisfies ExtensionMessage).catch(() => undefined);
           }
+        }).finally(() => {
+          pendingAudioChunksRef.current = Math.max(0, pendingAudioChunksRef.current - 1);
         });
       } else if (message.type === "LEARNLENS_CAPTION_SEGMENT") {
         setCapturedSegments((current) => {
@@ -466,7 +479,7 @@ export default function App() {
 
         {isLiveTranscript && (
           <div className="transcript-status">
-            <div className="inline-success"><BookOpen size={14} />{segmentCount} live caption segments · saved automatically on this device</div>
+            <div className="inline-success"><BookOpen size={14} />{segmentCount} {capturedSegments.some((segment) => segment.source === "audio-transcription") ? "transcribed audio segments" : "live caption segments"} · saved automatically on this device</div>
             <div className="transcript-preview">
               <strong>Captured lesson</strong>
               {segments.slice(-8).map((segment) => (
