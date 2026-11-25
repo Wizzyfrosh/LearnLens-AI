@@ -153,6 +153,7 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
   }
 
   if (message.type === "LEARNLENS_START_AUDIO_CAPTURE") {
+    if (sender.url !== chrome.runtime.getURL("sidepanel.html")) return;
     void startAudioCapture(message.tabId, message.videoId, message.streamId).catch((error: unknown) => {
       broadcast({ type: "LEARNLENS_AUDIO_CAPTURE_STATUS", payload: { status: "error", message: error instanceof Error ? error.message : "Could not start audio transcription." } });
     });
@@ -160,6 +161,7 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
   }
 
   if (message.type === "LEARNLENS_STOP_AUDIO_CAPTURE") {
+    if (sender.url !== chrome.runtime.getURL("sidepanel.html")) return;
     void stopAudioCapture(message.tabId, "Audio transcription stopped.");
     return;
   }
