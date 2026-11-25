@@ -175,7 +175,7 @@ export function buildContextWindow(
 
   const lines = segments.map((segment, index) => ({
     index,
-    text: segment.hasTimestamp ? \`[\${formatTimestamp(segment.startSeconds)}] \${segment.text}\` : segment.text
+    text: segment.hasTimestamp ? "[" + formatTimestamp(segment.startSeconds) + "] " + segment.text : segment.text
   }));
   const fullText = lines.map((line) => line.text).join("\n");
   if (fullText.length <= maxChars) return fullText;
