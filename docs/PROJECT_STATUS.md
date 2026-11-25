@@ -126,14 +126,14 @@ See IMPLEMENTATION_PLAN.md for the detailed phases and exit criteria.
 
 ## 6. Known caveats
 
-1. Package-smoke CI passed on commit 5398e51. Later commits ed4f642, a708e78, f107d34, and 308307d update active-tab handling and side-panel synchronization; the newest code CI result must be checked separately. Chrome runtime behavior remains unverified.
+1. Latest full CI passed on commit fc63572 (run 45648672851), including current caption-capture code. Chrome runtime behavior remains unverified.
 2. Current main has no package lockfile; CI currently uses npm install with legacy peer deps.
 3. IndexedDB session storage has not yet been verified in Chrome; CI validates compile/tests/build only.
 4. Saved manual sessions currently restore the most recent manual import; there is not yet a full session history browser.
 5. Automatic capture of visibly rendered YouTube captions is implemented in code; Chrome runtime QA is pending. Audio-only speech transcription is not implemented. Manual VTT/SRT/TXT remains fallback only.
 6. TikTok and Facebook are not implemented.
 7. Firebase project/App Check and runtime inference are not configured/verified.
-8. Unsaved UI state remains in memory; only explicitly saved transcript sessions persist locally.
+8. Manually imported transcript sessions require explicit save; live YouTube caption sessions are automatically persisted in IndexedDB after new caption segments arrive.
 9. Vite build success alone does not prove Chrome extension runtime correctness.
 10. Review background worker tab activation listener against declared permissions; keep permissions minimal.
 11. Do not claim offline support until model setup and local inference are tested.
