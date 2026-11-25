@@ -48,10 +48,10 @@ if (!existsSync(offscreenPath)) {
   const html = readFileSync(offscreenPath, "utf8");
   const assetRefs = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map((match) => match[1]);
   for (const asset of assetRefs) {
-    if (/^(https?:)?\\/\\//.test(asset) || asset.startsWith("data:")) continue;
-    const normalized = asset.replace(/^\\.\\//, "").replace(/^\\//, "");
-    if (!existsSync(resolve(dist, normalized))) fail(`offscreen document asset missing: ${asset}`);
-    else pass(`offscreen document asset exists: ${asset}`);
+    if (/^(https?:)?\/\//.test(asset) || asset.startsWith("data:")) continue;
+    const normalized = asset.replace(/^\.\//, "").replace(/^\//, "");
+    if (!existsSync(resolve(dist, normalized))) fail(\`offscreen document asset missing: \${asset}\`);
+    else pass(\`offscreen document asset exists: \${asset}\`);
   }
 }
 
