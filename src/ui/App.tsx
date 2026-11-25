@@ -310,18 +310,25 @@ export default function App() {
     }
 
     try {
+      // Invoke tabCapture synchronously inside the learner's button click.
+      // Do not await tabs.query or send a worker message before this call:
+      // Chrome requires the stream request to retain the initiating gesture.
+      const streamIdPromise = chrome.tabCapture.getMediaStreamId();
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
       if (tab?.id === undefined) throw new Error("Could not identify the active lesson tab.");
+      const streamId = await streamIdPromise;
+      if (!streamId) throw new Error("Chrome did not provide an audio stream ID for this lesson.");
       setCapturedSegments([]);
       setRawTranscript("");
       setSavedSession(false);
       setStorageNotice("");
       setAudioCaptureStatus("idle");
-      setAudioCaptureMessage("Requesting Chrome's tab-audio stream and initializing the audio processor...");
+      setAudioCaptureMessage("Initializing the audio processor...");
       const response = await chrome.runtime.sendMessage({
         type: "LEARNLENS_START_AUDIO_CAPTURE",
         tabId: tab.id,
-        videoId: video.videoId
+        videoId: video.videoId,
+        streamId
       } satisfies ExtensionMessage) as { ok?: boolean; error?: string } | undefined;
       if (!response?.ok) throw new Error(response?.error || "Chrome did not confirm that audio capture started.");
       setAudioCaptureTabId(tab.id);
