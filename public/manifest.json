@@ -4,15 +4,37 @@
   "name": "LearnLens AI",
   "version": "0.1.0",
   "description": "A context-aware AI learning companion for educational videos.",
-  "permissions": ["sidePanel", "activeTab", "storage", "tabCapture", "offscreen"],
-  "host_permissions": ["https://www.youtube.com/*", "https://firebasevertexai.googleapis.com/*", "https://firebaseappcheck.googleapis.com/*"],
-  "background": { "service_worker": "assets/background.js", "type": "module" },
-  "action": { "default_title": "Open LearnLens AI" },
-  "side_panel": { "default_path": "sidepanel.html" },
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "storage",
+    "tabCapture",
+    "offscreen",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://firebasevertexai.googleapis.com/*",
+    "https://firebaseappcheck.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "assets/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Open LearnLens AI"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/*"],
-      "js": ["assets/youtube.js"],
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "assets/youtube.js"
+      ],
       "run_at": "document_start"
     }
   ]
