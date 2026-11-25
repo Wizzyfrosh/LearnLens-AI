@@ -37,6 +37,7 @@ export function parseTranscript(input: string): TranscriptSegment[] {
         id: `segment-${index++}`,
         startSeconds,
         endSeconds,
+        hasTimestamp: true,
         text,
         source: "manual"
       });
@@ -49,6 +50,7 @@ export function parseTranscript(input: string): TranscriptSegment[] {
     id: `segment-${i}`,
     startSeconds: 0,
     endSeconds: 0,
+    hasTimestamp: false,
     text,
     source: "manual" as const
   }));
