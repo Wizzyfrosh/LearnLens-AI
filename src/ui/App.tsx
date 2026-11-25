@@ -81,9 +81,10 @@ export default function App() {
         if (cancelled || version !== restoreVersion) return;
         if (saved) {
           if (!next.videoId) setVideo({ ...emptyContext, title: saved.title || "Saved imported lesson" });
-          if (saved.transcriptSource === "YouTube live captions") {
+          if (saved.transcriptSource === "YouTube live captions" || saved.transcriptSource === "Audio transcription") {
             const parsed = parseTranscriptImport(saved.transcriptText);
-            setCapturedSegments(parsed.segments.map((segment) => ({ ...segment, source: "visible-captions" })));
+            const sourceType = saved.transcriptSource === "Audio transcription" ? "audio-transcription" : "visible-captions";
+            setCapturedSegments(parsed.segments.map((segment) => ({ ...segment, source: sourceType })));
             setRawTranscript("");
           } else {
             setCapturedSegments([]);
@@ -179,6 +180,12 @@ export default function App() {
     return () => {
       cancelled = true;
       chrome.runtime.onMessage.removeListener(onRuntimeMessage);
+      if (audioCaptureTabIdRef.current !== null) {
+        chrome.runtime.sendMessage({
+          type: "LEARNLENS_STOP_AUDIO_CAPTURE",
+          tabId: audioCaptureTabIdRef.current
+        } satisfies ExtensionMessage).catch(() => undefined);
+      }
     };
   }, []);
 
@@ -221,6 +228,7 @@ export default function App() {
   }, [capturedSegments, isLiveTranscript, video.videoId, video.title, video.url]);
 
   async function startLearning() {
+    if (audioCaptureTabIdRef.current !== null) await stopAudioTranscription();
     if (!video.videoId) {
       setCaptureStatus("unsupported");
       setCaptureMessage("Open a YouTube watch page before starting lesson capture.");
@@ -461,7 +469,7 @@ export default function App() {
               <strong>Captured lesson</strong>
               {segments.slice(-8).map((segment) => (
                 <p key={segment.id}>
-                  <span>[{Math.floor(segment.startSeconds / 60).toString().padStart(2, "0")}:{Math.floor(segment.startSeconds % 60).toString().padStart(2, "0")}] </span>
+                  {segment.hasTimestamp && <span>[{Math.floor(segment.startSeconds / 60).toString().padStart(2, "0")}:{Math.floor(segment.startSeconds % 60).toString().padStart(2, "0")}] </span>}
                   {segment.text}
                 </p>
               ))}
