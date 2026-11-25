@@ -1,7 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const rootDir = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -11,9 +13,9 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        sidepanel: resolve(__dirname, "sidepanel.html"),
-        background: resolve(__dirname, "src/background/index.ts"),
-        youtube: resolve(__dirname, "src/content/youtube.ts")
+        sidepanel: fileURLToPath(new URL("./sidepanel.html", import.meta.url)),
+        background: fileURLToPath(new URL("./src/background/index.ts", import.meta.url)),
+        youtube: fileURLToPath(new URL("./src/content/youtube.ts", import.meta.url))
       },
       output: {
         entryFileNames: "assets/[name].js",
@@ -21,5 +23,6 @@ export default defineConfig({
         assetFileNames: "assets/[name]-[hash][extname]"
       }
     }
-  }
+  },
+  resolve: { alias: { "@": rootDir + "src" } }
 });
