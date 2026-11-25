@@ -26,7 +26,9 @@ export function readYouTubeVideoContext(
   const videoId = url.searchParams.get("v")?.trim();
   if (!videoId) return null;
 
-  const title = cleanTitle(headingTitle) || cleanTitle(documentTitle) || "YouTube video";
+  const pageTitle = cleanTitle(documentTitle);
+  const usablePageTitle = pageTitle.toLowerCase() === "youtube" ? "" : pageTitle;
+  const title = cleanTitle(headingTitle) || usablePageTitle || "YouTube video";
   return {
     videoId,
     title,
