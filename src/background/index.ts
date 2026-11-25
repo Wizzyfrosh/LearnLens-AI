@@ -96,8 +96,18 @@ async function startCaptionCapture(tabId: number): Promise<void> {
   try {
     await chrome.tabs.sendMessage(tabId, { type: "LEARNLENS_CONTENT_START_CAPTION_CAPTURE" } satisfies ExtensionMessage);
   } catch {
-    captionCaptureTabId = null;
-    broadcast({ type: "LEARNLENS_CAPTURE_STATUS", payload: { status: "error", message: "LearnLens could not connect to this YouTube page. Reload the page and try again." } });
+    // A tab that was already open when the extension was installed/updated may
+    // not have received the static content script. Inject it once on demand.
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ["assets/youtube.js"]
+      });
+      await chrome.tabs.sendMessage(tabId, { type: "LEARNLENS_CONTENT_START_CAPTION_CAPTURE" } satisfies ExtensionMessage);
+    } catch {
+      captionCaptureTabId = null;
+      broadcast({ type: "LEARNLENS_CAPTURE_STATUS", payload: { status: "error", message: "LearnLens could not attach its YouTube caption reader. Reload the lesson tab and retry." } });
+    }
   }
 }
 
@@ -212,8 +222,22 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
   }
 });
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+function configureSidePanelAction(): void {
+  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((error: unknown) => {
+    console.error("LearnLens could not configure toolbar side-panel behavior.", error);
+  });
+}
+
+// Configure at worker startup as well as installation/update. The action
+// listener is a fallback for Chrome states where the behavior was not applied.
+chrome.runtime.onInstalled.addListener(configureSidePanelAction);
+configureSidePanelAction();
+
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.id === undefined) return;
+  void chrome.sidePanel.open({ tabId: tab.id }).catch((error: unknown) => {
+    console.error("LearnLens could not open the side panel from the toolbar.", error);
+  });
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
