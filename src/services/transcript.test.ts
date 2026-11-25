@@ -65,6 +65,35 @@ describe("transcript context helpers", () => {
   it("returns an empty context for invalid limits", () => {
     expect(buildContextWindow(parseTranscript("hello"), 0)).toBe("");
   });
+
+  it("selects a relevant passage near the end of a long lesson", () => {
+    const segments = Array.from({ length: 80 }, (_, index) => ({
+      id: `segment-${index}`,
+      startSeconds: index * 10,
+      endSeconds: index * 10 + 8,
+      hasTimestamp: true,
+      text: index === 72 ? "Mitochondria generate ATP through cellular respiration." : `Unrelated lesson passage number ${index}.`,
+      source: "visible-captions" as const
+    }));
+    const context = buildContextWindow(segments, 120, "How do mitochondria generate ATP?");
+    expect(context).toContain("Mitochondria generate ATP");
+    expect(context.length).toBeLessThanOrEqual(120);
+  });
+
+  it("keeps generic-question context within the budget and samples beyond the opening", () => {
+    const segments = Array.from({ length: 50 }, (_, index) => ({
+      id: `segment-${index}`,
+      startSeconds: index,
+      endSeconds: index + 1,
+      hasTimestamp: false,
+      text: `Passage ${index} contains a distinct concept.`,
+      source: "manual" as const
+    }));
+    const context = buildContextWindow(segments, 120, "Explain this lesson");
+    expect(context.length).toBeLessThanOrEqual(120);
+    expect(context).toContain("Passage 0");
+    expect(context).toContain("Passage 49");
+  });
 });
 
 
