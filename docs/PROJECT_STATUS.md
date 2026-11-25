@@ -3,150 +3,127 @@
 **Last repository inspection:** 2026-11-25  
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
-**Current phase:** Phase 0 baseline; Phase 1 foundation stabilization in progress.
+**Current phase:** Phase 1 foundation stabilization complete at CI level; Phase 2 transcript ingestion improvements in progress.
 
-> This is the first file every returning developer or AI agent must read. File existence does not prove runtime completion. Verify against code and CI.
+> Read this file first on every returning session. File existence does not prove runtime completion. Verify against code, CI, and browser behavior.
 
 ## 1. Current checkpoint
 
-**Vertical slice:** YouTube page detection → transcript import → Firebase AI Logic tutor → answer with actual inference source.
+**Vertical slice:** YouTube page detection → manual transcript import → Firebase AI Logic tutor → answer with actual inference source.
 
-**Next exact task:** Fix the Firebase SDK inference-source TypeScript error, rerun CI, then validate the built extension in Chrome.
-
-### Latest inspected CI evidence
-- Run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45559432781
-- Result: FAILED.
-- Dependency installation succeeded.
-- Typecheck failed in src/services/firebase-ai.ts at comparisons against "ON_DEVICE" and "IN_CLOUD".
-- Unit tests and production build were skipped after typecheck failed.
-- Do not describe CI/build as passing.
+### Latest verified CI
+- Successful run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45560326920
+- Commit: b2884c2af1d3925c22517860dde3bf68037aff33
+- Result: SUCCESS.
+- The Firebase inference-source comparison now uses SDK `InferenceSource` constants.
+- This green run predates the transcript parser/UI changes below. Do not claim those changes passed CI yet.
+- Latest run for transcript test changes was cancelled by concurrency when newer commits arrived.
+- Latest run for current main commit b93fe692575559df9ed5d1a0ccc60b3f07bbb116: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45560716109
+- Latest run status at checkpoint: queued; await its result.
 
 ## 2. Completed / code present
 
-- [x] Repository Wizzyfrosh/LearnLens-AI and main branch.
+- [x] Public repository and main branch.
 - [x] Product name/tagline established.
-- [x] Chrome Manifest V3 manifest.
+- [x] Chrome Manifest V3 manifest and side panel scaffold.
 - [x] React + TypeScript + Vite + Tailwind scaffold.
-- [x] Side Panel entry point.
-- [x] Basic YouTube watch-page content script capturing video ID/title/URL.
-- [x] Background message handling for video context.
-- [x] VTT/SRT/plain-text parser.
-- [x] Explicit timestamp-presence metadata; plain text does not get fake timestamps.
+- [x] Basic YouTube watch-page context capture and background message handling.
+- [x] VTT/SRT/plain-text transcript parser.
+- [x] Transcript validation API: format detection, empty/oversized input rejection, cue validation, malformed-cue warnings, cue-count limit.
+- [x] Timestamp preservation; plain text does not receive fabricated timestamps.
 - [x] Context-window builder with character limit.
-- [x] Initial Vitest transcript tests.
+- [x] Expanded Vitest cases for malformed cues, skipped cues, oversized/empty input, format detection, markup stripping, and context limits.
+- [x] Transcript UI displays source filename/paste source, detected format, validation errors/warnings, and first three segment previews.
 - [x] Firebase AI Logic adapter calls generateContent.
-- [x] Inference preferences in code: prefer on-device, on-device-only, cloud-only.
-- [x] UI attempts to show SDK inference source (mapping currently fails typecheck).
-- [x] UI disclosure that prefer-on-device may fall back to cloud.
-- [x] GitHub Actions typecheck/test/build workflow.
-- [x] Apache-2.0 LICENSE file.
-- [x] README setup and capability limitations.
-- [x] .env.example Firebase client configuration placeholders.
-- [x] Manifest currently declares sidePanel, activeTab, storage permissions.
+- [x] Inference preferences: prefer on-device, on-device-only, cloud-only.
+- [x] SDK inference-source mapping uses `InferenceSource.ON_DEVICE` and `InferenceSource.IN_CLOUD`.
+- [x] CI workflow runs typecheck, tests, and production build.
+- [x] Apache-2.0 LICENSE, README setup notes, .env.example.
+- [x] PRD, hackathon brief, implementation plan, and continuity checklist.
 
 ## 3. In progress / requires verification
 
-- [ ] Fix inference-source enum/type mapping.
-- [ ] Get green typecheck.
-- [ ] Run Vitest successfully in CI.
-- [ ] Run production build successfully in CI.
-- [ ] Verify dist includes manifest, side panel HTML, background worker, and content script at referenced paths.
-- [ ] Load dist in Chrome.
-- [ ] Verify extension action opens side panel.
-- [ ] Verify current YouTube tab detection and SPA navigation.
-- [ ] Verify message lifecycle and service-worker behavior.
-- [ ] Verify transcript import in actual Chrome UI.
-- [ ] Configure Firebase project and Firebase AI Logic.
-- [ ] Configure App Check and test real model requests.
-- [ ] Test on-device inference on supported Chrome desktop.
-- [ ] Test cloud mode and hybrid fallback.
+- [ ] Verify current main commit b93fe692575559df9ed5d1a0ccc60b3f07bbb116 passes CI (typecheck, tests, build).
+- [ ] Inspect generated dist and verify manifest asset paths.
+- [ ] Load dist in Chrome and test extension action/side panel.
+- [ ] Verify active YouTube tab context and SPA navigation.
+- [ ] Verify service worker message lifecycle and suspension/restart.
+- [ ] Verify transcript import/preview in actual Chrome UI.
+- [ ] Add and commit package-lock.json; change CI to npm ci. No lockfile is currently present.
+- [ ] Configure Firebase project and App Check; runtime not verified.
+- [ ] Test cloud inference and on-device inference on supported Chrome desktop.
 - [ ] Confirm on-device-only never falls back to cloud.
+- [ ] Test actual transcript grounding and timestamp evidence.
 
 ## 4. Not implemented
 
 - [ ] Automatic YouTube transcript/caption retrieval.
 - [ ] Formal platform adapter interface.
-- [ ] TikTok adapter and validated transcript access.
-- [ ] Facebook adapter and validated transcript access.
-- [ ] Transcript preview/source provenance UI.
-- [ ] Timestamp-aware note creation/edit/delete.
-- [ ] Notes export (Markdown/PDF).
-- [ ] Timestamp bookmarks and player seek.
-- [ ] Quiz generation, quiz taking, scoring, explanations.
+- [ ] TikTok and Facebook adapters.
+- [ ] IndexedDB persistence / saved learning sessions.
+- [ ] Timestamp-aware notes and bookmarks.
+- [ ] Markdown/PDF export.
+- [ ] Quiz generation, attempts, scoring, and explanations.
 - [ ] Learning history/dashboard and weak-topic revision.
-- [ ] IndexedDB persistence.
-- [ ] Firebase Authentication.
-- [ ] Firestore sync and security rules.
+- [ ] Firebase Authentication, Firestore sync, and security rules.
 - [ ] Remote Config.
 - [ ] Account/data export and deletion.
 - [ ] Android companion.
-- [ ] Public demo video.
-- [ ] Devpost submission.
+- [ ] Public demo video and Devpost submission.
 
 ## 5. Immediate task queue
 
-### Task 1 — Fix CI type error (BLOCKING)
-- [ ] Inspect Firebase SDK version and InferenceSource declarations.
-- [ ] Use the actual SDK enum/type members.
-- [ ] Keep source display based on actual response metadata.
-- [ ] Avoid blanket any casts.
-- [ ] Commit fix and rerun CI.
+### Task 1 — Validate transcript import changes (BLOCKING)
+- [x] Add transcript format detection and import validation.
+- [x] Reject empty and oversized transcripts.
+- [x] Skip malformed timed cues with warnings; reject when no valid cues remain.
+- [x] Add preview and provenance label in UI.
+- [x] Add parser tests.
+- [ ] Confirm latest CI run passes on current main.
+- [ ] Review parser behavior against representative real VTT/SRT files in Chrome.
 
-Acceptance: typecheck passes and tests/build are no longer skipped.
+Acceptance: valid imports become timestamped/untimestamped segments accurately; invalid input is explained; preview matches parsed content.
 
-### Task 2 — Make extension load
-- [ ] Inspect vite.config.ts output and manifest paths.
-- [ ] Verify dist/manifest.json, sidepanel HTML, background worker, and YouTube content script exist at exact paths.
-- [ ] Fix build/manifest mismatch if present.
-- [ ] Load unpacked in Chrome.
-- [ ] Test side panel and YouTube context detection.
+### Task 2 — Extension runtime QA
+- [ ] Verify dist/manifest.json, sidepanel.html, assets/background.js, assets/youtube.js.
+- [ ] Load unpacked in Chrome and inspect chrome://extensions errors.
+- [ ] Test action opens side panel.
+- [ ] Test YouTube watch page, SPA navigation, tab switching, and worker restart.
+- [ ] Review tab activation listener and permission footprint.
 
-Acceptance: extension installs without errors and detects a real YouTube watch page.
+Acceptance: extension installs without errors and detects active YouTube context reliably.
 
-### Task 3 — Configure Firebase and validate runtime AI
-- [ ] Create/configure Firebase project.
-- [ ] Enable Firebase AI Logic.
-- [ ] Configure App Check for development/judge testing.
-- [ ] Add Firebase Web App values to .env.local only; never commit it.
-- [ ] Verify supported model identifier.
-- [ ] Test cloud inference.
-- [ ] Test local inference on supported Chrome desktop.
-- [ ] Test local-only failure and hybrid fallback.
-- [ ] Record actual inference-source evidence.
+### Task 3 — Reproducible CI and Firebase runtime
+- [ ] Generate and commit package-lock.json.
+- [ ] Change CI to npm ci; remove legacy-peer-deps unless a documented dependency conflict requires it.
+- [ ] Configure Firebase AI Logic and App Check.
+- [ ] Test cloud, local, hybrid fallback, local unavailable, network/quota failure.
+- [ ] Confirm on-device-only never sends transcript to cloud.
 
-Acceptance: a real transcript question receives a grounded response and actual inference source is shown.
+Acceptance: reproducible CI and real AI requests with truthful inference-source reporting.
 
-### Task 4 — Improve transcript ingestion
-- [ ] Malformed/oversized input handling.
-- [ ] Transcript preview and provenance.
-- [ ] Parser edge-case tests.
-- [ ] Research compliant YouTube caption acquisition.
+### Task 4 — Local learning sessions
+- [ ] Design IndexedDB/Dexie schema for lesson sessions and transcript metadata.
+- [ ] Persist learner-approved session metadata and learning artifacts locally.
+- [ ] Keep full transcripts local by default and set retention/clear controls.
+- [ ] Add migrations and tests.
+- [ ] Only then implement notes and bookmarks.
 
-### Task 5 — Build learning artifacts
-- [ ] Notes.
-- [ ] Bookmarks.
-- [ ] Quiz generation and attempts.
-- [ ] Local persistence.
-- [ ] Optional sync after security design.
+Acceptance: sessions survive extension reloads; data can be cleared; no transcript upload by default.
 
-### Task 6 — Submission
-- [ ] Clean install and full test/build.
-- [ ] Privacy/security review.
-- [ ] Devpost description and contest-period build summary.
-- [ ] Public YouTube demo under three minutes.
-- [ ] Public repo and judging instructions.
-- [ ] Submit before official deadline.
+### Task 5 — Notes, bookmarks, quiz, submission
+See IMPLEMENTATION_PLAN.md for the detailed phases and exit criteria.
 
 ## 6. Known caveats
 
-1. Firebase inference-source comparison currently fails TypeScript. Resolve against SDK declarations.
-2. Automatic transcript retrieval is not implemented; manual VTT/SRT/TXT is the current path.
-3. YouTube detection is basic; TikTok and Facebook are not implemented.
-4. Firebase project/App Check are not configured or runtime-verified.
-5. Current UI state is in memory; persistent lesson history is not implemented.
-6. CI currently fails at typecheck; tests/build not verified on latest run.
-7. Vite build alone does not prove Chrome extension runtime correctness.
-8. Review background worker's tab activation listener against declared permissions; remove or justify and keep permissions minimal.
+1. Green CI on b2884c2 proves the Firebase inference-source fix only; transcript changes are newer and await CI.
+2. Current main has no package lockfile; CI currently uses npm install with legacy peer deps.
+3. Automatic transcript retrieval is not implemented; manual VTT/SRT/TXT is the current route.
+4. TikTok and Facebook are not implemented.
+5. Firebase project/App Check and runtime inference are not configured/verified.
+6. UI state and transcript are still in memory; no session persistence exists.
+7. Vite build success alone does not prove Chrome extension runtime correctness.
+8. Review background worker tab activation listener against declared permissions; keep permissions minimal.
 9. Do not claim offline support until model setup and local inference are tested.
 
 ## 7. Session update template
@@ -159,8 +136,6 @@ At the end of every session update:
 - Browser/runtime verification:
 - Known failures/blockers:
 - Next exact task:
-
-Do not remove blockers until verified fixed.
 
 ## 8. Document map
 
