@@ -27,10 +27,10 @@ function getFirebaseApp() {
 }
 
 
-function ensureAudioAppCheck(app: ReturnType<typeof getFirebaseApp>): void {
+function ensureDebugAppCheck(app: ReturnType<typeof getFirebaseApp>): void {
   if (debugAppCheckInitialized) return;
   if (import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG !== "true") {
-    throw new Error("Audio transcription is disabled until Firebase App Check is configured for this test build.");
+    throw new Error("Firebase App Check is not configured for this test build. Cloud AI requests are blocked until App Check is ready.");
   }
 
   // This is a development-only App Check debug provider. The generated token
@@ -71,7 +71,7 @@ export async function transcribeAudioChunk(
   }
 
   const app = getFirebaseApp();
-  ensureAudioAppCheck(app);
+  ensureDebugAppCheck(app);
   const ai = getAI(app, { backend: new GoogleAIBackend() });
   const model = getGenerativeModel(ai, {
     model: "gemini-4-hydrogen",
@@ -106,7 +106,9 @@ export async function askLearnLens(
     only_in_cloud: InferenceMode.ONLY_IN_CLOUD
   } as const;
 
-  const ai = getAI(getFirebaseApp(), { backend: new GoogleAIBackend() });
+  const app = getFirebaseApp();
+  ensureDebugAppCheck(app);
+  const ai = getAI(app, { backend: new GoogleAIBackend() });
   const model = getGenerativeModel(ai, {
     mode: modes[preference],
     inCloudParams: { model: "gemini-3.5-flash-lite" },
