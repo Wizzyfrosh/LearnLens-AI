@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "LearnLens AI",
+  "version": "0.1.0",
+  "description": "A context-aware AI learning companion for educational videos.",
+  "permissions": ["sidePanel", "activeTab", "storage", "tabs"],
+  "host_permissions": ["https://www.youtube.com/*"],
+  "background": { "service_worker": "assets/background.js", "type": "module" },
+  "action": { "default_title": "Open LearnLens AI" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/watch*"],
+      "js": ["assets/youtube.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
