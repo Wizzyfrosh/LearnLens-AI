@@ -73,17 +73,29 @@ Exit: current main passes CI and extension installs/detects YouTube context reli
 Exit: real learner question gets grounded answer; local/cloud paths tested and honestly labeled.
 
 ### Phase 3 — Audio-based transcription (after visible-caption QA)
-- [ ] Evaluate explicit chrome.tabCapture audio capture after a learner gesture.
-- [ ] Preserve normal video playback while capturing audio; use an offscreen document only when required by Chrome's capture lifecycle.
-- [ ] Design short, independently decodable audio chunks with bounded size and accurate start offsets.
-- [ ] Add a separate explicit cloud-audio-consent control; do not infer consent from the general tutor inference preference.
-- [ ] Transcribe only with a documented Firebase AI Logic audio-capable model and App Check configured.
-- [ ] Do not use Firebase AI Logic Live API as an on-device/hybrid transcription solution; current Live API is Preview and does not support hybrid/on-device inference.
-- [ ] Test pause, seek, buffering, tab switch, capture stop, network failure, duplicate chunks, and model errors.
-- [ ] Persist transcript segments locally; discard raw audio chunks after successful transcription unless the learner explicitly chooses otherwise.
 
-Exit: audio transcription works for a defined browser/model/configuration, with explicit cloud consent and honest source labels.
+**Technical decision (2026-11-25):** use Chrome `tabCapture` initiated only by a learner action, with a Manifest V3 offscreen document to own the media stream. Process bounded audio chunks through Firebase AI Logic's documented audio-input `generateContent` capability. This is a cloud transcription path; it is separate from the tutor's hybrid/on-device preference and requires a dedicated, explicit cloud-audio consent. Do not label it on-device or hybrid.
 
+Evidence:
+- Chrome documents `chrome.tabCapture.getMediaStreamId()` in the extension service worker after a user gesture, then consuming that stream in an offscreen document. See https://developer.chrome.com/docs/extensions/how-to/web-platform/screen-capture
+- Firebase AI Logic documents audio transcription using inline audio data with `generateContent`; supported current models include `gemini-4-hydrogen`, `gemini-3.8-flash`, and `gemini-3.5-flash-lite`. Inline request size limit is 20 MB. See https://firebase.google.com/docs/ai-logic/analyze-audio
+- Audio-only timestamp generation requires the `audio_timestamp` generation parameter; timestamps must not be fabricated if the selected SDK/model configuration cannot provide them. See https://firebase.google.com/docs/ai-logic/input-file-requirements
+
+Implementation tasks:
+- [ ] Configure and verify Firebase App Check for the Chrome extension origin before making any audio upload. Current Firebase configuration/App Check is not runtime verified.
+- [ ] Add the `tabCapture` permission and explain the Chrome permission warning in product onboarding.
+- [ ] Add a separate, unchecked-by-default consent control: lesson audio will be sent to Firebase AI Logic for transcription. Tutor inference preference does not imply audio-upload consent.
+- [ ] Implement service-worker capture orchestration: verify active YouTube tab, enforce one capture at a time, request stream ID only from a user-initiated action, and stop on explicit stop, tab close, tab switch, or lesson change.
+- [ ] Add an offscreen document with `USER_MEDIA` reason to consume the stream; preserve audible playback by routing the captured audio back to an AudioContext destination, as required by Chrome's tabCapture behavior.
+- [ ] Record audio-only WebM chunks with MediaRecorder; validate browser-supported MIME type, chunk duration, byte size, and monotonic sequence IDs. Never capture video.
+- [ ] Set a strict maximum chunk size comfortably below Firebase's 20 MB total request limit (including base64 expansion); serialize transcription requests to preserve order and bound memory.
+- [ ] Use Firebase AI Logic audio-capable cloud model and a transcription-only prompt. Validate model output; do not accept arbitrary model timestamps unless audio timestamp generation is configured and verified.
+- [ ] Emit transcript segments with source `audio-transcription`, accurate chunk start offsets, and explicit estimated/verified timestamp provenance.
+- [ ] Persist transcript text locally; discard each raw audio chunk after its transcription succeeds. Do not store or sync raw audio by default.
+- [ ] Handle pause/resume, seek, buffering, muted tab, no-speech chunks, duplicate/out-of-order chunks, request timeout, network failure, quota errors, App Check rejection, and user cancellation.
+- [ ] Add tests for chunk ordering, size caps, duplicate suppression, stop cleanup, consent gating, and transcript normalization.
+
+Exit: on a Chrome version/configuration with verified App Check and Firebase audio model access, a learner can explicitly consent, start audio transcription, see incremental transcript text, continue hearing the lesson, stop capture, and ask the tutor grounded questions. If cloud transcription is not configured or consent is absent, visible-caption capture remains the default and audio is never uploaded.
 ### Phase 4 — Local learning sessions, notes, and bookmarks
 - [x] Define versioned IndexedDB schema and indexes for lesson sessions.
 - [x] Persist sessions only after explicit learner save action.
