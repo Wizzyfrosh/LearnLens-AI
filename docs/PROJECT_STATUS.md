@@ -3,7 +3,7 @@
 **Last repository inspection:** 2026-11-25  
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
-**Current phase:** Extension package smoke validation is green; Chrome runtime QA and reproducible dependency installation remain pending.
+**Current phase:** CI package verification is green; active-tab context is now broadcast to the side panel, but the latest code requires CI and Chrome runtime QA.
 
 > Read this file first on every returning session. File existence does not prove runtime completion. Verify against code, CI, and browser behavior.
 
@@ -12,17 +12,15 @@
 **Vertical slice:** YouTube page detection → manual transcript import → Firebase AI Logic tutor → answer with actual inference source.
 
 ### Latest verified CI
-- Successful run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45563356591
+- Last successful package-smoke run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45563356591
 - Commit: 5398e512007a7447f7648eb9d2a24f13b73352ec
 - Result: SUCCESS.
 - Verified steps: dependency installation, typecheck, unit tests, production build, and Chrome extension package smoke check.
 - The smoke check validates Manifest V3 and the presence of referenced service worker, side-panel, content-script, and HTML assets.
 - Active-tab context synchronization was updated to ignore URL changes in inactive tabs.
-- This green run predates the transcript parser/UI changes below. Do not claim those changes passed CI yet.
-- Latest run for transcript test changes was cancelled by concurrency when newer commits arrived.
-- Latest run for current main commit b93fe692575559df9ed5d1a0ccc60b3f07bbb116: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45560716109
-- Latest green run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45561154300
-- Verified steps: dependency installation, TypeScript typecheck, unit tests, and production build all succeeded on commit 6eee3e48e69142a06a80e76c370b4e9a66eea59f. This run includes the preceding local-session implementation commits.
+- Earlier green run 45561154300 covers transcript ingestion and IndexedDB session implementation (typecheck, tests, production build).
+- Package-smoke run 45563356591 covers the built Manifest V3 package and initial active-tab synchronization.
+- Later active-context broadcast and side-panel synchronization commits are not yet verified by CI; check the latest run before claiming they pass.
 
 ## 2. Completed / code present
 
@@ -52,7 +50,7 @@
 - [x] Verify transcript ingestion and IndexedDB implementation passes CI (typecheck, tests, production build) on commit 6eee3e48e69142a06a80e76c370b4e9a66eea59f.
 - [x] Add a post-build smoke check for Manifest V3, service worker, side panel, content script, and side-panel asset paths.
 - [ ] Load dist in Chrome and test extension action/side panel.
-- [ ] Verify active YouTube tab context and SPA navigation.
+- [ ] Verify active YouTube tab context and SPA navigation in Chrome.
 - [ ] Verify service worker message lifecycle and suspension/restart.
 - [ ] Verify transcript import/preview in actual Chrome UI.
 - [ ] Add and commit package-lock.json; change CI to npm ci. No lockfile is currently present.
@@ -99,6 +97,7 @@ Acceptance: valid imports become timestamped/untimestamped segments accurately; 
 - [ ] Test action opens side panel.
 - [ ] Test YouTube watch page, SPA navigation, tab switching, and worker restart.
 - [x] Fix stale YouTube context when the active tab changes or navigates away; refresh context on active-tab URL/completion updates.
+- [x] Broadcast active-context changes to the side panel and ignore content-script context messages from inactive tabs.
 - [ ] Review tab activation listener and permission footprint in Chrome.
 
 Acceptance: extension installs without errors and detects active YouTube context reliably.
@@ -126,7 +125,7 @@ See IMPLEMENTATION_PLAN.md for the detailed phases and exit criteria.
 
 ## 6. Known caveats
 
-1. Latest confirmed CI run for commit 5398e512 passes, including the package smoke check and initial active-tab context fix. A follow-up guard against inactive-tab URL updates is now committed as ed4f642 and awaits CI; Chrome runtime behavior remains unverified.
+1. Package-smoke CI passed on commit 5398e51. Later commits ed4f642, a708e78, f107d34, and 308307d update active-tab handling and side-panel synchronization; the newest code CI result must be checked separately. Chrome runtime behavior remains unverified.
 2. Current main has no package lockfile; CI currently uses npm install with legacy peer deps.
 3. IndexedDB session storage has not yet been verified in Chrome; CI validates compile/tests/build only.
 4. Saved manual sessions currently restore the most recent manual import; there is not yet a full session history browser.
@@ -173,3 +172,11 @@ At the end of every session update:
 - Browser/runtime verification: still requires local Chrome; not claimed complete.
 - Dependency reproducibility: package-lock.json is absent; npm ci migration is blocked until a real lockfile is generated from the repository dependency graph. Do not hand-author a lockfile.
 - Next exact task: verify ed4f642 CI, then establish reproducible npm ci install and add IndexedDB integration tests before expanding features.
+
+
+## 11. Session update — 2026-11-25 (active context sync)
+- Commits: a708e78 (active context update message), f107d34 (background rejects inactive content-script context and broadcasts active tab changes), 308307d (side panel subscribes to context changes and reloads the matching saved lesson).
+- Problem discovered: App.tsx queried the active tab only once on mount. Background updates therefore did not update an already-open side panel; additionally, content scripts from inactive tabs could publish stale context.
+- Fix: side panel now listens for active-context updates, clears old video transcript state when switching videos, and restores only the matching saved session. Background validates sender tab against the active tab and broadcasts context changes. Focus changes trigger context resync.
+- Tests: CI must verify these latest commits; no browser runtime claim made.
+- Remaining: Chrome runtime QA, package-lock/npm ci, IndexedDB integration tests, Firebase/App Check runtime.
