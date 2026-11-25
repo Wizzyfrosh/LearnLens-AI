@@ -82,6 +82,8 @@ The extension build reads Firebase web-app configuration from GitHub Actions rep
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_APP_ID`
 
+After adding or changing these secrets, open **Actions → CI → Run workflow**, select `main`, and click **Run workflow** to produce a fresh extension artifact containing the configured values. The workflow supports manual runs.
+
 The workflow enables the Firebase App Check debug provider for controlled testing. When the side panel first initializes App Check, Firebase prints a debug token in the side-panel DevTools console. Open DevTools for the LearnLens side panel (right-click inside the panel and choose **Inspect**, where available), copy the token, then register it under **Firebase Console → App Check → Apps → Manage debug tokens**. Keep the token private; never commit it to GitHub.
 
 Do not enable Firebase AI Logic App Check enforcement until the extension's requests appear as valid in App Check metrics. This debug setup is for testing only, not production attestation.
