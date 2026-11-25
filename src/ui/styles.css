@@ -45,3 +45,29 @@ select{margin-bottom:10px;padding:9px 10px}
 .answer-meta span{color:#4770bd}
 .answer-card p{font-size:12px;line-height:1.7;white-space:pre-wrap;color:#354158;margin:10px 0 0}
 footer{border-top:1px solid #e8ebf2;padding-top:13px;color:#9aa3b2;font-size:9px;line-height:1.5;text-align:center}
+
+
+.capture-card{background:#fff;border:1px solid #dfe6f3;border-radius:13px;padding:13px;margin-bottom:12px}
+.capture-card-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.capture-card-heading strong{display:block;color:#25334b;font-size:12px;font-weight:750}
+.capture-card-heading small{display:block;color:#758198;font-size:10px;margin-top:3px}
+.capture-indicator{width:8px;height:8px;border-radius:50%;background:#a8b1c1;flex:none}
+.capture-indicator.active{background:#20a579;box-shadow:0 0 0 4px #20a5791c}
+.capture-card>p{font-size:11px;line-height:1.55;color:#66738a;margin:9px 0 11px}
+.capture-button{width:100%;border:0;border-radius:9px;background:#315cc4;color:#fff;font-size:11px;font-weight:750;padding:10px;display:flex;align-items:center;justify-content:center;gap:7px;cursor:pointer}
+.capture-button:disabled{opacity:.45;cursor:not-allowed}
+.capture-button.stop{background:#fff;border:1px solid #e2a6a0;color:#a64235}
+.capture-privacy{display:block;margin-top:9px;color:#8994a7;font-size:9px;line-height:1.5}
+.transcript-status{margin-top:10px}
+.transcript-preview{max-height:250px;overflow:auto;background:#fff;border:1px solid #e6eaf2;border-radius:10px;padding:11px;margin-top:10px}
+.transcript-preview>strong{font-size:10px;color:#64718a}
+.transcript-preview p{font-size:11px;line-height:1.55;color:#344158;margin:8px 0}
+.transcript-preview p span{font-size:10px;color:#5875bf;font-variant-numeric:tabular-nums}
+.transcript-preview small{font-size:9px;color:#8994a7}
+.fallback-import{margin-top:12px;border-top:1px solid #e8ebf2;padding-top:10px}
+.fallback-import summary{font-size:10px;font-weight:700;color:#61708a;cursor:pointer;list-style-position:inside}
+.fallback-import[open] summary{margin-bottom:10px}
+.fallback-import .upload-box{margin-top:8px}
+.session-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+.secondary-button{border:1px solid #e0e5ef;background:#fff;color:#586780;border-radius:8px;padding:7px 9px;font-size:10px;display:flex;align-items:center;gap:6px;cursor:pointer}
+.secondary-button:disabled{opacity:.55;cursor:default}
