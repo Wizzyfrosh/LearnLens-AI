@@ -1,4 +1,4 @@
-export type TranscriptSource = "manual" | "native-track" | "visible-captions";
+export type TranscriptSource = "manual" | "native-track" | "visible-captions" | "audio-transcription";
 
 export interface TranscriptSegment {
   id: string;
