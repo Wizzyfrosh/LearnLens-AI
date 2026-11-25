@@ -118,8 +118,10 @@ export default function App() {
       } else if (message.type === "LEARNLENS_AUDIO_CAPTURE_STATUS") {
         setAudioCaptureStatus(message.payload.status);
         setAudioCaptureMessage(message.payload.message);
-        if (message.payload.status === "idle" || message.payload.status === "error") setAudioCaptureTabId(null);
-        audioCaptureTabIdRef.current = null;
+        if (message.payload.status === "idle" || message.payload.status === "error") {
+          setAudioCaptureTabId(null);
+          audioCaptureTabIdRef.current = null;
+        }
       } else if (message.type === "LEARNLENS_AUDIO_CHUNK") {
         pendingAudioChunksRef.current += 1;
         if (pendingAudioChunksRef.current > 3) {
