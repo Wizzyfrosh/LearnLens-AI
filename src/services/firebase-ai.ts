@@ -66,8 +66,8 @@ export async function transcribeAudioChunk(
   if (!dataBase64 || dataBase64.length > 2_100_000) {
     throw new Error("The audio chunk is empty or exceeds the safe request size.");
   }
-  if (mimeType !== "audio/webm") {
-    throw new Error("Unsupported audio format. LearnLens currently accepts WebM audio chunks.");
+  if (mimeType !== "audio/wav") {
+    throw new Error("Unsupported audio format. LearnLens currently accepts WAV audio chunks.");
   }
 
   const app = getFirebaseApp();
