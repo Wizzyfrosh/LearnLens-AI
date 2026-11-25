@@ -162,16 +162,20 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
 
   if (message.type === "LEARNLENS_START_AUDIO_CAPTURE") {
     if (sender.url !== chrome.runtime.getURL("sidepanel.html")) return;
-    void startAudioCapture(message.tabId, message.videoId, message.streamId).catch((error: unknown) => {
-      broadcast({ type: "LEARNLENS_AUDIO_CAPTURE_STATUS", payload: { status: "error", message: error instanceof Error ? error.message : "Could not start audio transcription." } });
+    void startAudioCapture(message.tabId, message.videoId, message.streamId).then(() => {
+      sendResponse({ ok: true });
+    }).catch((error: unknown) => {
+      const detail = error instanceof Error ? error.message : "Could not start audio transcription.";
+      broadcast({ type: "LEARNLENS_AUDIO_CAPTURE_STATUS", payload: { status: "error", message: detail } });
+      sendResponse({ ok: false, error: detail });
     });
-    return;
+    return true;
   }
 
   if (message.type === "LEARNLENS_STOP_AUDIO_CAPTURE") {
     if (sender.url !== chrome.runtime.getURL("sidepanel.html")) return;
-    void stopAudioCapture(message.tabId, "Audio transcription stopped.");
-    return;
+    void stopAudioCapture(message.tabId, "Audio transcription stopped.").then(() => sendResponse({ ok: true }));
+    return true;
   }
 
   if (message.type === "LEARNLENS_AUDIO_CAPTURE_STATUS" || message.type === "LEARNLENS_AUDIO_CHUNK") {
@@ -184,8 +188,8 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
         audioCaptureVideoId = "";
         await chrome.storage.session.remove(["audioCaptureTabId", "audioCaptureVideoId"]).catch(() => undefined);
       }
-    }).catch(() => undefined);
-    return;
+    }).then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
+    return true;
   }
 
   if (message.type === "LEARNLENS_CAPTURE_STATUS" || message.type === "LEARNLENS_CAPTION_SEGMENT") {
