@@ -173,14 +173,13 @@ export function buildContextWindow(
 ): string {
   if (!Number.isFinite(maxChars) || maxChars <= 0 || !segments.length) return "";
 
-  const lines = segments.map((segment) => ({
-    text: segment.hasTimestamp ? `[${formatTimestamp(segment.startSeconds)}] ${segment.text}` : segment.text
+  const lines = segments.map((segment, index) => ({
+    index,
+    text: segment.hasTimestamp ? \`[\${formatTimestamp(segment.startSeconds)}] \${segment.text}\` : segment.text
   }));
   const fullText = lines.map((line) => line.text).join("\n");
   if (fullText.length <= maxChars) return fullText;
 
-  // Prefer transcript passages that match the learner's question. This avoids
-  // silently dropping relevant material near the end of long lessons.
   const stopWords = new Set([
     "the", "and", "for", "with", "that", "this", "what", "when", "where",
     "which", "who", "why", "how", "does", "did", "are", "was", "were",
@@ -190,45 +189,37 @@ export function buildContextWindow(
   const terms = [...new Set((query.toLowerCase().match(/[a-z0-9]{2,}/g) ?? [])
     .filter((term) => !stopWords.has(term)))];
 
-  const ranked = lines.map((line, index) => {
-    const normalized = line.text.toLowerCase();
-    const score = terms.reduce((total, term) => {
-      const matches = normalized.match(new RegExp(`\\b${term.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\export function buildContextWindow(segments: TranscriptSegment[], maxChars = 12_000): string {
-  if (!Number.isFinite(maxChars) || maxChars <= 0) return "";
-  let output = "";
-  for (const segment of segments) {
-    const line = segment.hasTimestamp ? `[${formatTimestamp(segment.startSeconds)}] ${segment.text}` : segment.text;
-    const separator = output ? "\n" : "";
-    const remaining = maxChars - output.length - separator.length;
-    if (remaining <= 0) break;
-    output += separator + line.slice(0, remaining);
-  }
-  return output;
-}")}\\b`, "g"));
-      return total + (matches?.length ?? 0);
-    }, 0);
-    return { index, text: line.text, score };
+  const ranked = lines.map((line) => {
+    const words = line.text.toLowerCase().match(/[a-z0-9]{2,}/g) ?? [];
+    const score = terms.reduce((total, term) => total + words.filter((word) => word === term).length, 0);
+    return { ...line, score };
   });
-
-  const candidates = terms.length && ranked.some((item) => item.score > 0)
-    ? ranked.sort((a, b) => b.score - a.score || a.index - b.index)
-    : ranked;
-
-  const selected: typeof candidates = [];
+  const hasMatches = terms.length > 0 && ranked.some((item) => item.score > 0);
+  const selected: typeof ranked = [];
   let used = 0;
-  for (const item of candidates) {
-    const cost = item.text.length + (selected.length ? 1 : 0);
-    if (used + cost > maxChars) continue;
-    selected.push(item);
-    used += cost;
-  }
 
-  // If no passage matched the question, sample across the lesson rather than
-  // biasing every generic question toward only the opening minutes.
-  if ((!terms.length || !ranked.some((item) => item.score > 0)) && selected.length > 1) {
-    const step = Math.max(1, Math.floor(ranked.length / selected.length));
-    const sampled = ranked.filter((item, index) => index % step === 0).slice(0, selected.length);
-    if (sampled.length) selected.splice(0, selected.length, ...sampled);
+  if (hasMatches) {
+    for (const item of [...ranked].sort((a, b) => b.score - a.score || a.index - b.index)) {
+      const cost = item.text.length + (selected.length ? 1 : 0);
+      if (used + cost > maxChars) continue;
+      selected.push(item);
+      used += cost;
+    }
+  } else {
+    // For generic questions, sample the entire lesson instead of always using
+    // only its opening section.
+    const targetCount = Math.max(1, Math.floor(maxChars / Math.max(1, Math.ceil(fullText.length / lines.length))));
+    const sampleCount = Math.min(lines.length, targetCount);
+    for (let i = 0; i < sampleCount; i += 1) {
+      const index = sampleCount === 1
+        ? 0
+        : Math.round(i * (lines.length - 1) / (sampleCount - 1));
+      const item = ranked[index];
+      const cost = item.text.length + (selected.length ? 1 : 0);
+      if (used + cost > maxChars) continue;
+      selected.push(item);
+      used += cost;
+    }
   }
 
   return selected
@@ -237,7 +228,6 @@ export function buildContextWindow(
     .join("\n")
     .slice(0, maxChars);
 }
-
 
 function toVttTimestamp(seconds: number): string {
   const milliseconds = Math.max(0, Math.round(seconds * 1000));
