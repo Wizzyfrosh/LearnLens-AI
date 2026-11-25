@@ -246,17 +246,10 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
   }
 });
 
-function configureSidePanelAction(): void {
-  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((error: unknown) => {
-    console.error("LearnLens could not configure toolbar side-panel behavior.", error);
-  });
-}
-
-// Configure at worker startup as well as installation/update. The action
-// listener is a fallback for Chrome states where the behavior was not applied.
-chrome.runtime.onInstalled.addListener(configureSidePanelAction);
-configureSidePanelAction();
-
+// Use one toolbar-click path only. Calling setPanelBehavior as well as
+// registering onClicked can cause Chrome to open the panel through its
+// built-in path instead of dispatching this action event. The action event is
+// also the invocation that grants activeTab for the current YouTube tab.
 chrome.action.onClicked.addListener((tab) => {
   if (tab.id === undefined) return;
   void chrome.sidePanel.open({ tabId: tab.id }).catch((error: unknown) => {
