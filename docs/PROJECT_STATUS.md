@@ -48,7 +48,7 @@
 ## 3. In progress / requires verification
 
 - [x] Verify transcript ingestion and IndexedDB implementation passes CI (typecheck, tests, production build) on commit 6eee3e48e69142a06a80e76c370b4e9a66eea59f.
-- [ ] Inspect generated dist and verify manifest asset paths.
+- [x] Add a post-build smoke check for Manifest V3, service worker, side panel, content script, and side-panel asset paths.
 - [ ] Load dist in Chrome and test extension action/side panel.
 - [ ] Verify active YouTube tab context and SPA navigation.
 - [ ] Verify service worker message lifecycle and suspension/restart.
@@ -85,17 +85,19 @@
 - [x] Skip malformed timed cues with warnings; reject when no valid cues remain.
 - [x] Add preview and provenance label in UI.
 - [x] Add parser tests.
-- [ ] Confirm latest CI run passes on current main.
+- [x] Confirm latest CI run for the preceding documentation commit passes; verify the new package-smoke-check commit separately.
 - [ ] Review parser behavior against representative real VTT/SRT files in Chrome.
 
 Acceptance: valid imports become timestamped/untimestamped segments accurately; invalid input is explained; preview matches parsed content.
 
-### Task 2 — Extension runtime QA
-- [ ] Verify dist/manifest.json, sidepanel.html, assets/background.js, assets/youtube.js.
+### Task 2 — Extension package and runtime QA
+- [x] Add CI validation that dist/manifest.json, side panel, service worker, content script, and referenced side-panel assets exist.
+- [ ] Verify generated filenames in a real build and load dist in Chrome.
 - [ ] Load unpacked in Chrome and inspect chrome://extensions errors.
 - [ ] Test action opens side panel.
 - [ ] Test YouTube watch page, SPA navigation, tab switching, and worker restart.
-- [ ] Review tab activation listener and permission footprint.
+- [x] Fix stale YouTube context when the active tab changes or navigates away; refresh context on active-tab URL/completion updates.
+- [ ] Review tab activation listener and permission footprint in Chrome.
 
 Acceptance: extension installs without errors and detects active YouTube context reliably.
 
@@ -122,7 +124,7 @@ See IMPLEMENTATION_PLAN.md for the detailed phases and exit criteria.
 
 ## 6. Known caveats
 
-1. Latest CI passes typecheck, parser unit tests, and production build for transcript and IndexedDB changes; Chrome runtime behavior remains unverified.
+1. Latest confirmed CI run for commit 19b0cc7 passes. New extension package smoke validation and active-tab context fixes are committed afterward and await their own CI result; Chrome runtime behavior remains unverified.
 2. Current main has no package lockfile; CI currently uses npm install with legacy peer deps.
 3. IndexedDB session storage has not yet been verified in Chrome; CI validates compile/tests/build only.
 4. Saved manual sessions currently restore the most recent manual import; there is not yet a full session history browser.
@@ -151,3 +153,12 @@ At the end of every session update:
 - HACKATHON_BRIEF.md — contest requirements and AI-agent handoff.
 - IMPLEMENTATION_PLAN.md — phased engineering roadmap.
 - PROJECT_STATUS.md — current checkpoint and checklist.
+
+
+## 9. Session update — 2026-11-25
+- Commits: 18244db (extension build smoke script), b6b4c4b (package script), b82d6d4 (CI integration), decec33 (active-tab context synchronization), 34aeaf6 (preserve explicit null context).
+- Tasks completed: CI now checks the built extension manifest and referenced assets; background worker refreshes active YouTube context on tab activation/navigation and clears stale context when leaving a YouTube watch page.
+- Tests: the preceding docs commit CI passed. The newest code commits have not yet had a confirmed CI result at time of this update.
+- Browser/runtime verification: not performed; requires loading the unpacked extension in Chrome.
+- Known blockers: no package lockfile; Firebase project/App Check and real model inference remain unconfigured/unverified.
+- Next exact task: inspect the latest CI run; then load dist in Chrome and execute the runtime QA checklist before adding features.
