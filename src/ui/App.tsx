@@ -23,7 +23,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<number | null>(null);
 
-  useMemo(() => {
+  useEffect(() => {
     if (!chrome?.tabs?.query) return;
     chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
       const tab = tabs[0];
