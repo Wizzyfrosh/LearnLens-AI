@@ -13,7 +13,7 @@ export interface LearningSession {
 }
 
 const DATABASE_NAME = "learnlens-local";
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 const SESSION_STORE = "learningSessions";
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -30,6 +30,12 @@ function openDatabase(): Promise<IDBDatabase> {
         const store = database.createObjectStore(SESSION_STORE, { keyPath: "id" });
         store.createIndex("videoId", "videoId", { unique: false });
         store.createIndex("updatedAt", "updatedAt", { unique: false });
+        store.createIndex("platform", "platform", { unique: false });
+      } else {
+        const store = request.transaction?.objectStore(SESSION_STORE);
+        if (store && !store.indexNames.contains("platform")) {
+          store.createIndex("platform", "platform", { unique: false });
+        }
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -77,10 +83,9 @@ export async function getLatestManualSession(): Promise<LearningSession | null> 
   try {
     return await new Promise<LearningSession | null>((resolve, reject) => {
       const transaction = database.transaction(SESSION_STORE, "readonly");
-      const request = transaction.objectStore(SESSION_STORE).getAll();
+      const request = transaction.objectStore(SESSION_STORE).index("platform").getAll("manual");
       request.onsuccess = () => {
         const sessions = (request.result as LearningSession[])
-          .filter((session) => session.platform === "manual")
           .sort((a, b) => b.updatedAt - a.updatedAt);
         resolve(sessions[0] ?? null);
       };
