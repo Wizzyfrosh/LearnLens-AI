@@ -18,7 +18,7 @@ describe("parseTranscript", () => {
   it("keeps plain text usable when timestamps are absent", () => {
     const result = parseTranscript("A concept\nAnother concept");
     expect(result.map((item) => item.text)).toEqual(["A concept", "Another concept"]);
-    expect(result[0].startSeconds).toBe(0);
+    expect(result[0].startSeconds).toBe(0);\n    expect(result[0].hasTimestamp).toBe(false);\n    expect(buildContextWindow(result)).toBe("A concept\\nAnother concept");
   });
 });
 
