@@ -60,13 +60,13 @@ export function formatTimestamp(seconds: number): string {
 }
 
 export function buildContextWindow(segments: TranscriptSegment[], maxChars = 12000): string {
-  let remaining = maxChars;
-  const selected: string[] = [];
+  let output = "";
   for (const segment of segments) {
-    if (remaining <= 0) break;
     const line = `[${formatTimestamp(segment.startSeconds)}] ${segment.text}`;
-    selected.push(line.slice(0, remaining));
-    remaining -= line.length;
+    const separator = output ? "\n" : "";
+    const remaining = maxChars - output.length - separator.length;
+    if (remaining <= 0) break;
+    output += separator + line.slice(0, remaining);
   }
-  return selected.join("\n");
+  return output;
 }
