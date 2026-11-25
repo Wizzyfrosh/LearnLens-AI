@@ -220,7 +220,7 @@ export default function App() {
       const allHaveTimestamps = capturedSegments.every((segment) => segment.hasTimestamp);
       const transcriptText = allHaveTimestamps
         ? serializeSegmentsAsVtt(capturedSegments)
-        : capturedSegments.map((segment) => segment.text).join("\\n");
+        : capturedSegments.map((segment) => segment.text).join("\n");
       void saveLearningSession({
         id: video.videoId,
         videoId: video.videoId,
