@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square } from "lucide-react";
-import { askLearnLens } from "../services/firebase-ai";
+import { askLearnLens, isAudioTranscriptionConfigured, transcribeAudioChunk } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport, serializeSegmentsAsVtt } from "../services/transcript";
 import { deleteLearningSession, getLatestManualSession, getLatestSessionForVideo, saveLearningSession } from "../services/session-store";
 import type { InferencePreference, TranscriptSegment, VideoContext } from "../shared/types";
-import type { CaptionCaptureStatus, ExtensionMessage } from "../shared/messages";
+import type { AudioCaptureStatus, CaptionCaptureStatus, ExtensionMessage } from "../shared/messages";
 
 const emptyContext: VideoContext = {
   videoId: "",
@@ -29,6 +29,11 @@ export default function App() {
   const [capturedSegments, setCapturedSegments] = useState<TranscriptSegment[]>([]);
   const [captureStatus, setCaptureStatus] = useState<CaptionCaptureStatus>("idle");
   const [captureMessage, setCaptureMessage] = useState("Open a YouTube lesson and turn on CC to capture its captions automatically.");
+  const [audioConsent, setAudioConsent] = useState(false);
+  const [audioCaptureStatus, setAudioCaptureStatus] = useState<AudioCaptureStatus>("idle");
+  const [audioCaptureMessage, setAudioCaptureMessage] = useState("Audio transcription is optional and sends lesson audio to Firebase for transcription.");
+  const [audioCaptureTabId, setAudioCaptureTabId] = useState<number | null>(null);
+  const audioQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [sessionId, setSessionId] = useState("");
   const [savedSession, setSavedSession] = useState(false);
   const [storageNotice, setStorageNotice] = useState("");
@@ -107,6 +112,32 @@ export default function App() {
       } else if (message.type === "LEARNLENS_CAPTURE_STATUS") {
         setCaptureStatus(message.payload.status);
         setCaptureMessage(message.payload.message);
+      } else if (message.type === "LEARNLENS_AUDIO_CAPTURE_STATUS") {
+        setAudioCaptureStatus(message.payload.status);
+        setAudioCaptureMessage(message.payload.message);
+        if (message.payload.status === "idle" || message.payload.status === "error") setAudioCaptureTabId(null);
+      } else if (message.type === "LEARNLENS_AUDIO_CHUNK") {
+        audioQueueRef.current = audioQueueRef.current.then(async () => {
+          const text = await transcribeAudioChunk(message.payload.dataBase64, message.payload.mimeType, message.payload.sequence);
+          if (!text) return;
+          const segment: TranscriptSegment = {
+            id: `audio-${message.payload.videoId}-${message.payload.sequence}`,
+            startSeconds: 0,
+            endSeconds: 0,
+            hasTimestamp: false,
+            text,
+            source: "audio-transcription"
+          };
+          setCapturedSegments((current) => current.some((item) => item.id === segment.id) ? current : [...current, segment]);
+          setTranscriptSource("Audio transcription");
+          setRawTranscript("");
+        }).catch((cause: unknown) => {
+          setAudioCaptureStatus("error");
+          setAudioCaptureMessage(cause instanceof Error ? cause.message : "Audio transcription failed.");
+          if (audioCaptureTabId !== null) {
+            chrome.runtime.sendMessage({ type: "LEARNLENS_STOP_AUDIO_CAPTURE", tabId: audioCaptureTabId } satisfies ExtensionMessage).catch(() => undefined);
+          }
+        });
       } else if (message.type === "LEARNLENS_CAPTION_SEGMENT") {
         setCapturedSegments((current) => {
           if (current.some((segment) => segment.id === message.payload.id)) return current;
@@ -162,7 +193,10 @@ export default function App() {
   useEffect(() => {
     if (!isLiveTranscript || !video.videoId) return;
     const timer = window.setTimeout(() => {
-      const transcriptText = serializeSegmentsAsVtt(capturedSegments);
+      const allHaveTimestamps = capturedSegments.every((segment) => segment.hasTimestamp);
+      const transcriptText = allHaveTimestamps
+        ? serializeSegmentsAsVtt(capturedSegments)
+        : capturedSegments.map((segment) => segment.text).join("\\n");
       void saveLearningSession({
         id: video.videoId,
         videoId: video.videoId,
@@ -170,8 +204,8 @@ export default function App() {
         url: video.url,
         platform: "youtube",
         transcriptText,
-        transcriptFormat: "vtt",
-        transcriptSource: "YouTube live captions",
+        transcriptFormat: allHaveTimestamps ? "vtt" : "plain-text",
+        transcriptSource: capturedSegments.some((segment) => segment.source === "audio-transcription") ? "Audio transcription" : "YouTube live captions",
         updatedAt: Date.now()
       }).then(() => {
         setSessionId(video.videoId);
@@ -217,6 +251,60 @@ export default function App() {
     }
     setCaptureStatus("idle");
     setCaptureMessage("Lesson capture stopped. Captured captions remain saved on this device.");
+  }
+
+
+  async function startAudioTranscription() {
+    if (!audioConsent) {
+      setAudioCaptureMessage("Please confirm that you understand lesson audio will be sent to Firebase for transcription.");
+      return;
+    }
+    if (!isAudioTranscriptionConfigured()) {
+      setAudioCaptureStatus("error");
+      setAudioCaptureMessage("Audio transcription is not configured in this build. Firebase settings and App Check debug mode must be configured before audio can be uploaded.");
+      return;
+    }
+    if (!video.videoId) {
+      setAudioCaptureStatus("error");
+      setAudioCaptureMessage("Open a supported YouTube lesson before starting audio transcription.");
+      return;
+    }
+
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (tab?.id === undefined) throw new Error("Could not identify the active lesson tab.");
+      await stopLearning();
+      const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
+      setCapturedSegments([]);
+      setRawTranscript("");
+      setSavedSession(false);
+      setStorageNotice("");
+      setAudioCaptureTabId(tab.id);
+      setAudioCaptureStatus("capturing");
+      setAudioCaptureMessage("Connecting to the active lesson audio. The video should continue playing normally.");
+      await chrome.runtime.sendMessage({
+        type: "LEARNLENS_START_AUDIO_CAPTURE",
+        tabId: tab.id,
+        videoId: video.videoId,
+        streamId
+      } satisfies ExtensionMessage);
+    } catch (cause) {
+      setAudioCaptureStatus("error");
+      setAudioCaptureMessage(cause instanceof Error ? cause.message : "Could not start audio transcription.");
+      setAudioCaptureTabId(null);
+    }
+  }
+
+  async function stopAudioTranscription() {
+    if (audioCaptureTabId !== null) {
+      await chrome.runtime.sendMessage({
+        type: "LEARNLENS_STOP_AUDIO_CAPTURE",
+        tabId: audioCaptureTabId
+      } satisfies ExtensionMessage).catch(() => undefined);
+    }
+    setAudioCaptureStatus("idle");
+    setAudioCaptureMessage("Audio transcription stopped. Raw audio chunks are not retained.");
+    setAudioCaptureTabId(null);
   }
 
   async function submitQuestion(event: FormEvent) {
@@ -336,6 +424,32 @@ export default function App() {
           <small className="capture-privacy">This first automatic path reads captions rendered by YouTube. Turn on CC in the video player. Captured text is saved locally; AI questions follow your selected processing preference.</small>
         </div>
 
+
+        <div className="capture-card audio-capture-card">
+          <div className="capture-card-heading">
+            <div>
+              <strong>Audio transcription</strong>
+              <small>{audioCaptureStatus === "capturing" ? "Transcribing lesson audio" : audioCaptureStatus === "error" ? "Audio transcription unavailable" : "Optional fallback when captions are unavailable"}</small>
+            </div>
+            <span className={"capture-indicator " + (audioCaptureStatus === "capturing" ? "active" : "")} />
+          </div>
+          <p>{audioCaptureMessage}</p>
+          <label className="helper-text audio-consent">
+            <input type="checkbox" checked={audioConsent} onChange={(event) => setAudioConsent(event.target.checked)} />
+            I agree to send this lesson's tab audio to Firebase AI Logic for transcription. Raw audio chunks are processed temporarily and are not saved as files.
+          </label>
+          {audioCaptureStatus === "capturing" ? (
+            <button className="capture-button stop" type="button" onClick={() => void stopAudioTranscription()}>
+              <Square size={14} /> Stop audio transcription
+            </button>
+          ) : (
+            <button className="capture-button" type="button" onClick={() => void startAudioTranscription()} disabled={!video.videoId || !audioConsent}>
+              <Play size={14} /> Start audio transcription
+            </button>
+          )}
+          {!isAudioTranscriptionConfigured() && <small className="helper-text">Setup required: this GitHub build needs Firebase web configuration and App Check debug mode before it can upload audio.</small>}
+        </div>
+
         {isLiveTranscript && (
           <div className="transcript-status">
             <div className="inline-success"><BookOpen size={14} />{segmentCount} live caption segments · saved automatically on this device</div>
@@ -423,7 +537,7 @@ export default function App() {
         {answer && <article className="answer-card"><div className="answer-meta">LEARNLENS RESPONSE <span>{source === "ON_DEVICE" ? "ON DEVICE" : source === "IN_CLOUD" ? "CLOUD" : "SOURCE UNKNOWN"}</span></div><p>{answer}</p></article>}
       </section>
 
-      <footer>Captured captions and saved lessons stay in this browser. Audio-only transcription is not enabled yet; manual transcript import remains an optional fallback.</footer>
+      <footer>Captured captions and saved lessons stay in this browser. Audio transcription sends lesson audio to Firebase only after separate learner consent and App Check configuration.</footer>
     </main>
   );
 }
