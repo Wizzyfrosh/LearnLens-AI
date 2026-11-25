@@ -72,6 +72,25 @@ export async function getLatestSessionForVideo(videoId: string): Promise<Learnin
   }
 }
 
+export async function getLatestManualSession(): Promise<LearningSession | null> {
+  const database = await openDatabase();
+  try {
+    return await new Promise<LearningSession | null>((resolve, reject) => {
+      const transaction = database.transaction(SESSION_STORE, "readonly");
+      const request = transaction.objectStore(SESSION_STORE).getAll();
+      request.onsuccess = () => {
+        const sessions = (request.result as LearningSession[])
+          .filter((session) => session.platform === "manual")
+          .sort((a, b) => b.updatedAt - a.updatedAt);
+        resolve(sessions[0] ?? null);
+      };
+      request.onerror = () => reject(request.error ?? new Error("Could not load the saved lesson."));
+    });
+  } finally {
+    database.close();
+  }
+}
+
 export async function deleteLearningSession(id: string): Promise<void> {
   const database = await openDatabase();
   try {
