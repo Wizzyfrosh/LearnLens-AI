@@ -87,8 +87,8 @@ export async function transcribeAudioChunk(
   ].join(" ");
 
   const result = await model.generateContent([
-    { text: prompt },
-    { inlineData: { mimeType, data: dataBase64 } }
+    { type: "text", text: prompt },
+    { type: "inlineData", inlineData: { mimeType, data: dataBase64 } }
   ]);
   return result.response.text().trim();
 }
