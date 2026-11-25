@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles } from "lucide-react";
 import { askLearnLens } from "../services/firebase-ai";
 import { parseTranscript } from "../services/transcript";
@@ -36,7 +37,7 @@ export default function App() {
   const segments: TranscriptSegment[] = useMemo(() => parseTranscript(rawTranscript), [rawTranscript]);
   const segmentCount = segments.length;
 
-  async function submitQuestion(event: React.FormEvent) {
+  async function submitQuestion(event: FormEvent) {
     event.preventDefault();
     if (!question.trim()) return;
     setBusy(true);
