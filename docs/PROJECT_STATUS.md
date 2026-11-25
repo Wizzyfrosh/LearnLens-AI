@@ -12,12 +12,12 @@
 **Vertical slice:** YouTube SPA detection → user-started visible-caption capture → local transcript → Firebase AI Logic tutor → grounded answer.
 
 ### Latest verified CI
-- Latest successful run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45648407472
-- Commit: e4af940a993cade705faaa5fb6899957b2bac348
+- Latest successful run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45648672851
+- Commit: fc635720a8b6888ffdf6d5dc9faa468d1069ac29
 - Result: SUCCESS.
 - Verified steps: dependency installation, TypeScript typecheck, unit tests, production build, Chrome extension package smoke check, and artifact upload.
 - The uploaded artifact is named `learnlens-chrome-extension` and is retained for 14 days.
-- This green run includes YouTube SPA context parsing, visible-caption capture messages, WebVTT serialization, the new side-panel workflow, and the generic-title fallback correction.
+- This green run includes YouTube SPA context parsing, visible-caption capture messages, WebVTT serialization, the new side-panel workflow, generic-title fallback correction, and accurate waiting/capturing status transitions.
 - Chrome runtime behavior is not verified by CI and still requires manual testing in desktop Chrome.
 
 ## 2. Completed / code present
