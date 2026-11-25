@@ -63,9 +63,7 @@ function emitCaptureStatus(status: "idle" | "waiting_for_captions" | "capturing"
 
 function disconnectCaptionObservers(): void {
   captionObserver?.disconnect();
-  captionDiscoveryObserver?.disconnect();
   captionObserver = null;
-  captionDiscoveryObserver = null;
   if (captionDebounceTimer !== null) {
     window.clearTimeout(captionDebounceTimer);
     captionDebounceTimer = null;
