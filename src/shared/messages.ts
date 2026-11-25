@@ -29,7 +29,7 @@ export type ExtensionMessage =
   | { type: "LEARNLENS_ACTIVE_CONTEXT_CHANGED"; payload: VideoContext | null }
   | { type: "LEARNLENS_START_CAPTION_CAPTURE"; tabId: number }
   | { type: "LEARNLENS_STOP_CAPTION_CAPTURE"; tabId: number }
-  | { type: "LEARNLENS_START_AUDIO_CAPTURE"; tabId: number; videoId: string; streamId: string }
+  | { type: "LEARNLENS_START_AUDIO_CAPTURE"; tabId: number; videoId: string }
   | { type: "LEARNLENS_STOP_AUDIO_CAPTURE"; tabId: number }
   | { type: "LEARNLENS_OFFSCREEN_START_AUDIO_CAPTURE"; tabId: number; videoId: string; streamId: string }
   | { type: "LEARNLENS_OFFSCREEN_STOP_AUDIO_CAPTURE" }
