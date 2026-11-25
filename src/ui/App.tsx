@@ -243,29 +243,38 @@ export default function App() {
   }, [capturedSegments, isLiveTranscript, video.videoId, video.title, video.url]);
 
   async function startLearning() {
-    if (audioCaptureTabIdRef.current !== null) await stopAudioTranscription();
-    if (!video.videoId) {
-      setCaptureStatus("unsupported");
-      setCaptureMessage("Open a YouTube watch page before starting lesson capture.");
-      return;
-    }
-    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (tab?.id === undefined) {
+    try {
+      if (audioCaptureTabIdRef.current !== null) await stopAudioTranscription();
+      if (!video.videoId) {
+        setCaptureStatus("unsupported");
+        setCaptureMessage("Open a YouTube watch page before starting lesson capture.");
+        return;
+      }
+
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (tab?.id === undefined) {
+        throw new Error("LearnLens could not identify the active browser tab.");
+      }
+
+      setCapturedSegments([]);
+      setRawTranscript("");
+      setSavedSession(false);
+      setStorageNotice("");
+      setCaptureStatus("waiting_for_captions");
+      setCaptureMessage("Connecting to the YouTube player and checking its existing captions.");
+
+      await chrome.runtime.sendMessage({
+        type: "LEARNLENS_START_CAPTION_CAPTURE",
+        tabId: tab.id
+      } satisfies ExtensionMessage);
+    } catch (cause) {
       setCaptureStatus("error");
-      setCaptureMessage("LearnLens could not identify the active browser tab.");
-      return;
+      setCaptureMessage(
+        cause instanceof Error
+          ? "Could not start lesson capture: " + cause.message
+          : "Could not start lesson capture. Check the active YouTube tab and try again."
+      );
     }
-    setCapturedSegments([]);
-    setRawTranscript("");
-    setSavedSession(false);
-    setStorageNotice("");
-    setCaptureStatus("waiting_for_captions");
-    setCaptureMessage("Connecting to the YouTube player. Turn on CC if captions are not appearing.");
-    chrome.runtime.sendMessage({ type: "LEARNLENS_START_CAPTION_CAPTURE", tabId: tab.id } satisfies ExtensionMessage)
-      .catch(() => {
-        setCaptureStatus("error");
-        setCaptureMessage("Could not start lesson capture. Reload the YouTube page and try again.");
-      });
   }
 
   async function stopLearning() {
