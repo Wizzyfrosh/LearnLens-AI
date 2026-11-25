@@ -1,14 +1,14 @@
 import type { ExtensionMessage } from "../shared/messages";
 
+const CHUNK_SECONDS = 4;
 const MAX_AUDIO_CHUNK_BYTES = 1_500_000;
-const CHUNK_INTERVAL_MS = 4_000;
 
 let mediaStream: MediaStream | null = null;
-let mediaRecorder: MediaRecorder | null = null;
 let audioContext: AudioContext | null = null;
-let playbackSource: MediaStreamAudioSourceNode | null = null;
-let captureStartedAt = 0;
+let sourceNode: MediaStreamAudioSourceNode | null = null;
+let chunkerNode: AudioWorkletNode | null = null;
 let chunkSequence = 0;
+let captureStartedAt = 0;
 let activeVideoId = "";
 
 function send(message: ExtensionMessage): void {
@@ -19,6 +19,38 @@ function report(status: "idle" | "capturing" | "error", message: string): void {
   send({ type: "LEARNLENS_AUDIO_CAPTURE_STATUS", payload: { status, message } });
 }
 
+function encodeWav(samples: Float32Array, sampleRate: number): Blob {
+  const bytesPerSample = 2;
+  const dataLength = samples.length * bytesPerSample;
+  const buffer = new ArrayBuffer(44 + dataLength);
+  const view = new DataView(buffer);
+  const writeText = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index += 1) view.setUint8(offset + index, value.charCodeAt(index));
+  };
+
+  writeText(0, "RIFF");
+  view.setUint32(4, 36 + dataLength, true);
+  writeText(8, "WAVE");
+  writeText(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * bytesPerSample, true);
+  view.setUint16(32, bytesPerSample, true);
+  view.setUint16(34, 16, true);
+  writeText(36, "data");
+  view.setUint32(40, dataLength, true);
+
+  let offset = 44;
+  for (const sample of samples) {
+    const clamped = Math.max(-1, Math.min(1, sample));
+    view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+    offset += bytesPerSample;
+  }
+  return new Blob([buffer], { type: "audio/wav" });
+}
+
 function toBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -26,10 +58,7 @@ function toBase64(blob: Blob): Promise<string> {
     reader.onloadend = () => {
       const result = typeof reader.result === "string" ? reader.result : "";
       const comma = result.indexOf(",");
-      if (comma < 0) {
-        reject(new Error("Captured audio could not be encoded."));
-        return;
-      }
+      if (comma < 0) return reject(new Error("Captured audio could not be encoded."));
       resolve(result.slice(comma + 1));
     };
     reader.readAsDataURL(blob);
@@ -37,32 +66,24 @@ function toBase64(blob: Blob): Promise<string> {
 }
 
 async function stopCapture(): Promise<void> {
-  const recorder = mediaRecorder;
-  mediaRecorder = null;
-  if (recorder && recorder.state !== "inactive") {
-    await new Promise<void>((resolve) => {
-      recorder.addEventListener("stop", () => resolve(), { once: true });
-      recorder.stop();
-    });
-  }
-
+  activeVideoId = "";
+  chunkerNode?.disconnect();
+  sourceNode?.disconnect();
+  chunkerNode = null;
+  sourceNode = null;
   mediaStream?.getTracks().forEach((track) => track.stop());
   mediaStream = null;
-  playbackSource?.disconnect();
-  playbackSource = null;
   if (audioContext && audioContext.state !== "closed") {
     await audioContext.close().catch(() => undefined);
   }
   audioContext = null;
-  captureStartedAt = 0;
   chunkSequence = 0;
-  activeVideoId = "";
+  captureStartedAt = 0;
   report("idle", "Audio capture stopped. Raw audio chunks are not retained by LearnLens.");
 }
 
 async function startCapture(streamId: string, videoId: string): Promise<void> {
   await stopCapture();
-
   if (!streamId || !videoId) {
     report("error", "Audio capture could not start because the lesson or stream identifier is missing.");
     return;
@@ -80,66 +101,56 @@ async function startCapture(streamId: string, videoId: string): Promise<void> {
     } as unknown as MediaStreamConstraints;
 
     mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-    if (!mediaStream.getAudioTracks().length) {
-      throw new Error("Chrome did not provide an audio track for this tab.");
-    }
+    if (!mediaStream.getAudioTracks().length) throw new Error("Chrome did not provide an audio track for this tab.");
 
     audioContext = new AudioContext();
-    playbackSource = audioContext.createMediaStreamSource(mediaStream);
-    playbackSource.connect(audioContext.destination);
+    await audioContext.audioWorklet.addModule(chrome.runtime.getURL("audio-chunk-processor.js"));
+    sourceNode = audioContext.createMediaStreamSource(mediaStream);
+    chunkerNode = new AudioWorkletNode(audioContext, "learnlens-audio-chunker", {
+      numberOfInputs: 1,
+      numberOfOutputs: 1,
+      outputChannelCount: [2]
+    });
+    sourceNode.connect(chunkerNode);
+    chunkerNode.connect(audioContext.destination);
     await audioContext.resume();
-
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-      ? "audio/webm;codecs=opus"
-      : MediaRecorder.isTypeSupported("audio/webm")
-        ? "audio/webm"
-        : "";
-
-    if (!mimeType) {
-      throw new Error("This Chrome version does not support WebM audio recording.");
-    }
 
     activeVideoId = videoId;
     captureStartedAt = performance.now();
     chunkSequence = 0;
-    mediaRecorder = new MediaRecorder(mediaStream, { mimeType, audioBitsPerSecond: 48_000 });
 
-    mediaRecorder.addEventListener("dataavailable", (event) => {
-      if (!event.data.size || activeVideoId !== videoId) return;
-      if (event.data.size > MAX_AUDIO_CHUNK_BYTES) {
+    chunkerNode.port.onmessage = (event: MessageEvent<{ samples: ArrayBuffer; sampleRate: number }>) => {
+      if (!activeVideoId || activeVideoId !== videoId) return;
+      const samples = new Float32Array(event.data.samples);
+      const wav = encodeWav(samples, event.data.sampleRate);
+      if (wav.size > MAX_AUDIO_CHUNK_BYTES) {
         report("error", "An audio chunk exceeded the safe processing limit. Audio capture has been stopped.");
         void stopCapture();
         return;
       }
 
       const sequence = ++chunkSequence;
-      const elapsedSeconds = Math.max(0, (performance.now() - captureStartedAt) / 1000);
-      void toBase64(event.data).then((dataBase64) => {
+      const captureElapsedSeconds = Math.max(0, (performance.now() - captureStartedAt) / 1000 - CHUNK_SECONDS);
+      void toBase64(wav).then((dataBase64) => {
         if (activeVideoId !== videoId) return;
         send({
           type: "LEARNLENS_AUDIO_CHUNK",
           payload: {
             videoId,
             sequence,
-            mimeType: "audio/webm",
+            mimeType: "audio/wav",
             dataBase64,
-            captureElapsedSeconds: Math.max(0, elapsedSeconds - CHUNK_INTERVAL_MS / 1000),
-            durationSeconds: CHUNK_INTERVAL_MS / 1000
+            captureElapsedSeconds,
+            durationSeconds: CHUNK_SECONDS
           }
         });
       }).catch((error: unknown) => {
         report("error", error instanceof Error ? error.message : "Could not prepare an audio chunk.");
         void stopCapture();
       });
-    });
+    };
 
-    mediaRecorder.addEventListener("error", () => {
-      report("error", "Chrome encountered an audio recording error.");
-      void stopCapture();
-    });
-
-    mediaRecorder.start(CHUNK_INTERVAL_MS);
-    report("capturing", "Capturing lesson audio. Audio chunks are processed temporarily and are not saved as files.");
+    report("capturing", "Capturing lesson audio in four-second PCM chunks. Playback continues normally; raw audio is not saved as files.");
   } catch (error) {
     await stopCapture();
     report("error", error instanceof Error ? error.message : "Could not capture this tab's audio.");
