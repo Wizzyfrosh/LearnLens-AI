@@ -19,7 +19,7 @@ Do not add learning artifacts until transcript ingestion and AI grounding are re
 | Lesson capture | User-started visible caption capture | First implementation in code; Chrome QA pending |
 | Audio transcription | Permissioned tab-audio capture and speech transcription | Not implemented; separate cloud-consent and hybrid-policy design required |
 | Platform adapters | YouTube/TikTok/Facebook capability adapters | Not formalized |
-| Transcript engine | VTT/SRT/TXT parsing, validation, provenance, context | Validation and preview implemented; awaiting CI/runtime verification |
+| Transcript engine | Parsing, visible-caption capture, validation, provenance, context | Parser and live caption ingestion implemented; current CI/Chrome QA pending |
 | AI engine | Firebase AI Logic, mode policy, prompt, source metadata | Adapter and SDK source mapping implemented; CI green on earlier commit |
 | UI | Side panel and tutor interaction | Initial import/preview/tutor UI |
 | Storage | IndexedDB local learning sessions; optional Firestore sync | Initial local save/restore/delete implemented; Chrome QA and integration tests pending |
@@ -49,6 +49,7 @@ Exit: reproducible install; typecheck, tests, build pass on current main.
 - [ ] Verify action opens side panel.
 - [x] Synchronize active tab context changes to the open side panel; verify active tab identity in background before accepting content-script context.
 - [ ] Verify active YouTube tab and SPA navigation in Chrome.
+- [ ] Verify same-tab route changes from YouTube home/search/watch and delayed title rendering.
 - [ ] Verify message lifecycle and worker suspension/restart in Chrome.
 - [ ] Remove or justify tab activation listener and permissions.
 - [ ] Add stale-request handling and robust UI states.
@@ -71,15 +72,17 @@ Exit: current main passes CI and extension installs/detects YouTube context reli
 
 Exit: real learner question gets grounded answer; local/cloud paths tested and honestly labeled.
 
-### Phase 3 — YouTube caption acquisition
-- [ ] Validate permitted caption acquisition path.
-- [ ] Keep manual import fallback.
-- [ ] Add capability detection and no-caption messaging.
-- [ ] Preserve language/source/timestamp provenance.
-- [ ] Test auto-generated captions, unavailable captions, login/region restrictions, and navigation.
-- [ ] No hidden/private endpoint scraping.
+### Phase 3 — Audio-based transcription (after visible-caption QA)
+- [ ] Evaluate explicit chrome.tabCapture audio capture after a learner gesture.
+- [ ] Preserve normal video playback while capturing audio; use an offscreen document only when required by Chrome's capture lifecycle.
+- [ ] Design short, independently decodable audio chunks with bounded size and accurate start offsets.
+- [ ] Add a separate explicit cloud-audio-consent control; do not infer consent from the general tutor inference preference.
+- [ ] Transcribe only with a documented Firebase AI Logic audio-capable model and App Check configured.
+- [ ] Do not use Firebase AI Logic Live API as an on-device/hybrid transcription solution; current Live API is Preview and does not support hybrid/on-device inference.
+- [ ] Test pause, seek, buffering, tab switch, capture stop, network failure, duplicate chunks, and model errors.
+- [ ] Persist transcript segments locally; discard raw audio chunks after successful transcription unless the learner explicitly chooses otherwise.
 
-Exit: automatic transcript works on a documented tested subset.
+Exit: audio transcription works for a defined browser/model/configuration, with explicit cloud consent and honest source labels.
 
 ### Phase 4 — Local learning sessions, notes, and bookmarks
 - [x] Define versioned IndexedDB schema and indexes for lesson sessions.
