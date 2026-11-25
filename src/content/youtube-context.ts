@@ -40,3 +40,7 @@ export function readYouTubeVideoContext(
 export function normalizeVisibleCaptionText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
+
+export function readVisibleCaptionText(segmentTexts: readonly string[], containerText: string): string {
+  return normalizeVisibleCaptionText(segmentTexts.join(" ") || containerText);
+}
