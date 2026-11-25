@@ -22,11 +22,5 @@ function publishContext() {
 }
 
 publishContext();
-let lastHref = window.location.href;
-new MutationObserver(() => {
-  if (window.location.href !== lastHref) {
-    lastHref = window.location.href;
-    publishContext();
-  }
-}).observe(document.documentElement, { childList: true, subtree: true });
-
+window.addEventListener("yt-navigate-finish", publishContext);
+window.addEventListener("popstate", publishContext);
