@@ -7,6 +7,7 @@ describe("parseTranscript", () => {
     expect(result).toHaveLength(2);
     expect(result[0]).toMatchObject({ startSeconds: 2, endSeconds: 4.5, text: "First concept" });
     expect(result[1].startSeconds).toBe(5);
+    expect(result[0].hasTimestamp).toBe(true);
   });
 
   it("parses VTT cues and strips markup", () => {
@@ -15,10 +16,12 @@ describe("parseTranscript", () => {
     expect(result[0]).toMatchObject({ startSeconds: 62, text: "Hello world" });
   });
 
-  it("keeps plain text usable when timestamps are absent", () => {
+  it("keeps plain text usable without inventing timestamps", () => {
     const result = parseTranscript("A concept\nAnother concept");
     expect(result.map((item) => item.text)).toEqual(["A concept", "Another concept"]);
-    expect(result[0].startSeconds).toBe(0);\n    expect(result[0].hasTimestamp).toBe(false);\n    expect(buildContextWindow(result)).toBe("A concept\\nAnother concept");
+    expect(result[0].startSeconds).toBe(0);
+    expect(result[0].hasTimestamp).toBe(false);
+    expect(buildContextWindow(result)).toBe("A concept\nAnother concept");
   });
 });
 
@@ -27,7 +30,7 @@ describe("transcript context helpers", () => {
     expect(formatTimestamp(125)).toBe("02:05");
   });
 
-  it("limits context length", () => {
+  it("limits context length including separators", () => {
     const segments = parseTranscript("00:00:01.000 --> 00:00:02.000\nAlpha\n\n00:00:03.000 --> 00:00:04.000\nBeta");
     expect(buildContextWindow(segments, 15).length).toBeLessThanOrEqual(15);
   });
