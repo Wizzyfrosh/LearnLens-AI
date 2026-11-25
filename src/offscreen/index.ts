@@ -34,7 +34,7 @@ function toBase64(blob: Blob): Promise<string> {
   });
 }
 
-async function stopCapture(): Promise<void> {
+async function stopCapture(reportIdle = true): Promise<void> {
   activeVideoId = "";
   chunkerNode?.disconnect();
   sourceNode?.disconnect();
@@ -48,11 +48,11 @@ async function stopCapture(): Promise<void> {
   audioContext = null;
   chunkSequence = 0;
   captureStartedAt = 0;
-  report("idle", "Audio capture stopped. Raw audio chunks are not retained by LearnLens.");
+  if (reportIdle) report("idle", "Audio capture stopped. Raw audio chunks are not retained by LearnLens.");
 }
 
 async function startCapture(streamId: string, videoId: string): Promise<void> {
-  await stopCapture();
+  await stopCapture(false);
   if (!streamId || !videoId) {
     report("error", "Audio capture could not start because the lesson or stream identifier is missing.");
     return;
