@@ -1,12 +1,16 @@
 import type { TranscriptSegment } from "../shared/types";
 import type { ExtensionMessage } from "../shared/messages";
 import { normalizeVisibleCaptionText, readYouTubeVideoContext } from "./youtube-context";
+(() => {
+  const isolatedWindow = window as Window & { __learnLensYouTubeContentScriptReady?: boolean };
+  if (isolatedWindow.__learnLensYouTubeContentScriptReady) return;
+  isolatedWindow.__learnLensYouTubeContentScriptReady = true;
+
 
 let lastContextKey = "__initial__";
 let refreshTimers: number[] = [];
 let isCaptionCaptureActive = false;
 let captionObserver: MutationObserver | null = null;
-let captionDiscoveryObserver: MutationObserver | null = null;
 let captionDebounceTimer: number | null = null;
 let lastCaptionText = "";
 let lastCaptionAt = -Infinity;
@@ -70,11 +74,11 @@ function disconnectCaptionObservers(): void {
 
 function publishVisibleCaption(): void {
   if (!isCaptionCaptureActive) return;
-  const text = normalizeVisibleCaptionText(
-    [...document.querySelectorAll(".ytp-caption-segment")]
-      .map((element) => element.textContent ?? "")
-      .join(" ")
-  );
+  const captionSegments = [...document.querySelectorAll(".ytp-caption-segment")]
+    .map((element) => element.textContent ?? "")
+    .join(" ");
+  const captionContainerText = document.querySelector(".ytp-caption-window-container")?.textContent ?? "";
+  const text = normalizeVisibleCaptionText(captionSegments || captionContainerText);
   if (!text) return;
 
   const video = document.querySelector("video");
@@ -114,20 +118,27 @@ function scheduleCaptionRead(): void {
 }
 
 function attachCaptionObserver(): boolean {
-  const container = document.querySelector(".ytp-caption-window-container");
-  if (!container) return false;
+  // Observe the stable player root, not just the current caption container.
+  // YouTube can create or replace its caption container after CC is enabled.
+  const observationRoot = document.querySelector("#movie_player")
+    ?? document.querySelector(".html5-video-player")
+    ?? document.documentElement
+    ?? document;
+  if (!observationRoot) return false;
 
-  captionDiscoveryObserver?.disconnect();
-  captionDiscoveryObserver = null;
   captionObserver?.disconnect();
   captionObserver = new MutationObserver(scheduleCaptionRead);
-  captionObserver.observe(container, {
+  captionObserver.observe(observationRoot, {
     childList: true,
     subtree: true,
     characterData: true
   });
 
-  emitCaptureStatus("waiting_for_captions", "Listening for rendered captions. Turn CC on and keep the lesson playing.");
+  emitCaptureStatus(
+    "waiting_for_captions",
+    "Checking the YouTube player for captions. Captions already enabled will be captured automatically."
+  );
+  // Read immediately as existing captions may not mutate after observer setup.
   scheduleCaptionRead();
   return true;
 }
@@ -147,13 +158,11 @@ function startCaptionCapture(): void {
   captionSequence = 0;
   hasCapturedCaption = false;
 
-  if (attachCaptionObserver()) return;
-
-  emitCaptureStatus("waiting_for_captions", "Turn on CC in the YouTube player. LearnLens is waiting for rendered captions.");
-  captionDiscoveryObserver = new MutationObserver(() => {
-    if (isCaptionCaptureActive) attachCaptionObserver();
-  });
-  captionDiscoveryObserver.observe(document.documentElement, { childList: true, subtree: true });
+  if (!attachCaptionObserver()) {
+    isCaptionCaptureActive = false;
+    captureVideoId = "";
+    emitCaptureStatus("error", "LearnLens could not attach to the YouTube player.");
+  }
 }
 
 function stopCaptionCapture(message = "Lesson capture stopped."): void {
@@ -188,3 +197,5 @@ if (titleElement) {
 }
 
 scheduleContextRefresh();
+
+})();
