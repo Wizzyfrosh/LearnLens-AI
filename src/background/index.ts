@@ -5,6 +5,8 @@ let activeContext: VideoContext | null = null;
 let contextSyncVersion = 0;
 let publishQueue: Promise<void> = Promise.resolve();
 let captionCaptureTabId: number | null = null;
+let audioCaptureTabId: number | null = null;
+let audioCaptureVideoId = "";
 
 function videoIdFromUrl(value?: string): string | null {
   if (!value) return null;
@@ -93,6 +95,29 @@ async function startCaptionCapture(tabId: number): Promise<void> {
     captionCaptureTabId = null;
     broadcast({ type: "LEARNLENS_CAPTURE_STATUS", payload: { status: "error", message: "LearnLens could not connect to this YouTube page. Reload the page and try again." } });
   }
+}
+
+
+async function stopAudioCapture(tabId: number, message: string): Promise<void> {
+  if (audioCaptureTabId !== tabId) return;
+  audioCaptureTabId = null;
+  audioCaptureVideoId = "";
+  try { await chrome.runtime.sendMessage({ type: "LEARNLENS_OFFSCREEN_STOP_AUDIO_CAPTURE" } satisfies ExtensionMessage); } catch {}
+  broadcast({ type: "LEARNLENS_AUDIO_CAPTURE_STATUS", payload: { status: "idle", message } });
+}
+async function startAudioCapture(tabId: number, videoId: string, streamId: string): Promise<void> {
+  const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (activeTab?.id !== tabId) throw new Error("Switch to the lesson tab before starting audio transcription.");
+  const tab = await chrome.tabs.get(tabId);
+  if (videoIdFromUrl(tab.url) !== videoId || !streamId) throw new Error("The active YouTube lesson changed. Try again.");
+  if (captionCaptureTabId !== null) await stopCaptionCapture(captionCaptureTabId, "Caption capture stopped because audio transcription started.");
+  if (audioCaptureTabId !== null) await stopAudioCapture(audioCaptureTabId, "Previous audio capture stopped.");
+  if (!(await chrome.offscreen.hasDocument())) {
+    await chrome.offscreen.createDocument({ url: "offscreen.html", reasons: ["USER_MEDIA"], justification: "Capture active lesson tab audio only after the learner explicitly starts audio transcription." });
+  }
+  audioCaptureTabId = tabId;
+  audioCaptureVideoId = videoId;
+  await chrome.runtime.sendMessage({ type: "LEARNLENS_OFFSCREEN_START_AUDIO_CAPTURE", tabId, videoId, streamId } satisfies ExtensionMessage);
 }
 
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
