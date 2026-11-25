@@ -302,3 +302,15 @@ The code is build-verified, not yet runtime-verified. Audio transcription is exp
 - Added a guard preventing cloud audio transcription while the learner has selected the tutor's On-device only mode.
 - Fixed the offscreen startup status transition so the initial cleanup does not send an idle event that could clear the side panel's active tab reference.
 - Remaining gates are Firebase project configuration/App Check debug-token registration and real Chrome audio runtime QA.
+
+
+## 19. Audio capture startup correction — 2026-11-25
+
+- Commits: `2b73420` (remove stream ID from side-panel message contract), `ae7824a` (acquire tab-capture stream ID in the MV3 service worker with an explicit target tab), `c96b45e` (make offscreen audio startup asynchronous with a real success/error acknowledgement), `7df2ee3` (side panel waits for confirmed startup instead of displaying a premature capturing state).
+- Root causes addressed:
+  - The prior side panel called `chrome.tabCapture.getMediaStreamId()` without an explicit target tab, even though the side panel is not itself the YouTube tab.
+  - The offscreen message listener did not return an acknowledgement after `getUserMedia`, AudioWorklet loading, and AudioContext startup completed. The background therefore could report apparent success before capture was initialized.
+- New flow: learner click → side panel sends target tab/video → service worker validates active YouTube tab and requests a stream ID for that tab → offscreen document consumes stream ID → verifies audio track and running AudioContext → returns explicit acknowledgement → UI enters capturing state.
+- CI: run 149 for commit `7df2ee3` was in progress at the time of this update. Earlier intermediate runs were cancelled by subsequent commits; do not treat them as test failures or successes.
+- Browser/runtime status: not yet retested. The changes are intended to correct the startup path, but only a real Chrome test can confirm tab audio, continuous playback, four-second chunk production, and Gemini transcription.
+- Next exact task: confirm run 149 passes; download its artifact; reload the extension; test a video with captions disabled; verify playback, capture status, transcript arrival, and stop behavior. If it fails, capture the exact visible LearnLens error text (no screenshot needed).
