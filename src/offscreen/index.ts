@@ -54,8 +54,7 @@ async function stopCapture(reportIdle = true): Promise<void> {
 async function startCapture(streamId: string, videoId: string): Promise<void> {
   await stopCapture(false);
   if (!streamId || !videoId) {
-    report("error", "Audio capture could not start because the lesson or stream identifier is missing.");
-    return;
+    throw new Error("Audio capture could not start because the lesson or stream identifier is missing.");
   }
 
   try {
@@ -83,6 +82,7 @@ async function startCapture(streamId: string, videoId: string): Promise<void> {
     sourceNode.connect(chunkerNode);
     chunkerNode.connect(audioContext.destination);
     await audioContext.resume();
+    if (audioContext.state !== "running") throw new Error("The audio processor could not enter the running state.");
 
     activeVideoId = videoId;
     captureStartedAt = performance.now();
@@ -119,17 +119,25 @@ async function startCapture(streamId: string, videoId: string): Promise<void> {
       });
     };
 
-    report("capturing", "Capturing lesson audio in four-second PCM chunks. Playback continues normally; raw audio is not saved as files.");
+    report("capturing", "Audio stream connected. Processing four-second chunks; video playback is passed through.");
   } catch (error) {
-    await stopCapture();
-    report("error", error instanceof Error ? error.message : "Could not capture this tab's audio.");
+    await stopCapture(false);
+    throw error instanceof Error ? error : new Error("Could not capture this tab's audio.");
   }
 }
-
-chrome.runtime.onMessage.addListener((message: ExtensionMessage) => {
+chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
   if (message.type === "LEARNLENS_OFFSCREEN_START_AUDIO_CAPTURE") {
-    void startCapture(message.streamId, message.videoId);
-  } else if (message.type === "LEARNLENS_OFFSCREEN_STOP_AUDIO_CAPTURE") {
-    void stopCapture();
+    void startCapture(message.streamId, message.videoId).then(() => {
+      sendResponse({ ok: true });
+    }).catch((error: unknown) => {
+      const detail = error instanceof Error ? error.message : "Could not initialize the offscreen audio processor.";
+      report("error", detail);
+      sendResponse({ ok: false, error: detail });
+    });
+    return true;
+  }
+  if (message.type === "LEARNLENS_OFFSCREEN_STOP_AUDIO_CAPTURE") {
+    void stopCapture().then(() => sendResponse({ ok: true }));
+    return true;
   }
 });
