@@ -3,13 +3,13 @@
 **Last repository inspection:** 2026-11-25  
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
-**Current phase:** CI package verification is green; active-tab context is now broadcast to the side panel, but the latest code requires CI and Chrome runtime QA.
+**Current phase:** Automatic YouTube visible-caption capture and SPA context handling are implemented on `main`; current CI and Chrome runtime QA are pending.
 
 > Read this file first on every returning session. File existence does not prove runtime completion. Verify against code, CI, and browser behavior.
 
 ## 1. Current checkpoint
 
-**Vertical slice:** YouTube page detection → manual transcript import → Firebase AI Logic tutor → answer with actual inference source.
+**Vertical slice:** YouTube SPA detection → user-started visible-caption capture → local transcript → Firebase AI Logic tutor → grounded answer.
 
 ### Latest verified CI
 - Last successful package-smoke run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45563356591
@@ -51,6 +51,9 @@
 - [x] Add a post-build smoke check for Manifest V3, service worker, side panel, content script, and side-panel asset paths.
 - [ ] Load dist in Chrome and test extension action/side panel.
 - [ ] Verify active YouTube tab context and SPA navigation in Chrome.
+- [x] Expand the content script to all YouTube routes so it can survive same-document navigation into `/watch`.
+- [x] Add title/context refresh retries and testable URL/title parsing.
+- [x] Add user-started visible-caption capture, live side-panel updates, and automatic local transcript persistence.
 - [ ] Verify service worker message lifecycle and suspension/restart.
 - [ ] Verify transcript import/preview in actual Chrome UI.
 - [ ] Add and commit package-lock.json; change CI to npm ci. No lockfile is currently present.
@@ -129,7 +132,7 @@ See IMPLEMENTATION_PLAN.md for the detailed phases and exit criteria.
 2. Current main has no package lockfile; CI currently uses npm install with legacy peer deps.
 3. IndexedDB session storage has not yet been verified in Chrome; CI validates compile/tests/build only.
 4. Saved manual sessions currently restore the most recent manual import; there is not yet a full session history browser.
-5. Automatic transcript retrieval is not implemented; manual VTT/SRT/TXT is the current route.
+5. Automatic capture of visibly rendered YouTube captions is implemented in code; Chrome runtime QA is pending. Audio-only speech transcription is not implemented. Manual VTT/SRT/TXT remains fallback only.
 6. TikTok and Facebook are not implemented.
 7. Firebase project/App Check and runtime inference are not configured/verified.
 8. Unsaved UI state remains in memory; only explicitly saved transcript sessions persist locally.
@@ -180,3 +183,43 @@ At the end of every session update:
 - Fix: side panel now listens for active-context updates, clears old video transcript state when switching videos, and restores only the matching saved session. Background validates sender tab against the active tab and broadcasts context changes. Focus changes trigger context resync.
 - Tests: CI must verify these latest commits; no browser runtime claim made.
 - Remaining: Chrome runtime QA, package-lock/npm ci, IndexedDB integration tests, Firebase/App Check runtime.
+
+
+## 12. Session update — 2026-11-25 (automatic lesson capture)
+
+User-tested runtime issue:
+- YouTube video changes in the same tab did not refresh LearnLens context.
+- Switching tabs did refresh context, indicating the side panel's tab lifecycle path worked while YouTube's same-document route change path did not.
+- A refreshed watch page sometimes exposed the URL before the title metadata was ready.
+
+Code changes committed directly to `main`:
+- `9adcea9` — define typed capture commands, capture status, and caption-segment messages.
+- `c6b1491` — add pure YouTube watch-context parser.
+- `3dbf431` — add unit tests for YouTube URL/title parsing and caption whitespace.
+- `00b6b04` — expand YouTube content-script matching to the full host, refresh context on YouTube SPA events/title changes, and add user-started visible-caption observation.
+- `9b2c4cd` — update Manifest V3 content-script matching and run timing.
+- `b0dd056` — route capture commands and validate active capture tab in the service worker; serialize context storage writes.
+- `be51121` — add WebVTT serialization for locally persisted captured caption segments.
+- `f299b68` — make automatic visible-caption capture the primary side-panel workflow; move transcript import to optional fallback; add automatic local saves.
+- `711d2c7` — add capture status and transcript interface styling.
+- `d74815f` — add transcript serialization round-trip tests.
+- `09522ad`, `8e688fe`, `358d001` — update PRD and implementation plan for automatic capture and separate audio transcription.
+
+Current implemented behavior:
+- Learner selects **Start learning** in the side panel.
+- LearnLens observes captions actually rendered by the YouTube player; learner may need to enable CC.
+- New caption segments appear in the side panel and are automatically saved in IndexedDB as WebVTT.
+- Captured segments are passed into the existing tutor context without a file import.
+- Manual VTT/SRT/TXT import is retained only as a fallback.
+- Capture stops when the learner stops it, the learner changes tabs, or the same tab navigates to a different video.
+
+Important limitation:
+- This is automatic *visible-caption capture*, not yet audio-only speech recognition. It cannot transcribe a video when YouTube does not render captions.
+- Chrome tab audio capture requires explicit learner action. Firebase AI Logic audio transcription is a cloud path; Firebase AI Logic Live API is Preview and does not provide hybrid/on-device inference. Do not upload lesson audio silently or claim this is implemented.
+- Do not call this change fully verified until CI passes and Chrome runtime tests cover SPA navigation, captions on/off, persistence, tab switch, and stop behavior.
+
+Next exact task:
+1. Verify the latest main-branch GitHub Actions run; fix any type/test/build failures.
+2. Provide the updated extension artifact for Chrome runtime testing.
+3. Test same-tab navigation and the new Start learning → visible captions → auto-save → Ask tutor workflow.
+4. Only after runtime validation, design and implement audio-only transcription with separate consent and App Check.
