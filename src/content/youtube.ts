@@ -12,6 +12,7 @@ let lastCaptionText = "";
 let lastCaptionAt = -Infinity;
 let captionSequence = 0;
 let captureVideoId = "";
+let hasCapturedCaption = false;
 
 function send(message: ExtensionMessage): void {
   void chrome.runtime.sendMessage(message).catch(() => undefined);
@@ -98,6 +99,10 @@ function publishVisibleCaption(): void {
     source: "visible-captions"
   };
   send({ type: "LEARNLENS_CAPTION_SEGMENT", payload: segment });
+  if (!hasCapturedCaption) {
+    hasCapturedCaption = true;
+    emitCaptureStatus("capturing", "Capturing captions currently rendered by YouTube.");
+  }
 }
 
 function scheduleCaptionRead(): void {
@@ -122,7 +127,7 @@ function attachCaptionObserver(): boolean {
     characterData: true
   });
 
-  emitCaptureStatus("capturing", "Capturing captions currently rendered by YouTube.");
+  emitCaptureStatus("waiting_for_captions", "Listening for rendered captions. Turn CC on and keep the lesson playing.");
   scheduleCaptionRead();
   return true;
 }
@@ -140,6 +145,7 @@ function startCaptionCapture(): void {
   lastCaptionText = "";
   lastCaptionAt = -Infinity;
   captionSequence = 0;
+  hasCapturedCaption = false;
 
   if (attachCaptionObserver()) return;
 
@@ -153,6 +159,7 @@ function startCaptionCapture(): void {
 function stopCaptionCapture(message = "Lesson capture stopped."): void {
   isCaptionCaptureActive = false;
   captureVideoId = "";
+  hasCapturedCaption = false;
   disconnectCaptionObservers();
   emitCaptureStatus("idle", message);
 }
