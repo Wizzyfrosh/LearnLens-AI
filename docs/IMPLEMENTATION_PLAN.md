@@ -20,7 +20,7 @@ Do not add learning artifacts until transcript ingestion and AI grounding are re
 | Transcript engine | VTT/SRT/TXT parsing, validation, provenance, context | Validation and preview implemented; awaiting CI/runtime verification |
 | AI engine | Firebase AI Logic, mode policy, prompt, source metadata | Adapter and SDK source mapping implemented; CI green on earlier commit |
 | UI | Side panel and tutor interaction | Initial import/preview/tutor UI |
-| Storage | IndexedDB and optional Firestore sync | Not implemented |
+| Storage | IndexedDB local learning sessions; optional Firestore sync | Initial local save/restore/delete implemented; Chrome QA and integration tests pending |
 | Learning engine | Notes, bookmarks, quizzes, revision | Not implemented |
 | Firebase setup | App Check, Remote Config, Auth, Firestore rules | Not configured/verified |
 
@@ -79,9 +79,11 @@ Exit: real learner question gets grounded answer; local/cloud paths tested and h
 Exit: automatic transcript works on a documented tested subset.
 
 ### Phase 4 — Local learning sessions, notes, and bookmarks
-- [ ] Define IndexedDB schema and migrations for lesson sessions.
-- [ ] Persist session metadata and learner-approved artifacts locally.
-- [ ] Keep full transcripts local by default; define retention and clear controls.
+- [x] Define versioned IndexedDB schema and indexes for lesson sessions.
+- [x] Persist sessions only after explicit learner save action.
+- [x] Keep transcript data local; no cloud persistence.
+- [x] Add remove-saved-copy action and restore latest matching session.
+- [ ] Add IndexedDB integration tests and verify upgrade behavior in Chrome.
 - [ ] Create/edit/delete/search notes.
 - [ ] AI note drafts require user review.
 - [ ] Link timestamps only when evidence exists.
@@ -158,7 +160,7 @@ Subsequent transcript parser, tests, and UI preview changes were committed to ma
 - 656bd3c — parser edge-case tests
 - b93fe69 — transcript import validation and preview UI
 
-The latest CI run for b93fe69 is pending at the time of this update. Check PROJECT_STATUS.md before assuming it passed.
+The transcript ingestion UI/parser work passed CI on commit 1b077baa33d7f097e87771f8a2dc45fda44c78cd (typecheck, unit tests, production build). Subsequent IndexedDB and session UI commits are newer and require their own CI run and Chrome runtime QA. Check PROJECT_STATUS.md before assuming they passed.
 
 ## 6. Definition of done
 
