@@ -6,7 +6,7 @@ The current checkpoint is in PROJECT_STATUS.md. Update both documents whenever w
 
 Build and verify one working vertical slice first:
 
-**YouTube detection → transcript ingestion → Firebase AI Logic → grounded answer + actual inference source.**
+**YouTube SPA detection → user-started caption capture → local transcript → Firebase AI Logic tutor → grounded answer + actual inference source.**
 
 Do not add learning artifacts until transcript ingestion and AI grounding are reliable.
 
@@ -15,7 +15,9 @@ Do not add learning artifacts until transcript ingestion and AI grounding are re
 | Module | Responsibility | Current state |
 |---|---|---|
 | Extension shell | MV3 manifest, action, side panel, background worker | Scaffold; Chrome runtime QA pending |
-| Video context | YouTube page metadata and navigation | Basic implementation |
+| Video context | YouTube page metadata and SPA navigation | Context parser and route-wide content script implemented; Chrome QA pending |
+| Lesson capture | User-started visible caption capture | First implementation in code; Chrome QA pending |
+| Audio transcription | Permissioned tab-audio capture and speech transcription | Not implemented; separate cloud-consent and hybrid-policy design required |
 | Platform adapters | YouTube/TikTok/Facebook capability adapters | Not formalized |
 | Transcript engine | VTT/SRT/TXT parsing, validation, provenance, context | Validation and preview implemented; awaiting CI/runtime verification |
 | AI engine | Firebase AI Logic, mode policy, prompt, source metadata | Adapter and SDK source mapping implemented; CI green on earlier commit |
@@ -53,7 +55,7 @@ Exit: reproducible install; typecheck, tests, build pass on current main.
 
 Exit: current main passes CI and extension installs/detects YouTube context reliably.
 
-### Phase 2 — Transcript-to-tutor vertical slice
+### Phase 2 — Automatic visible-caption-to-tutor vertical slice
 - [x] Add VTT/SRT/plain-text format detection.
 - [x] Reject empty and oversized transcript input.
 - [x] Validate timed cues and report skipped malformed cues.
@@ -154,7 +156,7 @@ Exit: mandatory contest requirements satisfied and demo matches working product.
 
 ## 5. Current checkpoint
 
-The Firebase inference-source TypeScript error was fixed by comparing against the SDK's `InferenceSource` constants. CI passed on commit b2884c2.
+The Firebase inference-source TypeScript error was fixed by comparing against the SDK's `InferenceSource` constants. CI passed on commit b2884c2. The current active implementation checkpoint is recorded below.
 
 Subsequent transcript parser, tests, and UI preview changes were committed to main:
 - d025f82 — transcript format detection and validation
@@ -179,3 +181,23 @@ A task is complete only when behavior is implemented, types compile, relevant te
 A runtime review found that the side panel read active-tab context only once at mount, so background tab changes could leave the panel showing stale video state. The content script also needed sender-tab validation to prevent inactive tabs from publishing context.
 
 Commits a708e78, f107d34, and 308307d add a typed context-change message, validate content-script sender tab against the active tab, broadcast active context changes, resync on window focus, and subscribe from the side panel. On video changes the panel clears the previous video transcript before attempting to restore the matching saved session. Latest CI and manual Chrome QA are required before considering this fixed.
+
+
+## 9. Automatic lesson capture implementation checkpoint — 2026-11-25
+
+Implemented directly on `main`:
+- Content script now matches the full YouTube host instead of only URLs matching `/watch*`, allowing it to remain present when YouTube navigates from the home page to a watch page through its SPA.
+- Added a pure, tested YouTube context reader. It rejects unsupported routes and resolves title from the rendered watch heading, then document title, then a safe fallback.
+- Added refresh triggers for YouTube navigation lifecycle events, history navigation, and document-title changes, with short delayed retries to account for asynchronous title rendering.
+- Added learner-started visible-caption capture using a MutationObserver on YouTube's rendered caption container.
+- Added capture start/stop routing through the extension service worker; capture messages are accepted only from the active capture tab.
+- Live caption segments feed the existing tutor context and are automatically saved as WebVTT in IndexedDB.
+- Manual transcript import has been moved into an optional fallback disclosure.
+
+Important limitation: this implementation reads captions rendered by the YouTube player. It does not yet transcribe audio when captions are unavailable or disabled. The next separate phase is explicit tab-audio capture plus a consented cloud transcription path, not a silent or assumed on-device capability. See the PRD's automatic-capture change section.
+
+Next exit criteria:
+1. Current main passes typecheck, unit tests, production build, and extension package smoke check.
+2. Chrome runtime confirms same-tab SPA video changes refresh title and video ID without tab switching.
+3. Chrome runtime confirms visible captions are captured, displayed, persisted, restored, and usable by tutor.
+4. Capture stops cleanly on user request, tab switch, and lesson change.
