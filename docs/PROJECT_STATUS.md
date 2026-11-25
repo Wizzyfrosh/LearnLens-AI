@@ -280,14 +280,25 @@ Next:
 
 ## 17. Phase 3 CI verification — 2026-11-25
 
-- Latest successful CI run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45654124950
-- Verified commit: `646fc0d1fbc2821a91dc55d455844983e0aef8ef`.
+- Latest successful CI run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45654369428
+- Verified commit: `259400db99d89eb3bd58edbe8442768cffdbbfc9`.
 - TypeScript typecheck: passed.
 - Unit tests: passed, including the PCM/WAV encoder tests.
 - Production build: passed.
 - Chrome extension package smoke check: passed, including the offscreen HTML and AudioWorklet asset checks.
-- Artifact: `learnlens-chrome-extension`, ID `15041563949`, approximately 111 KB, retained for 14 days.
+- Artifact: `learnlens-chrome-extension`, ID `15041079281`, approximately 111 KB, retained for 14 days.
 - The first typecheck caught Firebase AI Logic's required `type` discriminator on multimodal `Part` objects; corrected to `type: "text"` and `type: "inlineData"`.
 - A package-smoke regex issue in the offscreen asset check was corrected before this successful run.
 
-The code is build-verified, not yet runtime-verified. The next user-dependent step is to add Firebase web-app configuration as GitHub Actions secrets, register the App Check debug token, download this artifact, and test actual audio capture/transcription in Chrome.
+The code is build-verified, not yet runtime-verified. Audio transcription is explicitly blocked when the tutor preference is On-device only because the transcription model currently runs in the cloud. The next user-dependent step is to add Firebase web-app configuration as GitHub Actions secrets, register the App Check debug token, download this artifact, and test actual audio capture/transcription in Chrome.
+
+
+## 18. Final Phase 3 code verification — 2026-11-25
+
+- Successful CI: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45654369428
+- Commit: `259400db99d89eb3bd58edbe8442768cffdbbfc9`.
+- Typecheck, all unit tests, production build, extension package verification, and artifact upload passed.
+- Artifact `learnlens-chrome-extension`, ID `15041079281`, size 111,412 bytes, retained for 14 days.
+- Added a guard preventing cloud audio transcription while the learner has selected the tutor's On-device only mode.
+- Fixed the offscreen startup status transition so the initial cleanup does not send an idle event that could clear the side panel's active tab reference.
+- Remaining gates are Firebase project configuration/App Check debug-token registration and real Chrome audio runtime QA.
