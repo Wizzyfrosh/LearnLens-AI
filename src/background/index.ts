@@ -40,7 +40,9 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
   if (message.type === "LEARNLENS_GET_ACTIVE_CONTEXT") {
     chrome.storage.session.get("activeVideoContext", (result) => {
       const response: ActiveContextResponse = {
-        context: (result.activeVideoContext as VideoContext | null | undefined) ?? activeContext
+        context: Object.prototype.hasOwnProperty.call(result, "activeVideoContext")
+          ? (result.activeVideoContext as VideoContext | null)
+          : activeContext
       };
       sendResponse(response);
     });
