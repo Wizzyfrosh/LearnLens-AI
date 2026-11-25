@@ -45,8 +45,9 @@ Exit: reproducible install; typecheck, tests, build pass on current main.
 - [x] Verify manifest asset paths match Vite output in CI.
 - [ ] Load dist in Chrome without extension errors.
 - [ ] Verify action opens side panel.
-- [ ] Verify active YouTube tab and SPA navigation.
-- [ ] Verify message lifecycle and worker suspension/restart.
+- [x] Synchronize active tab context changes to the open side panel; verify active tab identity in background before accepting content-script context.
+- [ ] Verify active YouTube tab and SPA navigation in Chrome.
+- [ ] Verify message lifecycle and worker suspension/restart in Chrome.
 - [ ] Remove or justify tab activation listener and permissions.
 - [ ] Add stale-request handling and robust UI states.
 
@@ -172,3 +173,9 @@ A task is complete only when behavior is implemented, types compile, relevant te
 - Follow-up commit ed4f642 ignores inactive-tab URL changes when synchronizing active lesson context; CI pending at time of update.
 - Runtime QA in Chrome remains a manual blocker. CI package validation is not equivalent to loading the extension.
 - Reproducibility blocker: no package-lock.json exists. Generate it with npm against the actual dependency graph; never fabricate one.
+
+
+## 8. Session update — 2026-11-25 (active context sync)
+A runtime review found that the side panel read active-tab context only once at mount, so background tab changes could leave the panel showing stale video state. The content script also needed sender-tab validation to prevent inactive tabs from publishing context.
+
+Commits a708e78, f107d34, and 308307d add a typed context-change message, validate content-script sender tab against the active tab, broadcast active context changes, resync on window focus, and subscribe from the side panel. On video changes the panel clears the previous video transcript before attempting to restore the matching saved session. Latest CI and manual Chrome QA are required before considering this fixed.
