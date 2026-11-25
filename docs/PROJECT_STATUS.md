@@ -3,7 +3,7 @@
 **Last repository inspection:** 2026-11-25  
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
-**Current phase:** CI green for transcript ingestion and local session persistence; Chrome runtime QA pending.
+**Current phase:** Extension package smoke validation is green; Chrome runtime QA and reproducible dependency installation remain pending.
 
 > Read this file first on every returning session. File existence does not prove runtime completion. Verify against code, CI, and browser behavior.
 
@@ -12,10 +12,12 @@
 **Vertical slice:** YouTube page detection → manual transcript import → Firebase AI Logic tutor → answer with actual inference source.
 
 ### Latest verified CI
-- Successful run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45560326920
-- Commit: b2884c2af1d3925c22517860dde3bf68037aff33
+- Successful run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45563356591
+- Commit: 5398e512007a7447f7648eb9d2a24f13b73352ec
 - Result: SUCCESS.
-- The Firebase inference-source comparison now uses SDK `InferenceSource` constants.
+- Verified steps: dependency installation, typecheck, unit tests, production build, and Chrome extension package smoke check.
+- The smoke check validates Manifest V3 and the presence of referenced service worker, side-panel, content-script, and HTML assets.
+- Active-tab context synchronization was updated to ignore URL changes in inactive tabs.
 - This green run predates the transcript parser/UI changes below. Do not claim those changes passed CI yet.
 - Latest run for transcript test changes was cancelled by concurrency when newer commits arrived.
 - Latest run for current main commit b93fe692575559df9ed5d1a0ccc60b3f07bbb116: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45560716109
@@ -124,7 +126,7 @@ See IMPLEMENTATION_PLAN.md for the detailed phases and exit criteria.
 
 ## 6. Known caveats
 
-1. Latest confirmed CI run for commit 19b0cc7 passes. New extension package smoke validation and active-tab context fixes are committed afterward and await their own CI result; Chrome runtime behavior remains unverified.
+1. Latest confirmed CI run for commit 5398e512 passes, including the package smoke check and initial active-tab context fix. A follow-up guard against inactive-tab URL updates is now committed as ed4f642 and awaits CI; Chrome runtime behavior remains unverified.
 2. Current main has no package lockfile; CI currently uses npm install with legacy peer deps.
 3. IndexedDB session storage has not yet been verified in Chrome; CI validates compile/tests/build only.
 4. Saved manual sessions currently restore the most recent manual import; there is not yet a full session history browser.
@@ -162,3 +164,12 @@ At the end of every session update:
 - Browser/runtime verification: not performed; requires loading the unpacked extension in Chrome.
 - Known blockers: no package lockfile; Firebase project/App Check and real model inference remain unconfigured/unverified.
 - Next exact task: inspect the latest CI run; then load dist in Chrome and execute the runtime QA checklist before adding features.
+
+
+## 10. Session update — 2026-11-25 (continued)
+- Commit: 5398e51 — extension package smoke validation and active-tab context synchronization; CI run 45563356591 passed all eight steps.
+- Commit: ed4f642 — ignore URL navigation events from inactive tabs so they cannot overwrite the active lesson context.
+- Tests: package smoke check, typecheck, unit tests, and production build passed on 5398e51. The follow-up ed4f642 commit is awaiting CI.
+- Browser/runtime verification: still requires local Chrome; not claimed complete.
+- Dependency reproducibility: package-lock.json is absent; npm ci migration is blocked until a real lockfile is generated from the repository dependency graph. Do not hand-author a lockfile.
+- Next exact task: verify ed4f642 CI, then establish reproducible npm ci install and add IndexedDB integration tests before expanding features.
