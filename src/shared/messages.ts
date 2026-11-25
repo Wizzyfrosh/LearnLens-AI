@@ -12,7 +12,7 @@ export interface AudioCaptureStatusPayload {
 export interface AudioChunkPayload {
   videoId: string;
   sequence: number;
-  mimeType: "audio/webm";
+  mimeType: "audio/wav";
   dataBase64: string;
   captureElapsedSeconds: number;
   durationSeconds: number;
