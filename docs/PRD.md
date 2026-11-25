@@ -8,7 +8,7 @@
 
 ## 1. Executive summary
 
-LearnLens AI works alongside educational videos. It uses the current lesson and its accessible transcript as context for an AI tutor, helping learners ask questions, understand difficult concepts, capture notes, generate quizzes, and revisit important ideas. It is not a generic chatbot or merely a one-click video summarizer: its differentiator is lesson-aware, timestamp-aware learning continuity.
+LearnLens AI works alongside educational videos. It automatically captures accessible lesson captions as the learner watches, then uses the growing transcript as context for an AI tutor, helping learners ask questions, understand difficult concepts, capture notes, generate quizzes, and revisit important ideas. It is not a generic chatbot or merely a one-click video summarizer: its differentiator is lesson-aware, timestamp-aware learning continuity.
 
 Firebase AI Logic hybrid inference is central to the hackathon build. The app must use on-device inference where supported and cloud inference when selected or explicitly permitted as fallback. It must display the actual inference source and never silently send content to the cloud when on-device-only is selected.
 
@@ -30,7 +30,7 @@ LearnLens reduces these problems by placing a tutor beside the video and turning
 
 **Value:** Ask questions grounded in the lesson, understand the answer with timestamp evidence, save important knowledge, and test understanding.
 
-**Core loop:** Watch → capture transcript → ask → understand → bookmark/note → quiz → revise → apply.
+**Core loop:** Detect lesson → start capture → transcribe/capture captions → ask → understand → bookmark/note → quiz → revise → apply.
 
 ## 4. Target users
 
@@ -50,7 +50,7 @@ English-first, global audience, including learners in Nigeria and regions with v
 
 1. Context before cleverness: ground answers in the current lesson.
 2. Honest evidence: cite timestamps only when the source provides them.
-3. Learner control: user controls transcript import, cloud inference, storage, and export.
+3. Learner control: user explicitly starts/stops lesson capture and controls cloud inference, local storage, and export.
 4. Privacy visibility: explain local/cloud processing before sending data.
 5. Progressive enhancement: useful fallback when local inference is unsupported.
 6. Capability-based platform support: never promise access to every video.
@@ -62,7 +62,9 @@ English-first, global audience, including learners in Nigeria and regions with v
 ### Hackathon MVP — must work end to end
 - Chrome Manifest V3 extension with side panel.
 - Detect supported YouTube watch page and identify video.
-- Load a transcript through a permitted source; manual VTT/SRT/TXT import is the baseline.
+- User-initiated automatic capture of captions rendered by YouTube, with timestamped transcript segments.
+- Automatic local persistence of captured lesson captions.
+- Manual VTT/SRT/TXT import only as an optional fallback, not the normal workflow.
 - Parse timestamped transcript segments and preserve timestamp availability.
 - Ask questions grounded in transcript context.
 - Use Firebase AI Logic hybrid inference.
@@ -73,7 +75,8 @@ English-first, global audience, including learners in Nigeria and regions with v
 - Public source repository, open-source license, setup instructions, and public demo video <= 3 minutes.
 
 ### Post-hackathon product
-- Reliable automatic captions/transcript discovery for supported sources.
+- Audio-based speech transcription for supported sources, with explicit cloud-processing consent where cloud transcription is required.
+- Reliable automatic caption discovery and capture for supported sources.
 - Editable timestamp-linked notes and export.
 - Timestamp bookmarks.
 - Quiz generation, scoring, explanations, and revision.
@@ -86,7 +89,7 @@ English-first, global audience, including learners in Nigeria and regions with v
 - Native Android app or floating overlay.
 - Universal transcript extraction from every YouTube, TikTok, or Facebook video.
 - Private endpoint scraping, reverse engineering undocumented APIs, DRM circumvention, unauthorized downloads.
-- Background audio recording or broad browser activity monitoring.
+- Covert/background audio recording or broad browser activity monitoring. Capture must be explicitly started by the learner.
 - Social network, course marketplace, or monetization platform.
 - Claims of learner mastery without evidence.
 
@@ -103,8 +106,11 @@ English-first, global audience, including learners in Nigeria and regions with v
 - Separate page detection from transcript acquisition.
 - Unsupported sources must produce honest fallback messaging.
 
-### FR-03 Transcript ingestion
-- Accept WebVTT (.vtt), SubRip (.srt), and plain text (.txt).
+### FR-03 Lesson capture and transcript ingestion
+- Start and stop automatic lesson capture from the side panel.
+- Capture only caption text actually rendered by the supported video page in the first automatic implementation.
+- Persist captured segments locally without requiring a manual save or upload.
+- Accept WebVTT (.vtt), SubRip (.srt), and plain text (.txt) only as fallback.
 - Parse cue start/end timestamps.
 - Strip cue markup safely and normalize whitespace.
 - Preserve timestamp availability explicitly.
@@ -115,7 +121,8 @@ English-first, global audience, including learners in Nigeria and regions with v
 ### FR-04 Platform adapters
 - Define an adapter interface for page detection, metadata, caption discovery, and timestamp synchronization.
 - YouTube is first.
-- Prefer native/user-visible/officially authorized caption sources.
+- Prefer captions exposed to the learner by the player or officially authorized sources.
+- Do not claim audio-only transcription until a supported capture and transcription path is implemented and tested.
 - Keep manual transcript import as fallback.
 - TikTok and Facebook support is capability-based, not guaranteed for every video.
 - YouTube official captions download requires authorization to edit the video; do not depend on it for arbitrary public videos.
@@ -164,18 +171,20 @@ English-first, global audience, including learners in Nigeria and regions with v
 ### FR-11 Cross-platform
 - Isolated platform adapters.
 - YouTube first; TikTok/Facebook only after validated compliant caption access.
-- Manual transcript import remains universal fallback.
+- Manual transcript import remains optional fallback.
+- Audio-based transcription is a separate capability and is not represented as complete by visible-caption capture.
 - Expose source and timestamp provenance.
 
 ## 8. Main user journeys
 
-### A. Ask about a YouTube lesson
-1. Open YouTube watch page.
+### A. Learn from a YouTube lesson
+1. Open a YouTube watch page.
 2. Open LearnLens side panel.
-3. Confirm detected video.
-4. Load/import transcript.
-5. Choose inference preference.
-6. Ask a question.
+3. Confirm detected video and title.
+4. Turn on YouTube captions where available.
+5. Click **Start learning**; LearnLens captures rendered captions and saves them locally.
+6. Ask a question using the transcript captured so far.
+7. Use manual transcript import only when automatic caption capture is unavailable.
 7. Firebase AI Logic processes request according to mode.
 8. Display answer and actual inference source.
 9. Use timestamps to revisit source.
@@ -203,7 +212,8 @@ English-first, global audience, including learners in Nigeria and regions with v
 
 **Privacy/security:**
 - Minimum Chrome permissions.
-- No cookies, credentials, unrelated tab/history access, or microphone/system audio recording in MVP.
+- No cookies, credentials, or unrelated browsing-history access.
+- No microphone recording. Any future tab-audio capture must be initiated by an explicit learner action and clearly disclose whether audio leaves the device.
 - Keep transcript local unless user chooses cloud-enabled processing.
 - Treat transcript and model output as untrusted.
 - Prompt-injection defenses; validate generated structured data.
@@ -224,6 +234,7 @@ Initial stack:
 
 Module boundaries:
 - Extension shell: manifest, action, side panel, background worker.
+- Lesson capture engine: YouTube SPA context, visible-caption observer, capture lifecycle, and source provenance.
 - Platform adapters: YouTube, TikTok, Facebook, generic capability detection.
 - Transcript engine: parser, normalizer, provenance, context builder.
 - AI engine: Firebase adapter, inference policy, prompt builder, metadata.
@@ -284,6 +295,10 @@ Storage policy:
 - Do not present medical/legal/financial/safety-critical output as authoritative.
 
 ## 13. MVP acceptance criteria
+- [ ] YouTube same-tab SPA navigation updates video ID, title, and URL without requiring a tab switch.
+- [ ] Learner can explicitly start/stop automatic capture of captions rendered by YouTube.
+- [ ] Captured caption segments appear in LearnLens and are saved locally automatically.
+- [ ] Questions can use captured segments without importing a transcript.
 - [ ] Clean clone installs using documented steps.
 - [ ] Chrome loads built extension without manifest/asset errors.
 - [ ] YouTube video ID/title are detected correctly.
@@ -337,3 +352,14 @@ Storage policy:
 If requirements change, update this PRD, implementation plan, and status checklist together. Record reason/date. Do not silently remove an agreed requirement.
 
 **Change log — 2026-11-25:** Consolidated product vision, scope, feature requirements, architecture, security, acceptance criteria, and prior decisions.
+
+
+## 18. Product change — automatic lesson capture (2026-11-25)
+
+The normal workflow is now **Start learning → capture lesson → ask the tutor**. Manual transcript import is a fallback and must not be presented as the primary task.
+
+The first safe automatic capability reads captions that YouTube visibly renders after the learner starts capture. It does not scrape undocumented caption endpoints, fetch private transcript APIs, or claim access to speech that the page does not expose. Captured segments carry a visible-caption provenance marker and a player-time reference, and are saved in IndexedDB.
+
+**Audio-based transcription is a distinct next capability.** Chrome tab audio capture requires an explicit user action. Firebase AI Logic audio file transcription is supported for documented models, but it is a cloud inference path. Firebase AI Logic Live API is currently Preview and does not support hybrid/on-device inference. Therefore, tab audio must not be uploaded silently or represented as covered by the on-device-only tutor preference. Any cloud audio transcription requires a clear, separate consent state, bounded audio chunks, App Check, explicit retention rules, and a tested stop/recovery lifecycle.
+
+Acceptance of automatic captions does not imply support for every video, every language, or videos without rendered captions.
