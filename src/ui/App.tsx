@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2 } from "lucide-react";
+import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square } from "lucide-react";
 import { askLearnLens } from "../services/firebase-ai";
-import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport } from "../services/transcript";
+import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport, serializeSegmentsAsVtt } from "../services/transcript";
 import { deleteLearningSession, getLatestManualSession, getLatestSessionForVideo, saveLearningSession } from "../services/session-store";
 import type { InferencePreference, TranscriptSegment, VideoContext } from "../shared/types";
-import type { ExtensionMessage } from "../shared/messages";
+import type { CaptionCaptureStatus, ExtensionMessage } from "../shared/messages";
 
 const emptyContext: VideoContext = {
   videoId: "",
@@ -14,10 +14,21 @@ const emptyContext: VideoContext = {
   platform: "youtube"
 };
 
+const captureStatusLabel: Record<CaptionCaptureStatus, string> = {
+  idle: "Not capturing",
+  waiting_for_captions: "Waiting for captions",
+  capturing: "Capturing lesson",
+  unsupported: "Unsupported page",
+  error: "Capture unavailable"
+};
+
 export default function App() {
   const [video, setVideo] = useState<VideoContext>(emptyContext);
   const [rawTranscript, setRawTranscript] = useState("");
   const [transcriptSource, setTranscriptSource] = useState("Pasted transcript");
+  const [capturedSegments, setCapturedSegments] = useState<TranscriptSegment[]>([]);
+  const [captureStatus, setCaptureStatus] = useState<CaptionCaptureStatus>("idle");
+  const [captureMessage, setCaptureMessage] = useState("Open a YouTube lesson and turn on CC to capture its captions automatically.");
   const [sessionId, setSessionId] = useState("");
   const [savedSession, setSavedSession] = useState(false);
   const [storageNotice, setStorageNotice] = useState("");
@@ -33,6 +44,7 @@ export default function App() {
     let cancelled = false;
     let restoreVersion = 0;
     let lastVideoId = "";
+    let receivedBackgroundContext = false;
 
     const applyContext = (context: VideoContext | null, initial = false) => {
       if (cancelled) return;
@@ -46,10 +58,13 @@ export default function App() {
 
       if (changedVideo && !initial) {
         setRawTranscript("");
+        setCapturedSegments([]);
         setTranscriptSource("Pasted transcript");
         setSessionId(next.videoId);
         setSavedSession(false);
         setStorageNotice("");
+        setCaptureStatus("idle");
+        setCaptureMessage("The active lesson changed. Start learning to capture its captions.");
       }
 
       const version = ++restoreVersion;
@@ -60,7 +75,14 @@ export default function App() {
         if (cancelled || version !== restoreVersion) return;
         if (saved) {
           if (!next.videoId) setVideo({ ...emptyContext, title: saved.title || "Saved imported lesson" });
-          setRawTranscript(saved.transcriptText);
+          if (saved.transcriptSource === "YouTube live captions") {
+            const parsed = parseTranscriptImport(saved.transcriptText);
+            setCapturedSegments(parsed.segments.map((segment) => ({ ...segment, source: "visible-captions" })));
+            setRawTranscript("");
+          } else {
+            setCapturedSegments([]);
+            setRawTranscript(saved.transcriptText);
+          }
           setTranscriptSource(saved.transcriptSource);
           setSessionId(saved.id);
           setSavedSession(true);
@@ -80,13 +102,24 @@ export default function App() {
 
     const onRuntimeMessage = (message: ExtensionMessage) => {
       if (message.type === "LEARNLENS_ACTIVE_CONTEXT_CHANGED") {
+        receivedBackgroundContext = true;
         applyContext(message.payload);
+      } else if (message.type === "LEARNLENS_CAPTURE_STATUS") {
+        setCaptureStatus(message.payload.status);
+        setCaptureMessage(message.payload.message);
+      } else if (message.type === "LEARNLENS_CAPTION_SEGMENT") {
+        setCapturedSegments((current) => {
+          if (current.some((segment) => segment.id === message.payload.id)) return current;
+          return [...current, message.payload].sort((a, b) => a.startSeconds - b.startSeconds);
+        });
+        setTranscriptSource("YouTube live captions");
+        setRawTranscript("");
       }
     };
 
     chrome.runtime.onMessage.addListener(onRuntimeMessage);
     chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
-      if (cancelled) return;
+      if (cancelled || receivedBackgroundContext) return;
       const tab = tabs[0];
       let context: VideoContext | null = null;
       if (tab?.url) {
@@ -98,7 +131,7 @@ export default function App() {
           if (videoId) {
             context = {
               videoId,
-              title: tab.title?.replace(" - YouTube", "") ?? "YouTube video",
+              title: (tab.title ?? "YouTube video").replace(" - YouTube", "").trim() || "YouTube video",
               url: tab.url,
               platform: "youtube"
             };
@@ -120,8 +153,71 @@ export default function App() {
     () => (rawTranscript.trim() ? parseTranscriptImport(rawTranscript) : null),
     [rawTranscript]
   );
-  const segments: TranscriptSegment[] = importedTranscript?.segments ?? [];
+  const segments: TranscriptSegment[] = capturedSegments.length
+    ? capturedSegments
+    : importedTranscript?.segments ?? [];
   const segmentCount = segments.length;
+  const isLiveTranscript = capturedSegments.length > 0;
+
+  useEffect(() => {
+    if (!isLiveTranscript || !video.videoId) return;
+    const timer = window.setTimeout(() => {
+      const transcriptText = serializeSegmentsAsVtt(capturedSegments);
+      void saveLearningSession({
+        id: video.videoId,
+        videoId: video.videoId,
+        title: video.title,
+        url: video.url,
+        platform: "youtube",
+        transcriptText,
+        transcriptFormat: "vtt",
+        transcriptSource: "YouTube live captions",
+        updatedAt: Date.now()
+      }).then(() => {
+        setSessionId(video.videoId);
+        setSavedSession(true);
+        setStorageNotice("Live captions are being saved automatically on this device.");
+      }).catch(() => {
+        setStorageNotice("Live captions are available in this session, but automatic local saving failed.");
+      });
+    }, 1400);
+    return () => window.clearTimeout(timer);
+  }, [capturedSegments, isLiveTranscript, video.videoId, video.title, video.url]);
+
+  async function startLearning() {
+    if (!video.videoId) {
+      setCaptureStatus("unsupported");
+      setCaptureMessage("Open a YouTube watch page before starting lesson capture.");
+      return;
+    }
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (tab?.id === undefined) {
+      setCaptureStatus("error");
+      setCaptureMessage("LearnLens could not identify the active browser tab.");
+      return;
+    }
+    setCapturedSegments([]);
+    setRawTranscript("");
+    setSavedSession(false);
+    setStorageNotice("");
+    setCaptureStatus("waiting_for_captions");
+    setCaptureMessage("Connecting to the YouTube player. Turn on CC if captions are not appearing.");
+    chrome.runtime.sendMessage({ type: "LEARNLENS_START_CAPTION_CAPTURE", tabId: tab.id } satisfies ExtensionMessage)
+      .catch(() => {
+        setCaptureStatus("error");
+        setCaptureMessage("Could not start lesson capture. Reload the YouTube page and try again.");
+      });
+  }
+
+  async function stopLearning() {
+    const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (tab?.id !== undefined) {
+      chrome.runtime.sendMessage({ type: "LEARNLENS_STOP_CAPTION_CAPTURE", tabId: tab.id } satisfies ExtensionMessage)
+        .catch(() => undefined);
+    }
+    setCaptureStatus("idle");
+    setCaptureMessage("Lesson capture stopped. Captured captions remain saved on this device.");
+  }
 
   async function submitQuestion(event: FormEvent) {
     event.preventDefault();
@@ -146,12 +242,14 @@ export default function App() {
     if (!file) return;
     if (file.size > MAX_TRANSCRIPT_CHARS) {
       setRawTranscript("");
+      setCapturedSegments([]);
       setSavedSession(false);
-      setError(`This file exceeds the ${MAX_TRANSCRIPT_CHARS.toLocaleString()} character import limit.`);
+      setError("This file exceeds the " + MAX_TRANSCRIPT_CHARS.toLocaleString() + " character import limit.");
       return;
     }
     try {
       const content = await file.text();
+      setCapturedSegments([]);
       setRawTranscript(content);
       setTranscriptSource(file.name);
       setSavedSession(false);
@@ -207,7 +305,7 @@ export default function App() {
       <section className="video-card">
         <div className="section-kicker"><Play size={13} /> CURRENT LESSON</div>
         <h1>{video.title}</h1>
-        <p>{video.videoId ? "YouTube video detected" : "Open a YouTube video, or add a transcript below to begin."}</p>
+        <p>{video.videoId ? "YouTube video detected" : "Open a YouTube lesson to start learning."}</p>
         {video.url && <a href={video.url} target="_blank" rel="noreferrer">Open source video</a>}
       </section>
 
@@ -216,22 +314,44 @@ export default function App() {
           <div><Captions size={17} /><h2>Lesson transcript</h2></div>
           <span>{segmentCount} segments</span>
         </div>
-        <label className="upload-box">
-          <FileUp size={18} />
-          <span><strong>Paste or import a transcript</strong><small>Supports VTT, SRT and plain text · 500,000 characters max</small></span>
-          <input type="file" accept=".vtt,.srt,.txt,text/vtt,text/plain" onChange={(event) => {
-            void importFile(event.target.files?.[0]);
-            event.currentTarget.value = "";
-          }} />
-        </label>
-        <textarea value={rawTranscript} onChange={(event) => {
-          setRawTranscript(event.target.value);
-          setTranscriptSource("Pasted transcript");
-          setSavedSession(false);
-          setStorageNotice("");
-          setError("");
-        }} placeholder="Paste the video's transcript here. Timestamped VTT/SRT gives the tutor better references." rows={5} />
-        {importedTranscript && (
+
+        <div className="capture-card">
+          <div className="capture-card-heading">
+            <div>
+              <strong>Automatic lesson capture</strong>
+              <small>{captureStatusLabel[captureStatus]}</small>
+            </div>
+            <span className={"capture-indicator " + (captureStatus === "capturing" ? "active" : "")} />
+          </div>
+          <p>{captureMessage}</p>
+          {captureStatus === "capturing" || captureStatus === "waiting_for_captions" ? (
+            <button className="capture-button stop" type="button" onClick={() => void stopLearning()}>
+              <Square size={14} /> Stop capture
+            </button>
+          ) : (
+            <button className="capture-button" type="button" onClick={() => void startLearning()} disabled={!video.videoId}>
+              <Play size={14} /> Start learning
+            </button>
+          )}
+          <small className="capture-privacy">This first automatic path reads captions rendered by YouTube. Turn on CC in the video player. Captured text is saved locally; AI questions follow your selected processing preference.</small>
+        </div>
+
+        {isLiveTranscript && (
+          <div className="transcript-status">
+            <div className="inline-success"><BookOpen size={14} />{segmentCount} live caption segments · saved automatically on this device</div>
+            <div className="transcript-preview">
+              <strong>Captured lesson</strong>
+              {segments.slice(-8).map((segment) => (
+                <p key={segment.id}>
+                  <span>[{Math.floor(segment.startSeconds / 60).toString().padStart(2, "0")}:{Math.floor(segment.startSeconds % 60).toString().padStart(2, "0")}] </span>
+                  {segment.text}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {importedTranscript && !isLiveTranscript && (
           <div className="transcript-status">
             {importedTranscript.errors.length > 0 ? (
               <div className="error-box"><CircleHelp size={15} />{importedTranscript.errors.join(" ")}</div>
@@ -243,12 +363,7 @@ export default function App() {
               <>
                 <div className="transcript-preview">
                   <strong>Preview</strong>
-                  {segments.slice(0, 3).map((segment) => (
-                    <p key={segment.id}>
-                      {segment.hasTimestamp && <span>[{Math.floor(segment.startSeconds / 60).toString().padStart(2, "0")}:{Math.floor(segment.startSeconds % 60).toString().padStart(2, "0")}] </span>}
-                      {segment.text}
-                    </p>
-                  ))}
+                  {segments.slice(0, 3).map((segment) => <p key={segment.id}>{segment.text}</p>)}
                   {segmentCount > 3 && <small>And {segmentCount - 3} more segments</small>}
                 </div>
                 <div className="session-actions">
@@ -262,6 +377,26 @@ export default function App() {
             {storageNotice && <p className="helper-text">{storageNotice}</p>}
           </div>
         )}
+
+        <details className="fallback-import">
+          <summary>Import a transcript instead (fallback)</summary>
+          <label className="upload-box">
+            <FileUp size={18} />
+            <span><strong>Paste or import a transcript</strong><small>VTT, SRT and plain text · 500,000 characters max</small></span>
+            <input type="file" accept=".vtt,.srt,.txt,text/vtt,text/plain" onChange={(event) => {
+              void importFile(event.target.files?.[0]);
+              event.currentTarget.value = "";
+            }} />
+          </label>
+          <textarea value={rawTranscript} onChange={(event) => {
+            setCapturedSegments([]);
+            setRawTranscript(event.target.value);
+            setTranscriptSource("Pasted transcript");
+            setSavedSession(false);
+            setStorageNotice("");
+            setError("");
+          }} placeholder="Paste transcript text here..." rows={4} />
+        </details>
       </section>
 
       <section className="section-block tutor-block">
@@ -278,7 +413,7 @@ export default function App() {
         <p className="helper-text">Prefer on-device can fall back to cloud and send transcript context. Choose on-device only to prevent cloud fallback.</p>
         <form onSubmit={submitQuestion}>
           <textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about an idea, example, or section in this lesson..." rows={3} />
-          <button className="primary-button" type="submit" disabled={busy || !question.trim() || segmentCount === 0 || Boolean(importedTranscript?.errors.length)}>
+          <button className="primary-button" type="submit" disabled={busy || !question.trim() || segmentCount === 0 || Boolean(importedTranscript?.errors.length && !isLiveTranscript)}>
             {busy ? <LoaderCircle className="spin" size={16} /> : <Send size={15} />}
             {busy ? "Thinking..." : "Ask LearnLens"}
           </button>
@@ -288,7 +423,7 @@ export default function App() {
         {answer && <article className="answer-card"><div className="answer-meta">LEARNLENS RESPONSE <span>{source === "ON_DEVICE" ? "ON DEVICE" : source === "IN_CLOUD" ? "CLOUD" : "SOURCE UNKNOWN"}</span></div><p>{answer}</p></article>}
       </section>
 
-      <footer>Saved lessons stay in this browser's local storage. Transcripts are not uploaded for session storage; AI processing follows the selected inference mode.</footer>
+      <footer>Captured captions and saved lessons stay in this browser. Audio-only transcription is not enabled yet; manual transcript import remains an optional fallback.</footer>
     </main>
   );
 }
