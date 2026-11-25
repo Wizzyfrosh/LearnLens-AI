@@ -160,7 +160,7 @@ Subsequent transcript parser, tests, and UI preview changes were committed to ma
 - 656bd3c — parser edge-case tests
 - b93fe69 — transcript import validation and preview UI
 
-The transcript ingestion UI/parser work passed CI on commit 1b077baa33d7f097e87771f8a2dc45fda44c78cd (typecheck, unit tests, production build). Subsequent IndexedDB and session UI commits are newer and require their own CI run and Chrome runtime QA. Check PROJECT_STATUS.md before assuming they passed.
+The transcript ingestion UI/parser work passed CI on commit 1b077baa33d7f097e87771f8a2dc45fda44c78cd (typecheck, unit tests, production build). The IndexedDB session store and UI changes are included in green CI run https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45561154300 (typecheck, unit tests, production build all passed). Chrome runtime QA and IndexedDB behavior still require manual verification.
 
 ## 6. Definition of done
 
