@@ -32,7 +32,7 @@ Do not add learning artifacts until transcript ingestion and AI grounding are re
 - [x] Add README setup/capability notes.
 - [x] Add GitHub Actions workflow.
 - [ ] Confirm repo visibility and license metadata.
-- [ ] Commit package lockfile and move CI to npm ci.
+- [ ] Generate and commit a package lockfile from the actual dependency graph, then move CI to npm ci.
 - [x] Get CI green for Firebase inference-source fix (commit b2884c2).
 - [x] Add persistent project docs.
 
@@ -41,8 +41,8 @@ Exit: reproducible install; typecheck, tests, build pass on current main.
 ### Phase 1 — Stabilize extension foundation
 - [x] Fix Firebase inference-source TypeScript error using SDK constants.
 - [x] Pass typecheck, unit tests, production build on commit b2884c2.
-- [ ] Verify current transcript work still passes CI.
-- [ ] Verify manifest asset paths match Vite output.
+- [x] Verify transcript ingestion, IndexedDB implementation, and extension package smoke check pass CI (run 45563356591).
+- [x] Verify manifest asset paths match Vite output in CI.
 - [ ] Load dist in Chrome without extension errors.
 - [ ] Verify action opens side panel.
 - [ ] Verify active YouTube tab and SPA navigation.
@@ -165,3 +165,10 @@ The transcript ingestion UI/parser work passed CI on commit 1b077baa33d7f097e877
 ## 6. Definition of done
 
 A task is complete only when behavior is implemented, types compile, relevant tests pass, production build passes, runtime behavior is manually verified where applicable, and PROJECT_STATUS.md accurately records the evidence and remaining limitations.
+
+
+## 7. Session update — 2026-11-25 (continued)
+- Latest green CI: run 45563356591, commit 5398e512007a7447f7648eb9d2a24f13b73352ec. Typecheck, unit tests, production build, and extension package smoke validation passed.
+- Follow-up commit ed4f642 ignores inactive-tab URL changes when synchronizing active lesson context; CI pending at time of update.
+- Runtime QA in Chrome remains a manual blocker. CI package validation is not equivalent to loading the extension.
+- Reproducibility blocker: no package-lock.json exists. Generate it with npm against the actual dependency graph; never fabricate one.
