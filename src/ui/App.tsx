@@ -5,6 +5,7 @@ import { askLearnLens } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport } from "../services/transcript";
 import { deleteLearningSession, getLatestManualSession, getLatestSessionForVideo, saveLearningSession } from "../services/session-store";
 import type { InferencePreference, TranscriptSegment, VideoContext } from "../shared/types";
+import type { ExtensionMessage } from "../shared/messages";
 
 const emptyContext: VideoContext = {
   videoId: "",
@@ -30,39 +31,89 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!chrome?.tabs?.query) return;
+    let restoreVersion = 0;
+    let lastVideoId = "";
 
-    chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
-      const tab = tabs[0];
-      const isYouTubeWatch = Boolean(tab?.url?.includes("youtube.com/watch"));
-      const context: VideoContext = isYouTubeWatch && tab?.url
-        ? {
-            videoId: new URL(tab.url).searchParams.get("v") ?? "",
-            title: tab.title?.replace(" - YouTube", "") ?? "YouTube video",
-            url: tab.url,
-            platform: "youtube"
-          }
-        : emptyContext;
-      setVideo(context);
-      setSessionId(context.videoId);
+    const applyContext = (context: VideoContext | null, initial = false) => {
+      if (cancelled) return;
+      const next = context ?? emptyContext;
+      const changedVideo = lastVideoId !== next.videoId;
+      lastVideoId = next.videoId;
+      setVideo(next);
+      setAnswer("");
+      setSource("");
+      setError("");
 
-      const restore = context.videoId
-        ? getLatestSessionForVideo(context.videoId)
+      if (changedVideo && !initial) {
+        setRawTranscript("");
+        setTranscriptSource("Pasted transcript");
+        setSessionId(next.videoId);
+        setSavedSession(false);
+        setStorageNotice("");
+      }
+
+      const version = ++restoreVersion;
+      const restore = next.videoId
+        ? getLatestSessionForVideo(next.videoId)
         : getLatestManualSession();
       void restore.then((saved) => {
-        if (cancelled || !saved) return;
-        if (!context.videoId) setVideo({ ...emptyContext, title: saved.title || "Saved imported lesson" });
-        setRawTranscript(saved.transcriptText);
-        setTranscriptSource(saved.transcriptSource);
-        setSessionId(saved.id);
-        setSavedSession(true);
-        setStorageNotice("Restored a lesson saved on this device.");
+        if (cancelled || version !== restoreVersion) return;
+        if (saved) {
+          if (!next.videoId) setVideo({ ...emptyContext, title: saved.title || "Saved imported lesson" });
+          setRawTranscript(saved.transcriptText);
+          setTranscriptSource(saved.transcriptSource);
+          setSessionId(saved.id);
+          setSavedSession(true);
+          setStorageNotice("Restored a lesson saved on this device.");
+        } else if (next.videoId) {
+          setSessionId(next.videoId);
+          setSavedSession(false);
+        } else if (initial) {
+          setSessionId("");
+        }
       }).catch(() => {
-        if (!cancelled) setStorageNotice("Could not read saved lessons from this browser.");
+        if (!cancelled && version === restoreVersion) {
+          setStorageNotice("Could not read saved lessons from this browser.");
+        }
       });
+    };
+
+    const onRuntimeMessage = (message: ExtensionMessage) => {
+      if (message.type === "LEARNLENS_ACTIVE_CONTEXT_CHANGED") {
+        applyContext(message.payload);
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(onRuntimeMessage);
+    chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
+      if (cancelled) return;
+      const tab = tabs[0];
+      let context: VideoContext | null = null;
+      if (tab?.url) {
+        try {
+          const url = new URL(tab.url);
+          const videoId = url.hostname === "www.youtube.com" && url.pathname === "/watch"
+            ? url.searchParams.get("v")
+            : null;
+          if (videoId) {
+            context = {
+              videoId,
+              title: tab.title?.replace(" - YouTube", "") ?? "YouTube video",
+              url: tab.url,
+              platform: "youtube"
+            };
+          }
+        } catch {
+          context = null;
+        }
+      }
+      applyContext(context, true);
     });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      chrome.runtime.onMessage.removeListener(onRuntimeMessage);
+    };
   }, []);
 
   const importedTranscript = useMemo(
