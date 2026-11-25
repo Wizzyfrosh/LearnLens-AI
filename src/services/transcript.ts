@@ -178,3 +178,25 @@ export function buildContextWindow(segments: TranscriptSegment[], maxChars = 12_
   }
   return output;
 }
+
+
+function toVttTimestamp(seconds: number): string {
+  const milliseconds = Math.max(0, Math.round(seconds * 1000));
+  const hours = Math.floor(milliseconds / 3_600_000);
+  const minutes = Math.floor((milliseconds % 3_600_000) / 60_000);
+  const remainingSeconds = Math.floor((milliseconds % 60_000) / 1000);
+  const remainder = milliseconds % 1000;
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}.${remainder.toString().padStart(3, "0")}`;
+}
+
+/** Serializes automatically captured caption segments for local session persistence. */
+export function serializeSegmentsAsVtt(segments: TranscriptSegment[]): string {
+  const cues = segments
+    .filter((segment) => segment.text.trim() && segment.hasTimestamp)
+    .map((segment, index) => {
+      const start = Math.max(0, segment.startSeconds);
+      const end = Math.max(start + 0.5, segment.endSeconds);
+      return `${index + 1}\n${toVttTimestamp(start)} --> ${toVttTimestamp(end)}\n${segment.text.trim()}`;
+    });
+  return cues.length ? `WEBVTT\n\n${cues.join("\n\n")}\n` : "WEBVTT\n";
+}
