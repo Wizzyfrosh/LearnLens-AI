@@ -4,6 +4,7 @@ export interface TranscriptSegment {
   id: string;
   startSeconds: number;
   endSeconds: number;
+  hasTimestamp: boolean;
   text: string;
   source: TranscriptSource;
 }
