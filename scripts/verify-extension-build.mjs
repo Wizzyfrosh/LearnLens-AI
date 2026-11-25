@@ -50,8 +50,8 @@ if (!existsSync(offscreenPath)) {
   for (const asset of assetRefs) {
     if (/^(https?:)?\/\//.test(asset) || asset.startsWith("data:")) continue;
     const normalized = asset.replace(/^\.\//, "").replace(/^\//, "");
-    if (!existsSync(resolve(dist, normalized))) fail(\`offscreen document asset missing: \${asset}\`);
-    else pass(\`offscreen document asset exists: \${asset}\`);
+    if (!existsSync(resolve(dist, normalized))) fail("offscreen document asset missing: " + asset);
+    else pass("offscreen document asset exists: " + asset);
   }
 }
 
