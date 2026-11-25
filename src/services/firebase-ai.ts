@@ -111,8 +111,16 @@ export async function askLearnLens(
   const ai = getAI(app, { backend: new GoogleAIBackend() });
   const model = getGenerativeModel(ai, {
     mode: modes[preference],
-    inCloudParams: { model: "gemini-3.5-flash-lite" },
-    generationConfig: { temperature: 0.25, maxOutputTokens: 700 }
+    inCloudParams: {
+      model: "gemini-3.5-flash-lite",
+      generationConfig: { temperature: 0.25, maxOutputTokens: 700 }
+    },
+    onDeviceParams: {
+      createOptions: {
+        expectedInputs: [{ type: "text", languages: ["en"] }],
+        expectedOutputs: [{ type: "text", languages: ["en"] }]
+      }
+    }
   });
 
   if (preference === "only_on_device") {
