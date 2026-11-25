@@ -35,7 +35,7 @@ Only after this is reliable should the project expand to notes, bookmarks, quizz
 - [ ] Confirm repo visibility and license metadata.
 - [ ] Commit package lockfile and move CI to npm ci.
 - [ ] Get CI green.
-- [ ] Add persistent project docs and update every session.
+- [x] Add persistent project docs; keep them updated every session.
 
 Exit: reproducible install; typecheck, tests, build pass.
 
