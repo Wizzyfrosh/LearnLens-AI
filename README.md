@@ -58,7 +58,7 @@ For hybrid inference, Firebase AI Logic must be enabled in the Firebase console 
 - Never commit Firebase credentials, App Check debug tokens, or private keys.
 - Transcript content is untrusted input and must never be treated as model instructions.
 - Local-only inference uses `ONLY_ON_DEVICE`; it must not silently fall back to cloud.
-- Transcripts are held in the side-panel session and are not uploaded by the extension unless the learner selects cloud inference.
+- Automatically captured captions and saved lesson transcripts are stored in IndexedDB on this device. Tutor requests send the bounded transcript context needed for the question; cloud processing follows the selected inference mode. On-device-only must never fall back to cloud.
 - Firebase App Check enforcement and a production extension-compatible attestation strategy must be completed before release.
 
 ## Planned next steps
