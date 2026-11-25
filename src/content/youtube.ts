@@ -1,6 +1,6 @@
 import type { TranscriptSegment } from "../shared/types";
 import type { ExtensionMessage } from "../shared/messages";
-import { normalizeVisibleCaptionText, readYouTubeVideoContext } from "./youtube-context";
+import { readVisibleCaptionText, readYouTubeVideoContext } from "./youtube-context";
 (() => {
   const isolatedWindow = window as Window & { __learnLensYouTubeContentScriptReady?: boolean };
   if (isolatedWindow.__learnLensYouTubeContentScriptReady) return;
@@ -75,10 +75,9 @@ function disconnectCaptionObservers(): void {
 function publishVisibleCaption(): void {
   if (!isCaptionCaptureActive) return;
   const captionSegments = [...document.querySelectorAll(".ytp-caption-segment")]
-    .map((element) => element.textContent ?? "")
-    .join(" ");
+    .map((element) => element.textContent ?? "");
   const captionContainerText = document.querySelector(".ytp-caption-window-container")?.textContent ?? "";
-  const text = normalizeVisibleCaptionText(captionSegments || captionContainerText);
+  const text = readVisibleCaptionText(captionSegments, captionContainerText);
   if (!text) return;
 
   const video = document.querySelector("video");
