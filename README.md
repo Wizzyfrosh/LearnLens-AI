@@ -82,9 +82,7 @@ The extension build reads Firebase web-app configuration from GitHub Actions rep
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_APP_ID`
 
-The workflow enables the Firebase App Check debug provider for controlled testing. When the extension first initializes App Check, Firebase prints a debug token in the extension's offscreen document console. Register that token under **Firebase Console → App Check → Apps → Manage debug tokens**. Keep the token private; never commit it to GitHub.
-
-For the offscreen document console, open `chrome://extensions`, find LearnLens AI, click its **service worker / Inspect views** link when available, and inspect the offscreen context. The exact inspection link can vary by Chrome version.
+The workflow enables the Firebase App Check debug provider for controlled testing. When the side panel first initializes App Check, Firebase prints a debug token in the side-panel DevTools console. Open DevTools for the LearnLens side panel (right-click inside the panel and choose **Inspect**, where available), copy the token, then register it under **Firebase Console → App Check → Apps → Manage debug tokens**. Keep the token private; never commit it to GitHub.
 
 Do not enable Firebase AI Logic App Check enforcement until the extension's requests appear as valid in App Check metrics. This debug setup is for testing only, not production attestation.
 
