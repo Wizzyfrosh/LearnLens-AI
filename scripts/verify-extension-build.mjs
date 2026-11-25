@@ -40,6 +40,21 @@ for (const relativePath of requiredPaths) {
   else pass(`manifest target exists: ${relativePath}`);
 }
 
+const offscreenPath = resolve(dist, "offscreen.html");
+if (!existsSync(offscreenPath)) {
+  fail("offscreen.html is missing; tab audio capture cannot start");
+} else {
+  pass("offscreen audio capture document");
+  const html = readFileSync(offscreenPath, "utf8");
+  const assetRefs = [...html.matchAll(/(?:src|href)="([^"]+)"/g)].map((match) => match[1]);
+  for (const asset of assetRefs) {
+    if (/^(https?:)?\\/\\//.test(asset) || asset.startsWith("data:")) continue;
+    const normalized = asset.replace(/^\\.\\//, "").replace(/^\\//, "");
+    if (!existsSync(resolve(dist, normalized))) fail(`offscreen document asset missing: ${asset}`);
+    else pass(`offscreen document asset exists: ${asset}`);
+  }
+}
+
 const panelPath = manifest.side_panel?.default_path
   ? resolve(dist, manifest.side_panel.default_path)
   : null;
