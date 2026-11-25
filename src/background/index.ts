@@ -121,7 +121,7 @@ async function stopAudioCapture(tabId: number, message: string): Promise<void> {
   try { await chrome.runtime.sendMessage({ type: "LEARNLENS_OFFSCREEN_STOP_AUDIO_CAPTURE" } satisfies ExtensionMessage); } catch {}
   broadcast({ type: "LEARNLENS_AUDIO_CAPTURE_STATUS", payload: { status: "idle", message } });
 }
-async function startAudioCapture(tabId: number, videoId: string): Promise<void> {
+async function startAudioCapture(tabId: number, videoId: string, streamId: string): Promise<void> {
   await audioStateReady;
   const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (activeTab?.id !== tabId) throw new Error("Switch to the lesson tab before starting audio transcription.");
@@ -138,9 +138,9 @@ async function startAudioCapture(tabId: number, videoId: string): Promise<void> 
     });
   }
 
-  // Chrome's MV3 tab-capture flow: obtain the stream ID in the service
-  // worker, then consume it in the same-origin offscreen document.
-  const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+  // The side panel acquires this stream ID synchronously from the learner's
+  // click handler. Do not request it here: awaiting worker operations would
+  // lose the user gesture required by Chrome tabCapture.
   if (!streamId) throw new Error("Chrome did not provide an audio stream ID for this lesson.");
 
   audioCaptureTabId = tabId;
@@ -196,7 +196,7 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
 
   if (message.type === "LEARNLENS_START_AUDIO_CAPTURE") {
     if (sender.url !== chrome.runtime.getURL("sidepanel.html")) return;
-    void startAudioCapture(message.tabId, message.videoId).then(() => {
+    void startAudioCapture(message.tabId, message.videoId, message.streamId).then(() => {
       sendResponse({ ok: true });
     }).catch((error: unknown) => {
       const detail = error instanceof Error ? error.message : "Could not start audio transcription.";
