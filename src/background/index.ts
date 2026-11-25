@@ -149,6 +149,29 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
     return;
   }
 
+  if (message.type === "LEARNLENS_START_AUDIO_CAPTURE") {
+    void startAudioCapture(message.tabId, message.videoId, message.streamId).catch((error: unknown) => {
+      broadcast({ type: "LEARNLENS_AUDIO_CAPTURE_STATUS", payload: { status: "error", message: error instanceof Error ? error.message : "Could not start audio transcription." } });
+    });
+    return;
+  }
+
+  if (message.type === "LEARNLENS_STOP_AUDIO_CAPTURE") {
+    void stopAudioCapture(message.tabId, "Audio transcription stopped.");
+    return;
+  }
+
+  if (message.type === "LEARNLENS_AUDIO_CAPTURE_STATUS" || message.type === "LEARNLENS_AUDIO_CHUNK") {
+    if (sender.url !== chrome.runtime.getURL("offscreen.html") || audioCaptureTabId === null) return;
+    if (message.type === "LEARNLENS_AUDIO_CHUNK" && message.payload.videoId !== audioCaptureVideoId) return;
+    broadcast(message);
+    if (message.type === "LEARNLENS_AUDIO_CAPTURE_STATUS" && message.payload.status === "error") {
+      audioCaptureTabId = null;
+      audioCaptureVideoId = "";
+    }
+    return;
+  }
+
   if (message.type === "LEARNLENS_CAPTURE_STATUS" || message.type === "LEARNLENS_CAPTION_SEGMENT") {
     const senderTabId = sender.tab?.id;
     if (senderTabId === undefined || senderTabId !== captionCaptureTabId) return;
@@ -177,16 +200,23 @@ chrome.tabs.onActivated.addListener(({ tabId }) => {
   if (captionCaptureTabId !== null && captionCaptureTabId !== tabId) {
     void stopCaptionCapture(captionCaptureTabId, "Capture paused because you switched to another tab.");
   }
+  if (audioCaptureTabId !== null && audioCaptureTabId !== tabId) {
+    void stopAudioCapture(audioCaptureTabId, "Audio transcription stopped because you switched tabs.");
+  }
   void syncActiveTabContext(tabId);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (audioCaptureTabId === tabId && changeInfo.url && videoIdFromUrl(changeInfo.url) !== audioCaptureVideoId) {
+    void stopAudioCapture(tabId, "Audio transcription stopped because the lesson changed.");
+  }
   if (tab.active && (changeInfo.url || changeInfo.title || changeInfo.status === "complete")) {
     void syncActiveTabContext(tabId);
   }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  if (audioCaptureTabId === tabId) void stopAudioCapture(tabId, "Audio transcription stopped because the lesson tab was closed.");
   if (captionCaptureTabId === tabId) {
     captionCaptureTabId = null;
     broadcast({ type: "LEARNLENS_CAPTURE_STATUS", payload: { status: "idle", message: "Capture stopped because the lesson tab was closed." } });
