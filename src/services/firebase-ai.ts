@@ -1,5 +1,5 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
-import { CustomProvider, initializeAppCheck } from "firebase/app-check";
+import { initializeAppCheck } from "firebase/app-check";
 import {
   getAI,
   getGenerativeModel,
@@ -38,12 +38,10 @@ function ensureDebugAppCheck(app: ReturnType<typeof getFirebaseApp>): void {
   (globalThis as typeof globalThis & { FIREBASE_APPCHECK_DEBUG_TOKEN?: boolean | string })
     .FIREBASE_APPCHECK_DEBUG_TOKEN = true;
 
+  // Firebase App Check's web debug mode exchanges the generated debug token
+  // automatically. Do not provide a CustomProvider here: a custom provider
+  // must implement a real attestation-token exchange and would block requests.
   initializeAppCheck(app, {
-    provider: new CustomProvider({
-      getToken: async () => {
-        throw new Error("Firebase App Check debug token initialization did not complete.");
-      }
-    }),
     isTokenAutoRefreshEnabled: true
   });
   debugAppCheckInitialized = true;
