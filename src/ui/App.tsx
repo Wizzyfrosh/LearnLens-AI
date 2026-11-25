@@ -281,10 +281,12 @@ export default function App() {
     }
 
     try {
+      // Invoke tabCapture immediately in the click handler, before any await,
+      // so Chrome can associate it with the learner's explicit gesture.
+      const streamIdPromise = chrome.tabCapture.getMediaStreamId();
       const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
       if (tab?.id === undefined) throw new Error("Could not identify the active lesson tab.");
-      await stopLearning();
-      const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
+      const streamId = await streamIdPromise;
       setCapturedSegments([]);
       setRawTranscript("");
       setSavedSession(false);
