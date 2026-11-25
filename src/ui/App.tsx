@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles } from "lucide-react";
+import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2 } from "lucide-react";
 import { askLearnLens } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport } from "../services/transcript";
+import { deleteLearningSession, getLatestSessionForVideo, saveLearningSession } from "../services/session-store";
 import type { InferencePreference, TranscriptSegment, VideoContext } from "../shared/types";
 
 const emptyContext: VideoContext = {
@@ -16,6 +17,9 @@ export default function App() {
   const [video, setVideo] = useState<VideoContext>(emptyContext);
   const [rawTranscript, setRawTranscript] = useState("");
   const [transcriptSource, setTranscriptSource] = useState("Pasted transcript");
+  const [sessionId, setSessionId] = useState("");
+  const [savedSession, setSavedSession] = useState(false);
+  const [storageNotice, setStorageNotice] = useState("");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [source, setSource] = useState("");
@@ -25,14 +29,35 @@ export default function App() {
   const [progress, setProgress] = useState<number | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     if (!chrome?.tabs?.query) return;
+
     chrome.tabs.query({ active: true, lastFocusedWindow: true }, (tabs) => {
       const tab = tabs[0];
       if (!tab?.url?.includes("youtube.com/watch")) return;
       const url = new URL(tab.url);
-      const context = { videoId: url.searchParams.get("v") ?? "", title: tab.title?.replace(" - YouTube", "") ?? "YouTube video", url: tab.url, platform: "youtube" as const };
+      const context: VideoContext = {
+        videoId: url.searchParams.get("v") ?? "",
+        title: tab.title?.replace(" - YouTube", "") ?? "YouTube video",
+        url: tab.url,
+        platform: "youtube"
+      };
       setVideo(context);
+      setSessionId(context.videoId);
+
+      void getLatestSessionForVideo(context.videoId).then((saved) => {
+        if (cancelled || !saved) return;
+        setRawTranscript(saved.transcriptText);
+        setTranscriptSource(saved.transcriptSource);
+        setSessionId(saved.id);
+        setSavedSession(true);
+        setStorageNotice("Restored a lesson saved on this device.");
+      }).catch(() => {
+        if (!cancelled) setStorageNotice("Could not read saved lessons from this browser.");
+      });
     });
+
+    return () => { cancelled = true; };
   }, []);
 
   const importedTranscript = useMemo(
@@ -65,6 +90,7 @@ export default function App() {
     if (!file) return;
     if (file.size > MAX_TRANSCRIPT_CHARS) {
       setRawTranscript("");
+      setSavedSession(false);
       setError(`This file exceeds the ${MAX_TRANSCRIPT_CHARS.toLocaleString()} character import limit.`);
       return;
     }
@@ -72,9 +98,45 @@ export default function App() {
       const content = await file.text();
       setRawTranscript(content);
       setTranscriptSource(file.name);
+      setSavedSession(false);
+      setStorageNotice("");
       setError("");
     } catch {
       setError("The selected transcript could not be read. Try saving it as UTF-8 text.");
+    }
+  }
+
+  async function saveCurrentSession() {
+    if (!importedTranscript || importedTranscript.errors.length || !segments.length) return;
+    const id = video.videoId || sessionId || crypto.randomUUID();
+    try {
+      await saveLearningSession({
+        id,
+        videoId: video.videoId,
+        title: video.videoId ? video.title : "Imported lesson",
+        url: video.url,
+        platform: video.videoId ? "youtube" : "manual",
+        transcriptText: rawTranscript,
+        transcriptFormat: importedTranscript.format,
+        transcriptSource,
+        updatedAt: Date.now()
+      });
+      setSessionId(id);
+      setSavedSession(true);
+      setStorageNotice("Lesson saved locally on this device.");
+    } catch (cause) {
+      setStorageNotice(cause instanceof Error ? cause.message : "Could not save this lesson locally.");
+    }
+  }
+
+  async function clearSavedSession() {
+    if (!savedSession || !sessionId) return;
+    try {
+      await deleteLearningSession(sessionId);
+      setSavedSession(false);
+      setStorageNotice("Saved lesson removed from this device. The current transcript remains open.");
+    } catch (cause) {
+      setStorageNotice(cause instanceof Error ? cause.message : "Could not remove the saved lesson.");
     }
   }
 
@@ -109,6 +171,8 @@ export default function App() {
         <textarea value={rawTranscript} onChange={(event) => {
           setRawTranscript(event.target.value);
           setTranscriptSource("Pasted transcript");
+          setSavedSession(false);
+          setStorageNotice("");
           setError("");
         }} placeholder="Paste the video's transcript here. Timestamped VTT/SRT gives the tutor better references." rows={5} />
         {importedTranscript && (
@@ -120,17 +184,26 @@ export default function App() {
             )}
             {importedTranscript.warnings.map((warning) => <p className="helper-text" key={warning}>{warning}</p>)}
             {segmentCount > 0 && (
-              <div className="transcript-preview">
-                <strong>Preview</strong>
-                {segments.slice(0, 3).map((segment) => (
-                  <p key={segment.id}>
-                    {segment.hasTimestamp && <span>[{Math.floor(segment.startSeconds / 60).toString().padStart(2, "0")}:{Math.floor(segment.startSeconds % 60).toString().padStart(2, "0")}] </span>}
-                    {segment.text}
-                  </p>
-                ))}
-                {segmentCount > 3 && <small>And {segmentCount - 3} more segments</small>}
-              </div>
+              <>
+                <div className="transcript-preview">
+                  <strong>Preview</strong>
+                  {segments.slice(0, 3).map((segment) => (
+                    <p key={segment.id}>
+                      {segment.hasTimestamp && <span>[{Math.floor(segment.startSeconds / 60).toString().padStart(2, "0")}:{Math.floor(segment.startSeconds % 60).toString().padStart(2, "0")}] </span>}
+                      {segment.text}
+                    </p>
+                  ))}
+                  {segmentCount > 3 && <small>And {segmentCount - 3} more segments</small>}
+                </div>
+                <div className="session-actions">
+                  <button className="secondary-button" type="button" onClick={() => void saveCurrentSession()} disabled={savedSession}>
+                    <Save size={14} /> {savedSession ? "Saved on this device" : "Save lesson locally"}
+                  </button>
+                  {savedSession && <button className="secondary-button" type="button" onClick={() => void clearSavedSession()}><Trash2 size={14} /> Remove saved copy</button>}
+                </div>
+              </>
             )}
+            {storageNotice && <p className="helper-text">{storageNotice}</p>}
           </div>
         )}
       </section>
@@ -159,7 +232,7 @@ export default function App() {
         {answer && <article className="answer-card"><div className="answer-meta">LEARNLENS RESPONSE <span>{source === "ON_DEVICE" ? "ON DEVICE" : source === "IN_CLOUD" ? "CLOUD" : "SOURCE UNKNOWN"}</span></div><p>{answer}</p></article>}
       </section>
 
-      <footer>Transcripts are processed in this browser and are not saved by LearnLens. Prefer-on-device may use cloud fallback; on-device-only blocks cloud fallback.</footer>
+      <footer>Saved lessons stay in this browser's local storage. Transcripts are not uploaded for session storage; AI processing follows the selected inference mode.</footer>
     </main>
   );
 }
