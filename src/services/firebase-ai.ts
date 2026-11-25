@@ -1,5 +1,5 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
-import { initializeAppCheck } from "firebase/app-check";
+import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 import {
   getAI,
   getGenerativeModel,
@@ -38,10 +38,12 @@ function ensureDebugAppCheck(app: ReturnType<typeof getFirebaseApp>): void {
   (globalThis as typeof globalThis & { FIREBASE_APPCHECK_DEBUG_TOKEN?: boolean | string })
     .FIREBASE_APPCHECK_DEBUG_TOKEN = true;
 
-  // Firebase App Check's web debug mode exchanges the generated debug token
-  // automatically. Do not provide a CustomProvider here: a custom provider
-  // must implement a real attestation-token exchange and would block requests.
+  // The debug flag makes the SDK issue a locally generated debug token.
+  // The provider is still a required AppCheckOptions field; "debug" is a
+  // placeholder site key and is never used for a real reCAPTCHA assessment
+  // while debug mode is active. Register the emitted debug token in Firebase.
   initializeAppCheck(app, {
+    provider: new ReCaptchaV3Provider("debug"),
     isTokenAutoRefreshEnabled: true
   });
   debugAppCheckInitialized = true;
