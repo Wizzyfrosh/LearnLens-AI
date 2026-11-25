@@ -15,7 +15,8 @@ export default defineConfig({
       input: {
         sidepanel: fileURLToPath(new URL("./sidepanel.html", import.meta.url)),
         background: fileURLToPath(new URL("./src/background/index.ts", import.meta.url)),
-        youtube: fileURLToPath(new URL("./src/content/youtube.ts", import.meta.url))
+        youtube: fileURLToPath(new URL("./src/content/youtube.ts", import.meta.url)),
+        offscreen: fileURLToPath(new URL("./offscreen.html", import.meta.url))
       },
       output: {
         entryFileNames: "assets/[name].js",
