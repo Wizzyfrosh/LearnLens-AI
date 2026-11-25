@@ -33,6 +33,7 @@ export default function App() {
   const [audioCaptureStatus, setAudioCaptureStatus] = useState<AudioCaptureStatus>("idle");
   const [audioCaptureMessage, setAudioCaptureMessage] = useState("Audio transcription is optional and sends lesson audio to Firebase for transcription.");
   const [audioCaptureTabId, setAudioCaptureTabId] = useState<number | null>(null);
+  const audioCaptureTabIdRef = useRef<number | null>(null);
   const audioQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [sessionId, setSessionId] = useState("");
   const [savedSession, setSavedSession] = useState(false);
@@ -116,6 +117,7 @@ export default function App() {
         setAudioCaptureStatus(message.payload.status);
         setAudioCaptureMessage(message.payload.message);
         if (message.payload.status === "idle" || message.payload.status === "error") setAudioCaptureTabId(null);
+        audioCaptureTabIdRef.current = null;
       } else if (message.type === "LEARNLENS_AUDIO_CHUNK") {
         audioQueueRef.current = audioQueueRef.current.then(async () => {
           const text = await transcribeAudioChunk(message.payload.dataBase64, message.payload.mimeType, message.payload.sequence);
@@ -134,8 +136,8 @@ export default function App() {
         }).catch((cause: unknown) => {
           setAudioCaptureStatus("error");
           setAudioCaptureMessage(cause instanceof Error ? cause.message : "Audio transcription failed.");
-          if (audioCaptureTabId !== null) {
-            chrome.runtime.sendMessage({ type: "LEARNLENS_STOP_AUDIO_CAPTURE", tabId: audioCaptureTabId } satisfies ExtensionMessage).catch(() => undefined);
+          if (audioCaptureTabIdRef.current !== null) {
+            chrome.runtime.sendMessage({ type: "LEARNLENS_STOP_AUDIO_CAPTURE", tabId: audioCaptureTabIdRef.current } satisfies ExtensionMessage).catch(() => undefined);
           }
         });
       } else if (message.type === "LEARNLENS_CAPTION_SEGMENT") {
@@ -280,6 +282,7 @@ export default function App() {
       setSavedSession(false);
       setStorageNotice("");
       setAudioCaptureTabId(tab.id);
+      audioCaptureTabIdRef.current = tab.id;
       setAudioCaptureStatus("capturing");
       setAudioCaptureMessage("Connecting to the active lesson audio. The video should continue playing normally.");
       await chrome.runtime.sendMessage({
@@ -305,6 +308,7 @@ export default function App() {
     setAudioCaptureStatus("idle");
     setAudioCaptureMessage("Audio transcription stopped. Raw audio chunks are not retained.");
     setAudioCaptureTabId(null);
+    audioCaptureTabIdRef.current = null;
   }
 
   async function submitQuestion(event: FormEvent) {
