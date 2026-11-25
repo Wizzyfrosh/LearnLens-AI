@@ -123,7 +123,7 @@ export async function askLearnLens(
     void model.initializeDeviceModel((progress) => onDownloadProgress?.(progress)).catch(() => undefined);
   }
 
-  const transcript = buildContextWindow(segments);
+  const transcript = buildContextWindow(segments, 12_000, question);
   const prompt = [
     "You are LearnLens AI, a precise learning tutor.",
     "Answer using the supplied video transcript as your primary source.",
