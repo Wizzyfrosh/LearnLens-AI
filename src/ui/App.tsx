@@ -23,7 +23,13 @@ const captureStatusLabel: Record<CaptionCaptureStatus, string> = {
   error: "Capture unavailable"
 };
 
-export default function formatLessonTime(seconds: number): string {\n  const minutes = Math.floor(seconds / 60);\n  const remaining = Math.floor(seconds % 60);\n  return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;\n}\n\nfunction App() {
+function formatLessonTime(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remaining = Math.floor(seconds % 60);
+  return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;
+}
+
+export default function App() {
   const [video, setVideo] = useState<VideoContext>(emptyContext);
   const [rawTranscript, setRawTranscript] = useState("");
   const [transcriptSource, setTranscriptSource] = useState("Pasted transcript");
@@ -621,6 +627,7 @@ export default function formatLessonTime(seconds: number): string {\n  const min
                 <p key={segment.id}>
                   {segment.hasTimestamp && <span>[{Math.floor(segment.startSeconds / 60).toString().padStart(2, "0")}:{Math.floor(segment.startSeconds % 60).toString().padStart(2, "0")}] </span>}
                   {segment.text}
+                  {segment.hasTimestamp && savedSession && <button className="inline-bookmark" type="button" onClick={() => void addBookmark(segment)} aria-label={`Bookmark at ${formatLessonTime(segment.startSeconds)}`}><Bookmark size={12} /></button>}
                 </p>
               ))}
             </div>
