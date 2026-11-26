@@ -138,11 +138,22 @@ export function getLatestManualSession(): Promise<LearningSession | null> {
   });
 }
 
-export function deleteLearningSession(id: string): Promise<void> {
-  return runTransaction<void>(SESSION_STORE, "readwrite", (store, resolve) => {
-    store.delete(id);
-    store.transaction.oncomplete = () => resolve();
-  });
+export async function deleteLearningSession(id: string): Promise<void> {
+  const database = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction([SESSION_STORE, NOTE_STORE, BOOKMARK_STORE], "readwrite");
+    transaction.objectStore(SESSION_STORE).delete(id);
+    for (const storeName of [NOTE_STORE, BOOKMARK_STORE]) {
+      const store = transaction.objectStore(storeName);
+      const request = store.index("sessionId").getAllKeys(id);
+      request.onsuccess = () => {
+        for (const key of request.result) store.delete(key);
+      };
+    }
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not remove the saved lesson and its learning artifacts."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Removing the saved lesson was cancelled."));
+  }).finally(() => database.close());
 }
 
 export function saveLearningNote(note: LearningNote): Promise<void> {
