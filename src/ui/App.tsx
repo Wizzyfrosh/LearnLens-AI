@@ -549,7 +549,6 @@ export default function App() {
     }
     const targetSessionId = sessionId;
     const targetSegments = segments;
-    const targetTitle = video.title;
     setDraftingNote(true);
     setArtifactMessage("Generating a draft from the current lesson transcript. Review it before saving.");
     try {
