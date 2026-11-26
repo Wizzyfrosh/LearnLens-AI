@@ -618,6 +618,7 @@ export async function queueSyncOperation(
     const transaction = database.transaction([SYNC_METADATA_STORE, SYNC_OUTBOX_STORE, SYNC_REQUEST_STORE], "readwrite");
     const metadataStore = transaction.objectStore(SYNC_METADATA_STORE);
     const outboxStore = transaction.objectStore(SYNC_OUTBOX_STORE);
+    const requestStore = transaction.objectStore(SYNC_REQUEST_STORE);
     let result: SyncOutboxRecord | null = null;
     const metadataRequest = metadataStore.get(entityKey);
     metadataRequest.onsuccess = () => {

@@ -104,7 +104,7 @@ export async function prepareSyncRequests(
 ): Promise<PreparedSyncRequestBatch> {
   const batch = await prepareSyncBatch(ownerUid, limit);
   const requests: SyncRequestRecord[] = [];
-  const blocked = [...batch.blocked];
+  const blocked: PreparedSyncRequestBatch["blocked"] = [...batch.blocked];
 
   for (const operation of batch.operations) {
     const result = await createSyncRequestSnapshot(
