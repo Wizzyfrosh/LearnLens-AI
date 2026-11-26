@@ -121,6 +121,13 @@ export function saveLearningSession(session: LearningSession): Promise<void> {
   });
 }
 
+export function listLearningSessions(): Promise<LearningSession[]> {
+  return runTransaction<LearningSession[]>(SESSION_STORE, "readonly", (store, resolve) => {
+    const request = store.getAll();
+    request.onsuccess = () => resolve((request.result as LearningSession[]).sort((a, b) => b.updatedAt - a.updatedAt));
+  });
+}
+
 export function getLatestSessionForVideo(videoId: string): Promise<LearningSession | null> {
   if (!videoId) return Promise.resolve(null);
   return runTransaction<LearningSession | null>(SESSION_STORE, "readonly", (store, resolve) => {
