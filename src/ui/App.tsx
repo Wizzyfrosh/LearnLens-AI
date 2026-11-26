@@ -964,7 +964,7 @@ export default function App() {
         {savedSession && sessionId && (activeTab === "notes" || activeTab === "bookmarks") && (
           <section className="learning-artifacts">
             <div className="section-heading">
-              <div><FileText size={17} /><h2>Lesson notes</h2></div>
+              <div><FileText size={17} /><h2>{activeTab === "notes" ? "Lesson notes" : "Bookmarks"}</h2></div>
               <span>{notes.length} notes · {bookmarks.length} bookmarks</span>
             </div>
             {activeTab === "notes" && <>
@@ -1007,15 +1007,15 @@ export default function App() {
             </div>
             </>}
             {activeTab === "bookmarks" && <div className="bookmark-list">
-              <strong>Bookmarks</strong>
+              <strong>Saved bookmarks</strong>
               {bookmarks.length ? bookmarks.map((item) => (
                 <div className="bookmark-row" key={item.id}>
                   {getLessonTimestampUrl(video.url, item.timestampSeconds) ? <a className="bookmark-time" href={getLessonTimestampUrl(video.url, item.timestampSeconds) ?? undefined} target="_blank" rel="noreferrer"><Bookmark size={13} /> {formatLessonTime(item.timestampSeconds)}</a> : <span><Bookmark size={13} /> {formatLessonTime(item.timestampSeconds)}</span>}
                   <p>{item.label}</p>
                   <button className="icon-button" type="button" aria-label="Delete bookmark" onClick={() => void removeBookmark(item.id)}><Trash2 size={13} /></button>
                 </div>
-              )) : <p className="empty-artifact">No timestamp bookmarks yet. Use the bookmark control beside a timed caption below.</p>}
-            </div>
+              )) : <p className="empty-artifact">No timestamp bookmarks yet. Use the bookmark control beside a timed caption in the Lesson tab.</p>}
+            </div>}
             {activeTab === "bookmarks" && <button className="secondary-button export-button" type="button" onClick={exportNotes} disabled={!notes.length && !bookmarks.length}><Download size={14} /> Export notes as Markdown</button>}
             {artifactMessage && <p className={artifactMessage.toLowerCase().includes("could not") || artifactMessage.toLowerCase().includes("error") || artifactMessage.toLowerCase().includes("invalid") ? "error-box" : "helper-text"} role="status">{artifactMessage}</p>}
           </section>
