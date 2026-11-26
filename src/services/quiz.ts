@@ -123,7 +123,7 @@ export function validateQuizResponse(text: string, segments: TranscriptSegment[]
     if (new Set(options.map((option) => option.toLocaleLowerCase())).size !== options.length) {
       throw new Error(`Quiz question ${index + 1} contains duplicate answer options.`);
     }
-    const evidenceWordCount = evidence.split(/\\s+/).length;
+    const evidenceWordCount = evidence.split(/\s+/).length;
     if (evidenceWordCount < 3 || evidenceWordCount > 25) {
       throw new Error(`Quiz question ${index + 1} evidence must be a short, exact transcript excerpt.`);
     }
