@@ -1,4 +1,3 @@
-import { getApp, getApps, initializeApp } from "firebase/app";
 import { initializeAppCheck, ReCaptchaV3Provider } from "firebase/app-check";
 import {
   getAI,
@@ -9,6 +8,7 @@ import {
 } from "firebase/ai";
 import type { InferencePreference, TutorReply, TranscriptSegment } from "../shared/types";
 import { buildContextWindow } from "./transcript";
+import { getFirebaseApp } from "./firebase-app";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -30,14 +30,6 @@ async function withAppCheckGuidance<T>(request: Promise<T>): Promise<T> {
     throw cause instanceof Error ? cause : new Error(message);
   }
 }
-
-function getFirebaseApp() {
-  if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
-    throw new Error("Firebase is not configured in this extension build. Add the Firebase web app values to GitHub Actions secrets and rebuild.");
-  }
-  return getApps().length ? getApp() : initializeApp(firebaseConfig);
-}
-
 
 function ensureDebugAppCheck(app: ReturnType<typeof getFirebaseApp>): void {
   if (debugAppCheckInitialized) return;
