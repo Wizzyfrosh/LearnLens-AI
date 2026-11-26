@@ -97,29 +97,34 @@ Implementation tasks:
 
 Exit: on a Chrome version/configuration with verified App Check and Firebase audio model access, a learner can explicitly consent, start audio transcription, see incremental transcript text, continue hearing the lesson, stop capture, and ask the tutor grounded questions. If cloud transcription is not configured or consent is absent, visible-caption capture remains the default and audio is never uploaded.
 ### Phase 4 — Local learning sessions, notes, and bookmarks
-- [x] Define versioned IndexedDB schema and indexes for lesson sessions.
-- [x] Persist sessions only after explicit learner save action.
-- [x] Keep transcript data local; no cloud persistence.
-- [x] Add remove-saved-copy action and restore latest matching session.
-- [ ] Add IndexedDB integration tests and verify upgrade behavior in Chrome.
-- [ ] Create/edit/delete/search notes.
-- [ ] AI note drafts require user review.
-- [ ] Link timestamps only when evidence exists.
-- [ ] Add Markdown export and PDF if quality/time permits.
-- [ ] Add tests.
+- [x] Define versioned IndexedDB schema and indexes for lesson sessions, notes, and bookmarks.
+- [x] Persist transcript sessions locally; transcripts are not uploaded to cloud storage.
+- [x] Restore the latest matching lesson and provide a saved-lesson history with manual restore.
+- [x] Remove a saved lesson and cascade-delete its notes, bookmarks, quizzes, and quiz attempts.
+- [x] Create/edit/delete/search notes.
+- [x] AI note drafts remain editable and require explicit learner save.
+- [x] Link notes/bookmarks only to real transcript timestamps.
+- [x] Export notes and bookmarks as Markdown.
+- [x] Add IndexedDB integration tests for schema migration, persistence, CRUD, ordering, and cascade deletion.
+- [ ] Verify Phase 4 behavior in desktop Chrome: migration, reload persistence, restore, notes, bookmarks, and export.
+- [ ] PDF export is deferred: Markdown is implemented; PDF will be added only if a reliable print layout can be delivered without adding a disproportionate dependency.
 
-Exit: learner can save, edit, revisit, clear, and export notes/bookmarks; sessions survive extension reloads. Current code implements the first notes/bookmarks workflow, but CI and Chrome runtime verification are still required.
+Exit: Phase 4 code and CI verification are complete; runtime verification remains open until desktop Chrome testing.
 
 ### Phase 5 — Quiz and learning loop
-- [ ] Define validated quiz/question schema.
-- [ ] Generate MCQ, true/false, short-answer questions.
-- [ ] Support whole lesson and selected range.
-- [ ] Score objective questions and explain answers.
-- [ ] Label open-ended AI feedback.
-- [ ] Track attempts and weak topics.
-- [ ] Test malformed model output and unsupported claims.
+- [x] Define validated quiz/question and attempt schemas.
+- [x] Generate multiple-choice, true/false, and short-answer questions.
+- [x] Support whole lesson, topic-focused generation, and timestamped selected ranges.
+- [x] Validate model JSON, answer options, unique IDs, and exact transcript evidence before saving.
+- [x] Score objective questions and explain correct answers.
+- [x] Label open-ended AI feedback as advisory and exclude it from objective scoring.
+- [x] Track quiz attempts and topics to revisit locally.
+- [x] Persist quizzes and attempts in IndexedDB and cascade-delete them with the parent lesson.
+- [x] Add unit tests for malformed model output, unsupported question types, invalid evidence/options, objective scoring, and feedback validation.
+- [ ] Verify quiz generation, inference source, scoring, short-answer feedback, history, and weak-topic tracking in desktop Chrome.
 
-Exit: learner can complete quiz and review weak topics.
+Exit: learner can generate and complete a transcript-grounded quiz, review explanations and advisory feedback, and revisit attempt history and topics to revisit. Runtime verification remains open.
+
 
 ### Phase 6 — Optional cloud sync
 - [ ] Add Firebase Auth when sync is ready.
