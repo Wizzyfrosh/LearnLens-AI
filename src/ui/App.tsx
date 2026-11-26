@@ -705,7 +705,7 @@ export default function App() {
         setQuizMessage("Enter a valid start and end time in seconds.");
         return;
       }
-      quizSegments = segments.filter((segment) => segment.hasTimestamp && segment.startSeconds >= start && segment.startSeconds <= end);
+      quizSegments = segments.filter((segment) => segment.hasTimestamp && segment.endSeconds >= start && segment.startSeconds <= end);
       if (!quizSegments.length) {
         setQuizMessage("No timestamped transcript captions were found in that range. Use the whole lesson or choose another range.");
         return;
