@@ -838,9 +838,24 @@ export default function App() {
     setQuizMessage("Generating and validating questions against the lesson transcript...");
     setQuizResult(null);
     try {
-      const generated = await generateQuizText(quizSegments, preference, quizQuestionCount, setProgress, focusInstruction);
-      const questions = validateQuizResponse(generated.text, quizSegments);
+      let generated = await generateQuizText(quizSegments, preference, quizQuestionCount, setProgress, focusInstruction);
       if (activeSessionIdRef.current !== targetSessionId) return;
+      let questions;
+      try {
+        questions = validateQuizResponse(generated.text, quizSegments);
+      } catch (validationCause) {
+        const reason = validationCause instanceof Error ? validationCause.message : "The response did not match the quiz schema.";
+        setQuizMessage("The first AI response did not pass validation. Retrying once with the validation feedback...");
+        generated = await generateQuizText(
+          quizSegments,
+          preference,
+          quizQuestionCount,
+          setProgress,
+          [focusInstruction, "The previous response was rejected because: " + reason, "Return complete valid JSON with exactly the requested number of questions. Every evidence value must be copied exactly from the transcript. Every correct answer must satisfy the question type and be supported by the transcript."].filter(Boolean).join("\\n")
+        );
+        if (activeSessionIdRef.current !== targetSessionId) return;
+        questions = validateQuizResponse(generated.text, quizSegments);
+      }
       const quiz: QuizDefinition = {
         id: crypto.randomUUID(),
         sessionId: targetSessionId,
@@ -858,7 +873,7 @@ export default function App() {
       setQuizAnswers({});
       setQuizMessage("Quiz generated and saved on this device using " + (generated.inferenceSource === "ON_DEVICE" ? "on-device" : generated.inferenceSource === "IN_CLOUD" ? "cloud" : "unknown-source") + " inference. Review the questions and submit when ready.");
     } catch (cause) {
-      setQuizMessage(cause instanceof Error ? cause.message : "Could not generate a valid quiz. Try again.");
+      setQuizMessage("Quiz generation failed: " + (cause instanceof Error ? cause.message : "Could not generate a valid quiz. Try again."));
     } finally {
       setQuizGenerating(false);
       setProgress(null);
@@ -1193,11 +1208,14 @@ export default function App() {
                 <option value={8}>8 questions</option>
                 <option value={10}>10 questions</option>
               </select>
+              <p className="quiz-transcript-status">{segmentCount ? segmentCount + " transcript segments available for this quiz." : "No transcript is available yet. Start capture or import a transcript in the Lesson tab."}</p>
               <button className="primary-button quiz-generate" type="button" onClick={() => void generateLessonQuiz()} disabled={quizGenerating || !segmentCount}>
                 {quizGenerating ? <LoaderCircle className="spin" size={14} /> : <Sparkles size={14} />}
-                {quizGenerating ? "Working..." : "Generate quiz"}
+                {quizGenerating ? "Generating quiz..." : "Generate quiz"}
               </button>
             </div>
+            {progress !== null && quizGenerating && <p className="quiz-progress" role="status">Preparing the AI model: {Math.round(progress * 100)}%</p>}
+            {quizMessage && <p className={quizMessage.toLowerCase().includes("failed") || quizMessage.toLowerCase().includes("error") || quizMessage.toLowerCase().includes("invalid") || quizMessage.toLowerCase().includes("could not") ? "error-box quiz-status" : "helper-text quiz-status"} role="status" aria-live="polite">{quizMessage}</p>}
             {savedQuizzes.length > 0 && (
               <div className="quiz-history">
                 <strong>Saved quizzes</strong>
@@ -1244,7 +1262,6 @@ export default function App() {
             )}
             {quizAttempts.length > 0 && <div className="quiz-attempt-history"><strong>Attempt history</strong>{quizAttempts.slice(0, 5).map((attempt) => <article key={attempt.id}><span>{new Date(attempt.createdAt).toLocaleDateString()} · {attempt.objectiveScore}/{attempt.objectiveTotal} objective</span><small>{attempt.topicsToReview.length ? "Review: " + attempt.topicsToReview.join(", ") : "No objective weak topics recorded"}</small></article>)}</div>}
             <div className="topic-review-summary"><strong>Topics to revisit</strong>{topicReviewCounts.length ? topicReviewCounts.slice(0, 5).map(([topic, count]) => <span key={topic}>{topic} · {count} missed attempts</span>) : <small>No weak topics identified yet. Complete a quiz to build this list.</small>}</div>
-            {quizMessage && <p className={quizMessage.toLowerCase().includes("error") || quizMessage.toLowerCase().includes("invalid") || quizMessage.toLowerCase().includes("could not") ? "error-box" : "helper-text"} role="status">{quizMessage}</p>}
           </section>
         )}
 
