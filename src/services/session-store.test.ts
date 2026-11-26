@@ -122,7 +122,7 @@ describe("local learning artifact storage", () => {
     expect(await listSyncOutbox("user-a")).toEqual([]);
   });
 
-  it("invalidates an in-flight acknowledgement when a newer local edit replaces the queued payload", async () => {
+  it("rebases a newer local edit when an older in-flight operation is accepted", async () => {
     const note = {
       id: "stale-ack-note", sessionId: "stale-ack-lesson", videoId: "stale-ack-lesson",
       title: "Original note", content: "Original body", createdAt: 1, updatedAt: 2
@@ -142,12 +142,17 @@ describe("local learning artifact storage", () => {
     expect(latest.operationId).not.toBe(inFlight!.operationId);
     expect(latest.retryCount).toBe(0);
 
-    await expect(acknowledgeSyncOperation(claim.entityKey, "user-a", inFlight!.operationId, 1)).rejects.toThrow();
-    expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 0 });
-    expect(await listSyncOutbox("user-a")).toMatchObject([{ operationId: latest.operationId, baseRevision: 0 }]);
-
-    await acknowledgeSyncOperation(claim.entityKey, "user-a", latest.operationId, 1);
+    // The older request succeeded remotely. Its acknowledgement advances the
+    // remote revision, but must not clear the newer pending local operation.
+    await acknowledgeSyncOperation(claim.entityKey, "user-a", inFlight!.operationId, 1);
     expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 1 });
+    expect(await listSyncOutbox("user-a")).toMatchObject([{
+      operationId: latest.operationId, baseRevision: 1, operation: "upsert"
+    }]);
+
+    await acknowledgeSyncOperation(claim.entityKey, "user-a", latest.operationId, 2);
+    expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 2 });
+    expect(await listSyncOutbox("user-a")).toEqual([]);
   });
 
   it("queues claimed note saves atomically but leaves unclaimed local notes alone", async () => {

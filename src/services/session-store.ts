@@ -605,7 +605,7 @@ export async function acknowledgeSyncOperation(
     const request = outboxStore.get(entityKey);
     request.onsuccess = () => {
       const pending = request.result as SyncOutboxRecord | undefined;
-      if (!pending || pending.ownerUid !== ownerUid || pending.operationId !== operationId) {
+      if (!pending || pending.ownerUid !== ownerUid) {
         transaction.abort();
         return;
       }
@@ -621,7 +621,22 @@ export async function acknowledgeSyncOperation(
           return;
         }
         metadataStore.put({ ...metadata, remoteRevision: newRevision, lastSyncedAtMs: Date.now() });
-        outboxStore.delete(entityKey);
+        if (pending.operationId === operationId) {
+          outboxStore.delete(entityKey);
+          return;
+        }
+
+        // The server accepted an older in-flight operation after a newer local
+        // mutation replaced it. Advance the base revision but keep the newer
+        // operation queued so the latest payload is still uploaded.
+        const rebased = {
+          ...pending,
+          baseRevision: newRevision,
+          queuedAtMs: Date.now(),
+          retryCount: 0
+        };
+        delete rebased.lastErrorCode;
+        outboxStore.put(rebased);
       };
     };
     transaction.oncomplete = () => resolve();
