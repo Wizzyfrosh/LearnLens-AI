@@ -54,6 +54,14 @@ describe("lesson quiz validation and scoring", () => {
     expect(validateQuizResponse("```json\n" + JSON.stringify(payload) + "\n```", segments)).toHaveLength(3);
   });
 
+  it("accepts a fully grounded ten-question quiz", () => {
+    const questions = Array.from({ length: 10 }, (_, index) => ({
+      ...payload.questions[index % payload.questions.length],
+      id: "ten-q" + (index + 1)
+    }));
+    expect(validateQuizResponse(JSON.stringify({ questions }), segments)).toHaveLength(10);
+  });
+
   it("matches timestamped evidence despite timestamp labels and punctuation differences", () => {
     const timestamped = structuredClone(payload);
     timestamped.questions[1].evidence = "[00:05] Chlorophyll absorbs light energy!";
