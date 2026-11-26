@@ -42,6 +42,12 @@ describe("lesson quiz validation and scoring", () => {
     expect(() => validateQuizResponse(JSON.stringify(wrongAnswer), segments)).toThrow(/match one of its options/i);
   });
 
+  it("rejects a correct answer that is not stated in the lesson transcript", () => {
+    const unsupported = structuredClone(payload);
+    unsupported.questions[0].correctAnswer = "Glucose";
+    expect(() => validateQuizResponse(JSON.stringify(unsupported), segments)).toThrow(/not explicitly supported/i);
+  });
+
   it("rejects true/false questions with invalid option labels", () => {
     const invalid = structuredClone(payload);
     invalid.questions[1].options = ["Yes", "No"];
