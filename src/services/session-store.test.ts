@@ -6,6 +6,7 @@ import {
   deleteLearningNote,
   getLatestSessionForVideo,
   listLearningBookmarks,
+  listLearningSessions,
   listLearningNotes,
   saveLearningBookmark,
   saveLearningNote,
@@ -47,6 +48,18 @@ describe("local learning artifact storage", () => {
     expect(await getLatestSessionForVideo("video-1")).toMatchObject({ title: "Biology lesson" });
     expect(await listLearningNotes("video-1")).toMatchObject([{ id: "note-1", timestampSeconds: 42 }]);
     expect(await listLearningBookmarks("video-1")).toMatchObject([{ id: "bookmark-1", timestampSeconds: 42 }]);
+  });
+
+  it("lists saved sessions newest first", async () => {
+    const base = {
+      videoId: "history-video", title: "History lesson",
+      url: "https://www.youtube.com/watch?v=history-video", platform: "youtube" as const,
+      transcriptText: "Lesson content", transcriptFormat: "plain-text" as const,
+      transcriptSource: "YouTube live captions"
+    };
+    await saveLearningSession({ ...base, id: "older", updatedAt: 10 });
+    await saveLearningSession({ ...base, id: "newer", updatedAt: 20, title: "Newer lesson" });
+    expect((await listLearningSessions()).map((session) => session.id)).toEqual(["newer", "older"]);
   });
 
   it("searches notes case-insensitively and supports updates and deletion", async () => {
