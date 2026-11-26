@@ -12,6 +12,7 @@ let refreshTimers: number[] = [];
 let isCaptionCaptureActive = false;
 let captionObserver: MutationObserver | null = null;
 let captionDebounceTimer: number | null = null;
+let captionPollTimer: number | null = null;
 let lastCaptionText = "";
 let lastCaptionAt = -Infinity;
 let captionSequence = 0;
@@ -68,6 +69,10 @@ function disconnectCaptionObservers(): void {
   if (captionDebounceTimer !== null) {
     window.clearTimeout(captionDebounceTimer);
     captionDebounceTimer = null;
+  }
+  if (captionPollTimer !== null) {
+    window.clearInterval(captionPollTimer);
+    captionPollTimer = null;
   }
 }
 
@@ -156,11 +161,14 @@ function startCaptionCapture(): void {
   captionSequence = 0;
   hasCapturedCaption = false;
 
-  if (!attachCaptionObserver()) {
-    isCaptionCaptureActive = false;
-    captureVideoId = "";
-    emitCaptureStatus("error", "LearnLens could not attach to the YouTube player.");
-  }
+  // YouTube replaces parts of its player during playback and SPA navigation.
+  // A MutationObserver attached to the old player node can then become detached.
+  // Keep the observer for fast updates, but also poll the current rendered caption
+  // nodes while capture is active so player replacement cannot silently stall capture.
+  attachCaptionObserver();
+  captionPollTimer = window.setInterval(() => {
+    if (isCaptionCaptureActive) publishVisibleCaption();
+  }, 500);
 }
 
 function stopCaptionCapture(message = "Lesson capture stopped."): void {
