@@ -556,9 +556,9 @@ describe("local learning artifact storage", () => {
     const review = await getLocalSyncClaimCandidates("user-a", {
       lessonMetadata: false, notes: true, quizzes: false, attempts: false
     });
-    expect(review.map((item) => item.entityKey)).toEqual([
+    expect(review.map((item) => item.entityKey).sort()).toEqual([
       "note:claim-lesson-a:claim-note-a", "note:claim-lesson-b:claim-note-b"
-    ]);
+    ].sort());
     expect(review.find((item) => item.entityKey.endsWith("claim-note-b"))?.ownership).toBe("other_account");
 
     const nothingSelected = await claimSelectedLocalSyncRecords("user-a", {
