@@ -100,3 +100,7 @@ footer{border-top:1px solid #e8ebf2;padding-top:13px;color:#9aa3b2;font-size:9px
 .note-draft-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0}
 .note-draft-row p{font-size:10px;line-height:1.45;color:#7c879b;margin:0}
 .note-draft-row button{white-space:nowrap}
+
+.saved-note-heading a,.bookmark-time{font-size:10px;color:#4168c6;text-decoration:none;font-variant-numeric:tabular-nums;white-space:nowrap}
+.bookmark-time{display:inline-flex;align-items:center;gap:4px}
+.saved-note-heading a:hover,.bookmark-time:hover{text-decoration:underline}
