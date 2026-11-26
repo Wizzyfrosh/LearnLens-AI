@@ -1,9 +1,9 @@
 # LearnLens AI — Project Status and Continuity Checklist
 
-**Last repository inspection:** 2026-11-25  
+**Last repository inspection:** 2026-11-26  
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
-**Current phase:** Automatic YouTube visible-caption capture and SPA context handling are implemented on `main`; latest CI is green, while Chrome runtime QA is pending.
+**Current phase:** Phase 4 — local learning notes and bookmarks implementation. YouTube visible-caption capture is user-tested; audio transcription is paused for later Phase 3 follow-up.
 
 > Read this file first on every returning session. File existence does not prove runtime completion. Verify against code, CI, and browser behavior.
 
@@ -327,3 +327,34 @@ The code is build-verified, not yet runtime-verified. Audio transcription is exp
 - This preserves the explicit learner consent gate and existing offscreen processing pipeline.
 - CI and Chrome runtime verification are pending. Do not claim the permission issue is fixed until a fresh artifact is loaded and tested in Chrome.
 - Next exact task: verify latest GitHub Actions run; then test audio capture on the same YouTube tab where LearnLens side panel was opened from the extension toolbar. If the same permission error persists, inspect Chrome's action/side-panel invocation behavior and test the official tabCapture flow against the browser version in use.
+
+
+## 21. Phase 4 implementation checkpoint — 2026-11-26
+
+User decision:
+- Proceed with Phase 4 using the working YouTube visible-caption workflow.
+- Defer the failing audio-transcription path. Phase 3 remains incomplete and is not being treated as a blocker for Phase 4.
+
+Implemented directly on `main`:
+- `ac1fb2e` — upgraded IndexedDB from schema version 2 to 3; added `learningNotes` and `learningBookmarks` stores with session/video/timestamp indexes.
+- `f1eb002` and `af0b7c6` — added `fake-indexeddb` and integration tests for notes/bookmarks persistence, updates, deletes, search, timestamp validation, and version-2-to-version-3 migration.
+- `022e07b`, `63789eb`, `614a7c0`, `9dc23e7` — added note create/edit/delete/search UI, timestamp-linked notes, evidence-based caption bookmarks, reviewable AI note drafts, and Markdown export; corrected the lesson-time helper and added loading of saved artifacts.
+- `fbb428e`, `15464b4` — added styles for the notes/bookmarks workspace and AI draft controls.
+- `8afb24d` — updated the implementation roadmap.
+
+Important behavior and boundaries:
+- Notes and bookmarks are stored locally in IndexedDB; no cloud sync was added.
+- Timestamp links are offered only when a captured transcript segment includes a real timestamp. Untimed audio/manual transcript segments do not receive fabricated timestamps.
+- AI note generation populates an editable draft; the learner must review and explicitly save it.
+- Markdown export is implemented. PDF export is deferred until output quality and dependency cost are assessed.
+- The current bookmark action is available beside timed captured captions; arbitrary timestamp entry is not supported.
+
+Verification still pending:
+- Latest GitHub Actions run must pass typecheck, all tests, production build, extension package smoke check, and artifact upload.
+- Load the latest artifact in desktop Chrome and verify schema upgrade, notes/bookmarks CRUD, search, AI draft review, Markdown export, and persistence after extension reload.
+- Audio transcription remains paused; do not resume it unless the user explicitly asks to return to Phase 3.
+
+Next exact task:
+1. Inspect the latest CI result and fix any type/test/build failures.
+2. Only after CI passes, provide the artifact for Phase 4 Chrome runtime QA.
+3. Continue Phase 4 with session history/restore polish and any runtime defects found; then return to the remaining Phase 3 audio work later.
