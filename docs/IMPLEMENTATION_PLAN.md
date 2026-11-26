@@ -120,7 +120,7 @@ Exit: Phase 4 code and CI verification are complete; runtime verification remain
 - [x] Label open-ended AI feedback as advisory and exclude it from objective scoring.
 - [x] Track quiz attempts and topics to revisit locally.
 - [x] Persist quizzes and attempts in IndexedDB and cascade-delete them with the parent lesson.
-- [x] Add unit tests for malformed model output, unsupported question types, invalid evidence/options, objective scoring, and feedback validation.
+- [x] Add unit tests for malformed model output, unsupported question types, invalid evidence/options, transcript-unsupported correct answers, objective scoring, and feedback validation.
 - [ ] Verify quiz generation, inference source, scoring, short-answer feedback, history, and weak-topic tracking in desktop Chrome.
 
 Exit: learner can generate and complete a transcript-grounded quiz, review explanations and advisory feedback, and revisit attempt history and topics to revisit. Runtime verification remains open.
