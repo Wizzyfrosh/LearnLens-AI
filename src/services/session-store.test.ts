@@ -125,6 +125,7 @@ describe("local learning artifact storage", () => {
     expect(await listQuizAttempts("quiz-lesson")).toMatchObject([{ id: "attempt-1", topicsToReview: ["Photosynthesis"] }]);
     await deleteQuiz("quiz-1");
     expect(await listQuizzes("quiz-lesson")).toEqual([]);
+    expect(await listQuizAttempts("quiz-lesson")).toEqual([]);
     await saveQuiz(quiz);
     await deleteLearningSession("quiz-lesson");
     expect(await listQuizzes("quiz-lesson")).toEqual([]);
