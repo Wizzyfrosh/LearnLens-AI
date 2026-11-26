@@ -3,8 +3,8 @@ import type { FormEvent } from "react";
 import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Download, Search, FileText, History, Sun, Moon, CheckCircle2, XCircle, UserRound, LogIn, LogOut, Mail, ShieldCheck, RefreshCw } from "lucide-react";
 import { askLearnLens, generateQuizText, isAudioTranscriptionConfigured, transcribeAudioChunk } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport, serializeSegmentsAsVtt } from "../services/transcript";
-import { deleteLearningSession, deleteLearningNote, getLatestSavedSession, getLatestSessionForVideo, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt, getLocalSyncCandidateCounts, getLocalSyncPreferences, saveLocalSyncPreferences, claimSelectedLocalSyncRecords } from "../services/session-store";
-import type { LearningNote, LearningSession, SyncCandidateCounts, SyncCategoryPreferences, SyncClaimResult } from "../services/session-store";
+import { deleteLearningSession, deleteLearningNote, getLatestSavedSession, getLatestSessionForVideo, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt, getLocalSyncCandidateCounts, getLocalSyncPreferences, saveLocalSyncPreferences, getLocalSyncClaimCandidates, claimSelectedLocalSyncRecords } from "../services/session-store";
+import type { LearningNote, LearningSession, SyncCandidateCounts, SyncCategoryPreferences, SyncClaimResult, SyncClaimCandidate } from "../services/session-store";
 import { getQuizFeedbackSegments, parseShortAnswerFeedback, scoreObjectiveAnswers, validateQuizResponse } from "../services/quiz";
 import type { QuizAttempt, QuizDefinition } from "../services/quiz";
 import type { InferencePreference, TranscriptSegment, VideoContext } from "../shared/types";
@@ -123,6 +123,7 @@ export default function App() {
   const [syncClaimReviewOpen, setSyncClaimReviewOpen] = useState(false);
   const [syncClaimBusy, setSyncClaimBusy] = useState(false);
   const [syncClaimResult, setSyncClaimResult] = useState<SyncClaimResult | null>(null);
+  const [syncClaimCandidates, setSyncClaimCandidates] = useState<SyncClaimCandidate[]>([]);
   const activeSessionIdRef = useRef(sessionId);
   const pendingNoteDraftSessionRef = useRef<string | null>(null);
   activeSessionIdRef.current = sessionId;
@@ -734,9 +735,11 @@ export default function App() {
     setSyncPreferencesError("");
     setSyncPreferencesMessage("");
     try {
-      const result = await claimSelectedLocalSyncRecords(authUser.uid, syncCategories);
+      const reviewedKeys = syncClaimCandidates.filter((candidate) => candidate.ownership !== "other_account").map((candidate) => candidate.entityKey);
+      const result = await claimSelectedLocalSyncRecords(authUser.uid, syncCategories, reviewedKeys);
       setSyncClaimResult(result);
       setSyncClaimReviewOpen(false);
+      setSyncClaimCandidates([]);
       const claimed = Object.values(result.claimed).reduce((sum, value) => sum + value, 0);
       const skipped = Object.values(result.skippedOtherAccount).reduce((sum, value) => sum + value, 0);
       const invalid = Object.values(result.skippedInvalid).reduce((sum, value) => sum + value, 0);
@@ -1424,29 +1427,28 @@ export default function App() {
                       {syncPreferencesSaving ? <LoaderCircle className="spin" size={14} /> : <Save size={14} />}
                       {syncPreferencesSaving ? "Saving choices…" : "Save choices on this device"}
                     </button>
-                    <button className="secondary-button sync-review-button" type="button" onClick={() => { setSyncClaimResult(null); setSyncClaimReviewOpen(true); }} disabled={syncPreferencesSaving || syncPreferencesLoading || syncClaimBusy || !Object.values(syncCategories).some(Boolean)}>
+                    <button className="secondary-button sync-review-button" type="button" onClick={() => { setSyncClaimResult(null); setSyncClaimCandidates([]); setSyncClaimReviewOpen(true); void getLocalSyncClaimCandidates(authUser!.uid, syncCategories).then(setSyncClaimCandidates).catch((cause) => setSyncPreferencesError(cause instanceof Error ? cause.message : "Could not load claim review.")); }} disabled={syncPreferencesSaving || syncPreferencesLoading || syncClaimBusy || !Object.values(syncCategories).some(Boolean)}>
                       Review selected records for local claim
                     </button>
                     {syncClaimReviewOpen && (
                       <div className="account-sync-review" role="region" aria-label="Review local record claim">
                         <strong>Confirm local ownership</strong>
-                        <p>Review the selected category counts. Confirming permanently associates eligible unclaimed records with this account on this device. Records owned by another account will be skipped. This does not upload data.</p>
-                        {([
-                          ["lessonMetadata", "Lesson metadata"],
-                          ["notes", "Study notes"],
-                          ["quizzes", "Quiz definitions"],
-                          ["attempts", "Quiz attempts"]
-                        ] as Array<[keyof SyncCategoryPreferences, string]>).filter(([key]) => syncCategories[key]).map(([key, label]) => {
-                          const count = syncCandidateCounts[key];
-                          return <div className="account-sync-preview-row" key={key}>
-                            <span>{label}</span>
-                            <strong>{count.unclaimed + count.ownedByCurrentAccount} eligible</strong>
-                            <small>{count.unclaimed} unclaimed · {count.ownedByCurrentAccount} already yours · {count.ownedByOtherAccount} another account</small>
-                          </div>;
-                        })}
+                        <p>Review each listed record. Only these exact records will be considered when you confirm. Records owned by another account are excluded. This does not upload data.</p>
+                        <div className="account-sync-item-list">
+                          {syncClaimCandidates.map((candidate) => (
+                            <div className="account-sync-item" key={candidate.entityKey}>
+                              <div><strong>{candidate.title}</strong><small>{candidate.category} · {candidate.lessonTitle}</small></div>
+                              <span className={candidate.ownership === "other_account" ? "ownership-locked" : "ownership-eligible"}>
+                                {candidate.ownership === "other_account" ? "Other account — excluded" : candidate.ownership === "current_account" ? "Already yours" : "Will be claimed"}
+                              </span>
+                              <small>{candidate.updatedAtMs ? new Date(candidate.updatedAtMs).toLocaleString() : "Date unavailable"}</small>
+                            </div>
+                          ))}
+                          {syncClaimCandidates.length === 0 && <p>No eligible records found for these categories.</p>}
+                        </div>
                         <div className="account-sync-review-actions">
                           <button className="secondary-button" type="button" onClick={() => setSyncClaimReviewOpen(false)} disabled={syncClaimBusy}>Cancel</button>
-                          <button className="primary-button" type="button" onClick={() => void confirmLocalSyncClaim()} disabled={syncClaimBusy}>
+                          <button className="primary-button" type="button" onClick={() => void confirmLocalSyncClaim()} disabled={syncClaimBusy || syncClaimCandidates.filter((candidate) => candidate.ownership !== "other_account").length === 0}>
                             {syncClaimBusy ? <LoaderCircle className="spin" size={14} /> : <ShieldCheck size={14} />}
                             {syncClaimBusy ? "Claiming locally…" : "Confirm local claim"}
                           </button>
