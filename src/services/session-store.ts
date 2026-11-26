@@ -26,7 +26,7 @@ export interface LearningNote {
 }
 
 const DATABASE_NAME = "learnlens-local";
-const DATABASE_VERSION = 8;
+const DATABASE_VERSION = 9;
 const SESSION_STORE = "learningSessions";
 const NOTE_STORE = "learningNotes";
 const QUIZ_STORE = "learningQuizzes";
@@ -35,6 +35,7 @@ const SYNC_METADATA_STORE = "syncMetadata";
 const SYNC_OUTBOX_STORE = "syncOutbox";
 const SYNC_DEVICE_STORE = "syncDevice";
 const SYNC_PREFERENCES_STORE = "syncPreferences";
+const SYNC_REQUEST_STORE = "syncRequests";
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -127,6 +128,15 @@ function openDatabase(): Promise<IDBDatabase> {
       if (!database.objectStoreNames.contains(SYNC_PREFERENCES_STORE)) {
         database.createObjectStore(SYNC_PREFERENCES_STORE, { keyPath: "ownerUid" });
       }
+      // v9 adds a durable journal of immutable request payload snapshots. The
+      // outbox remains the coalesced pointer to the latest local desired state.
+      if (!database.objectStoreNames.contains(SYNC_REQUEST_STORE)) {
+        const store = database.createObjectStore(SYNC_REQUEST_STORE, { keyPath: "requestId" });
+        store.createIndex("ownerUid", "ownerUid", { unique: false });
+        store.createIndex("entityKey", "entityKey", { unique: false });
+        store.createIndex("status", "status", { unique: false });
+        store.createIndex("updatedAtMs", "updatedAtMs", { unique: false });
+      }
     };
     request.onsuccess = () => {
       const database = request.result;
@@ -171,7 +181,7 @@ function runTransaction<T>(
 export async function saveLearningSession(session: LearningSession): Promise<void> {
   const database = await openDatabase();
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction([SESSION_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    const transaction = database.transaction([SESSION_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE, SYNC_REQUEST_STORE], "readwrite");
     const sessions = transaction.objectStore(SESSION_STORE);
     const metadata = transaction.objectStore(SYNC_METADATA_STORE);
     const outbox = transaction.objectStore(SYNC_OUTBOX_STORE);
@@ -189,7 +199,7 @@ export async function saveLearningSession(session: LearningSession): Promise<voi
           changed = false;
         }
       }
-      if (changed) queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("lesson", session.id, session.id), "upsert");
+      if (changed) queueSyncOperationInTransaction(metadata, outbox, transaction.objectStore(SYNC_REQUEST_STORE), syncEntityKey("lesson", session.id, session.id), "upsert");
     };
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error ?? new Error("Could not save the lesson locally."));
@@ -230,7 +240,7 @@ export async function deleteLearningSession(id: string): Promise<void> {
   const database = await openDatabase();
   await new Promise<void>((resolve, reject) => {
     const transaction = database.transaction(
-      [SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE],
+      [SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE, SYNC_REQUEST_STORE],
       "readwrite"
     );
     const sessions = transaction.objectStore(SESSION_STORE);
@@ -251,17 +261,17 @@ export async function deleteLearningSession(id: string): Promise<void> {
         results[index] = childRequests[index].result as Array<{ id: string; sessionId: string; quizId?: string }>;
         completed += 1;
         if (completed !== childRequests.length) return;
-        queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("lesson", id, id), "delete");
+        queueSyncOperationInTransaction(metadata, outbox, transaction.objectStore(SYNC_REQUEST_STORE), syncEntityKey("lesson", id, id), "delete");
         for (const note of results[0]) {
-          queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("note", id, note.id), "delete");
+          queueSyncOperationInTransaction(metadata, outbox, transaction.objectStore(SYNC_REQUEST_STORE), syncEntityKey("note", id, note.id), "delete");
           notes.delete(note.id);
         }
         for (const quiz of results[1]) {
-          queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("quiz", id, quiz.id), "delete");
+          queueSyncOperationInTransaction(metadata, outbox, transaction.objectStore(SYNC_REQUEST_STORE), syncEntityKey("quiz", id, quiz.id), "delete");
           quizzes.delete(quiz.id);
         }
         for (const attempt of results[2]) {
-          queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("attempt", id, attempt.id), "delete");
+          queueSyncOperationInTransaction(metadata, outbox, transaction.objectStore(SYNC_REQUEST_STORE), syncEntityKey("attempt", id, attempt.id), "delete");
           attempts.delete(attempt.id);
         }
         sessions.delete(id);
@@ -276,11 +286,12 @@ export async function deleteLearningSession(id: string): Promise<void> {
 export async function saveLearningNote(note: LearningNote): Promise<void> {
   const database = await openDatabase();
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction([NOTE_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    const transaction = database.transaction([NOTE_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE, SYNC_REQUEST_STORE], "readwrite");
     transaction.objectStore(NOTE_STORE).put(note);
     queueSyncOperationInTransaction(
       transaction.objectStore(SYNC_METADATA_STORE),
       transaction.objectStore(SYNC_OUTBOX_STORE),
+      transaction.objectStore(SYNC_REQUEST_STORE),
       syncEntityKey("note", note.sessionId, note.id),
       "upsert"
     );
@@ -308,7 +319,7 @@ export function searchLearningNotes(sessionId: string, query: string): Promise<L
 export async function deleteLearningNote(id: string): Promise<void> {
   const database = await openDatabase();
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction([NOTE_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    const transaction = database.transaction([NOTE_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE, SYNC_REQUEST_STORE], "readwrite");
     const notes = transaction.objectStore(NOTE_STORE);
     const request = notes.get(id);
     request.onsuccess = () => {
@@ -316,6 +327,7 @@ export async function deleteLearningNote(id: string): Promise<void> {
       if (note) queueSyncOperationInTransaction(
         transaction.objectStore(SYNC_METADATA_STORE),
         transaction.objectStore(SYNC_OUTBOX_STORE),
+        transaction.objectStore(SYNC_REQUEST_STORE),
         syncEntityKey("note", note.sessionId, note.id),
         "delete"
       );
@@ -330,11 +342,12 @@ export async function deleteLearningNote(id: string): Promise<void> {
 export async function saveQuiz(quiz: QuizDefinition): Promise<void> {
   const database = await openDatabase();
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction([QUIZ_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    const transaction = database.transaction([QUIZ_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE, SYNC_REQUEST_STORE], "readwrite");
     transaction.objectStore(QUIZ_STORE).put(quiz);
     queueSyncOperationInTransaction(
       transaction.objectStore(SYNC_METADATA_STORE),
       transaction.objectStore(SYNC_OUTBOX_STORE),
+      transaction.objectStore(SYNC_REQUEST_STORE),
       syncEntityKey("quiz", quiz.sessionId, quiz.id),
       "upsert"
     );
@@ -355,7 +368,7 @@ export function listQuizzes(sessionId: string): Promise<QuizDefinition[]> {
 export async function deleteQuiz(id: string): Promise<void> {
   const database = await openDatabase();
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction([QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    const transaction = database.transaction([QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE, SYNC_REQUEST_STORE], "readwrite");
     const quizzes = transaction.objectStore(QUIZ_STORE);
     const attempts = transaction.objectStore(QUIZ_ATTEMPT_STORE);
     const metadata = transaction.objectStore(SYNC_METADATA_STORE);
@@ -363,12 +376,12 @@ export async function deleteQuiz(id: string): Promise<void> {
     const quizRequest = quizzes.get(id);
     quizRequest.onsuccess = () => {
       const quiz = quizRequest.result as QuizDefinition | undefined;
-      if (quiz) queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("quiz", quiz.sessionId, quiz.id), "delete");
+      if (quiz) queueSyncOperationInTransaction(metadata, outbox, transaction.objectStore(SYNC_REQUEST_STORE), syncEntityKey("quiz", quiz.sessionId, quiz.id), "delete");
       const request = attempts.index("quizId").getAll(id);
       request.onsuccess = () => {
         const related = request.result as QuizAttempt[];
         for (const attempt of related) {
-          queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("attempt", attempt.sessionId, attempt.id), "delete");
+          queueSyncOperationInTransaction(metadata, outbox, transaction.objectStore(SYNC_REQUEST_STORE), syncEntityKey("attempt", attempt.sessionId, attempt.id), "delete");
           attempts.delete(attempt.id);
         }
         quizzes.delete(id);
@@ -383,11 +396,12 @@ export async function deleteQuiz(id: string): Promise<void> {
 export async function saveQuizAttempt(attempt: QuizAttempt): Promise<void> {
   const database = await openDatabase();
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction([QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    const transaction = database.transaction([QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE, SYNC_REQUEST_STORE], "readwrite");
     transaction.objectStore(QUIZ_ATTEMPT_STORE).put(attempt);
     queueSyncOperationInTransaction(
       transaction.objectStore(SYNC_METADATA_STORE),
       transaction.objectStore(SYNC_OUTBOX_STORE),
+      transaction.objectStore(SYNC_REQUEST_STORE),
       syncEntityKey("attempt", attempt.sessionId, attempt.id),
       "upsert"
     );
@@ -436,6 +450,41 @@ export interface SyncOutboxRecord {
   lastErrorCode?: string;
 }
 
+export type SyncRequestStatus = "prepared" | "in_flight" | "retryable" | "acknowledged" | "superseded";
+
+export interface SyncRequestRecord {
+  requestId: string;
+  operationId: string;
+  ownerUid: string;
+  deviceId: string;
+  entityKey: string;
+  entityType: SyncEntityType;
+  lessonId: string;
+  entityId: string;
+  operation: SyncOperation;
+  baseRevision: number;
+  payloadSchemaVersion: 1;
+  /** Immutable allow-listed DTO captured before any network attempt. */
+  payloadSnapshot: SyncPreparedPayload | null;
+  status: SyncRequestStatus;
+  attemptCount: number;
+  createdAtMs: number;
+  updatedAtMs: number;
+  lastErrorCode?: string;
+}
+
+export type SyncRequestPreparationBlockReason =
+  | SyncPreparationBlockReason
+  | "operation_changed"
+  | "category_not_enabled"
+  | "prior_request_pending"
+  | "request_terminal";
+
+export interface SyncRequestPreparationResult {
+  request: SyncRequestRecord | null;
+  blockedReason: SyncRequestPreparationBlockReason | null;
+}
+
 export interface SyncDeviceRecord {
   key: "installation";
   deviceId: string;
@@ -448,9 +497,11 @@ function syncEntityKey(type: SyncEntityType, lessonId: string, entityId: string)
 }
 
 /** Must be called inside the same read/write transaction as the local mutation. */
+/** Must be called inside the same read/write transaction as the local mutation. */
 function queueSyncOperationInTransaction(
   metadataStore: IDBObjectStore,
   outboxStore: IDBObjectStore,
+  requestStore: IDBObjectStore,
   entityKey: string,
   operation: SyncOperation
 ): void {
@@ -458,26 +509,49 @@ function queueSyncOperationInTransaction(
   metadataRequest.onsuccess = () => {
     const metadata = metadataRequest.result as SyncMetadataRecord | undefined;
     if (!metadata) return; // Local-only records are never queued implicitly.
-    if (operation === "delete" && metadata.remoteRevision === 0) {
-      outboxStore.delete(entityKey);
-      metadataStore.delete(entityKey);
+
+    const queueLatestOperation = () => {
+      outboxStore.put({
+        entityKey,
+        operationId: crypto.randomUUID(),
+        ownerUid: metadata.ownerUid,
+        entityType: metadata.entityType,
+        lessonId: metadata.lessonId,
+        entityId: metadata.entityId,
+        operation,
+        baseRevision: metadata.remoteRevision,
+        payloadSchemaVersion: 1,
+        queuedAtMs: Date.now(),
+        retryCount: 0
+      } satisfies SyncOutboxRecord);
+    };
+
+    if (operation !== "delete" || metadata.remoteRevision > 0) {
+      queueLatestOperation();
       return;
     }
-    // Each new local mutation gets a fresh ID so a delayed acknowledgement for
-    // an earlier queued payload cannot remove the newer operation.
-    outboxStore.put({
-      entityKey,
-      operationId: crypto.randomUUID(),
-      ownerUid: metadata.ownerUid,
-      entityType: metadata.entityType,
-      lessonId: metadata.lessonId,
-      entityId: metadata.entityId,
-      operation,
-      baseRevision: metadata.remoteRevision,
-      payloadSchemaVersion: 1,
-      queuedAtMs: Date.now(),
-      retryCount: 0
-    } satisfies SyncOutboxRecord);
+
+    // A never-uploaded record may be discarded locally. However, a prepared
+    // request is not proof of transmission, while an in-flight/retryable request
+    // may already have reached the server and therefore requires a tombstone.
+    const requests = requestStore.index("entityKey").getAll(entityKey);
+    requests.onsuccess = () => {
+      const related = requests.result as SyncRequestRecord[];
+      const uncertain = related.some((request) =>
+        request.status === "in_flight" || request.status === "retryable"
+      );
+      for (const request of related) {
+        if (request.status === "prepared") {
+          requestStore.put({ ...request, status: "superseded", updatedAtMs: Date.now() });
+        }
+      }
+      if (!uncertain) {
+        outboxStore.delete(entityKey);
+        metadataStore.delete(entityKey);
+        return;
+      }
+      queueLatestOperation();
+    };
   };
 }
 
@@ -541,7 +615,7 @@ export async function queueSyncOperation(
   }
   const database = await openDatabase();
   return new Promise<SyncOutboxRecord | null>((resolve, reject) => {
-    const transaction = database.transaction([SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    const transaction = database.transaction([SYNC_METADATA_STORE, SYNC_OUTBOX_STORE, SYNC_REQUEST_STORE], "readwrite");
     const metadataStore = transaction.objectStore(SYNC_METADATA_STORE);
     const outboxStore = transaction.objectStore(SYNC_OUTBOX_STORE);
     let result: SyncOutboxRecord | null = null;
@@ -560,8 +634,33 @@ export async function queueSyncOperation(
           return;
         }
         if (operation === "delete" && metadata.remoteRevision === 0 && pending?.operation === "upsert") {
-          outboxStore.delete(entityKey);
-          result = null;
+          const relatedRequest = requestStore.index("entityKey").getAll(entityKey);
+          relatedRequest.onsuccess = () => {
+            const records = relatedRequest.result as SyncRequestRecord[];
+            const uncertain = records.some((record) => record.status === "in_flight" || record.status === "retryable");
+            for (const record of records) {
+              if (record.status === "prepared") requestStore.put({ ...record, status: "superseded", updatedAtMs: Date.now() });
+            }
+            if (!uncertain) {
+              outboxStore.delete(entityKey);
+              result = null;
+              return;
+            }
+            result = {
+              entityKey,
+              operationId: crypto.randomUUID(),
+              ownerUid,
+              entityType: metadata.entityType,
+              lessonId: metadata.lessonId,
+              entityId: metadata.entityId,
+              operation: "delete",
+              baseRevision: metadata.remoteRevision,
+              payloadSchemaVersion: 1,
+              queuedAtMs: Date.now(),
+              retryCount: 0
+            };
+            outboxStore.put(result);
+          };
           return;
         }
         const samePendingOperation = pending?.operation === operation;
@@ -607,7 +706,7 @@ export async function acknowledgeSyncOperation(
   if (!Number.isSafeInteger(newRevision) || newRevision < 1) throw new Error("Invalid acknowledged sync revision.");
   const database = await openDatabase();
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction([SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    const transaction = database.transaction([SYNC_METADATA_STORE, SYNC_OUTBOX_STORE, SYNC_REQUEST_STORE], "readwrite");
     const metadataStore = transaction.objectStore(SYNC_METADATA_STORE);
     const outboxStore = transaction.objectStore(SYNC_OUTBOX_STORE);
     const request = outboxStore.get(entityKey);
@@ -925,6 +1024,432 @@ export async function getLocalSyncOperationSnapshots(
   }).finally(() => database.close());
 }
 
+/**
+ * Creates or retrieves a durable immutable request snapshot for one current
+ * outbox operation. No network request is made here.
+ */
+export async function createSyncRequestSnapshot(
+  ownerUid: string,
+  deviceId: string,
+  entityKey: string,
+  operationId: string
+): Promise<SyncRequestPreparationResult> {
+  validateSyncIdentity(ownerUid, "account ID");
+  validateSyncIdentity(deviceId, "device ID");
+  if (!operationId || operationId.length > 128) throw new Error("Invalid sync operation ID.");
+
+  const database = await openDatabase();
+  return new Promise<SyncRequestPreparationResult>((resolve, reject) => {
+    const transaction = database.transaction(
+      [SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE, SYNC_PREFERENCES_STORE, SYNC_REQUEST_STORE],
+      "readwrite"
+    );
+    const requests = transaction.objectStore(SYNC_REQUEST_STORE);
+    const outbox = transaction.objectStore(SYNC_OUTBOX_STORE);
+    const metadataStore = transaction.objectStore(SYNC_METADATA_STORE);
+    const preferencesStore = transaction.objectStore(SYNC_PREFERENCES_STORE);
+    let result: SyncRequestPreparationResult = { request: null, blockedReason: "operation_changed" };
+
+    const outboxRequest = outbox.get(entityKey);
+    const metadataRequest = metadataStore.get(entityKey);
+    const preferencesRequest = preferencesStore.get(ownerUid);
+    const relatedRequestsRequest = requests.index("entityKey").getAll(entityKey);
+    let completed = 0;
+    let pending: SyncOutboxRecord | undefined;
+    let metadata: SyncMetadataRecord | undefined;
+    let preferences: LocalSyncPreferences | undefined;
+    let relatedRequests: SyncRequestRecord[] = [];
+
+    const continueAfterReads = () => {
+      const sameRequest = relatedRequests.find((request) => request.requestId === operationId);
+      if (sameRequest) {
+        if (sameRequest.ownerUid !== ownerUid) {
+          transaction.abort();
+          return;
+        }
+        if (sameRequest.status === "in_flight" || sameRequest.status === "retryable") {
+          result = { request: sameRequest, blockedReason: null };
+          return;
+        }
+        if (sameRequest.status === "acknowledged" || sameRequest.status === "superseded") {
+          result = { request: sameRequest, blockedReason: "request_terminal" };
+          return;
+        }
+        if (
+          sameRequest.status === "prepared" &&
+          pending?.operationId === operationId &&
+          metadata?.ownerUid === ownerUid &&
+          metadata.remoteRevision === sameRequest.baseRevision
+        ) {
+          result = { request: sameRequest, blockedReason: null };
+          return;
+        }
+        requests.put({ ...sameRequest, status: "superseded", updatedAtMs: Date.now() });
+      }
+
+      if (!pending || pending.ownerUid !== ownerUid || pending.operationId !== operationId) {
+        result = { request: null, blockedReason: "operation_changed" };
+        return;
+      }
+      if (!metadata) {
+        result = { request: null, blockedReason: "metadata_missing" };
+        return;
+      }
+      if (
+        metadata.ownerUid !== ownerUid ||
+        metadata.entityKey !== entityKey ||
+        metadata.entityType !== pending.entityType ||
+        metadata.lessonId !== pending.lessonId ||
+        metadata.entityId !== pending.entityId
+      ) {
+        result = { request: null, blockedReason: "ownership_mismatch" };
+        return;
+      }
+      if (metadata.remoteRevision !== pending.baseRevision) {
+        result = { request: null, blockedReason: "stale_base_revision" };
+        return;
+      }
+      const categoryByType: Record<SyncEntityType, SyncCategory> = {
+        lesson: "lessonMetadata", note: "notes", quiz: "quizzes", attempt: "attempts"
+      };
+      const category = categoryByType[pending.entityType];
+      if (!preferences?.categories[category]) {
+        result = { request: null, blockedReason: "category_not_enabled" };
+        return;
+      }
+      if (relatedRequests.some((request) =>
+        request.ownerUid === ownerUid &&
+        request.requestId !== operationId &&
+        (request.status === "in_flight" || request.status === "retryable")
+      )) {
+        result = { request: null, blockedReason: "prior_request_pending" };
+        return;
+      }
+
+      const storeByType: Record<SyncEntityType, string> = {
+        lesson: SESSION_STORE, note: NOTE_STORE, quiz: QUIZ_STORE, attempt: QUIZ_ATTEMPT_STORE
+      };
+      const entityRequest = transaction.objectStore(storeByType[pending.entityType]).get(pending.entityId);
+      entityRequest.onsuccess = () => {
+        const entity = entityRequest.result as
+          | LearningSession | LearningNote | QuizDefinition | QuizAttempt | undefined;
+        let payloadSnapshot: SyncPreparedPayload | null = null;
+        if (pending!.operation === "delete") {
+          if (pending!.baseRevision < 1) {
+            result = { request: null, blockedReason: "invalid_tombstone" };
+            return;
+          }
+          if (entity) {
+            result = { request: null, blockedReason: "local_record_present_for_tombstone" };
+            return;
+          }
+        } else {
+          if (!entity) {
+            result = { request: null, blockedReason: "local_record_missing" };
+            return;
+          }
+          try {
+            if (pending!.entityType === "lesson") payloadSnapshot = toLessonMetadataDto(entity as LearningSession);
+            else if (pending!.entityType === "note") payloadSnapshot = toNoteSyncDto(entity as LearningNote);
+            else if (pending!.entityType === "quiz") payloadSnapshot = toQuizSyncDto(entity as QuizDefinition);
+            else payloadSnapshot = toAttemptSyncDto(entity as QuizAttempt);
+          } catch {
+            result = { request: null, blockedReason: "invalid_payload" };
+            return;
+          }
+        }
+
+        const now = Date.now();
+        const request: SyncRequestRecord = {
+          requestId: operationId,
+          operationId,
+          ownerUid,
+          deviceId,
+          entityKey,
+          entityType: pending!.entityType,
+          lessonId: pending!.lessonId,
+          entityId: pending!.entityId,
+          operation: pending!.operation,
+          baseRevision: pending!.baseRevision,
+          payloadSchemaVersion: 1,
+          payloadSnapshot,
+          status: "prepared",
+          attemptCount: 0,
+          createdAtMs: now,
+          updatedAtMs: now
+        };
+        requests.put(request);
+        result = { request, blockedReason: null };
+      };
+    };
+
+    const readCompleted = () => {
+      completed += 1;
+      if (completed !== 4) return;
+      continueAfterReads();
+    };
+    outboxRequest.onsuccess = () => { pending = outboxRequest.result as SyncOutboxRecord | undefined; readCompleted(); };
+    metadataRequest.onsuccess = () => { metadata = metadataRequest.result as SyncMetadataRecord | undefined; readCompleted(); };
+    preferencesRequest.onsuccess = () => { preferences = preferencesRequest.result as LocalSyncPreferences | undefined; readCompleted(); };
+    relatedRequestsRequest.onsuccess = () => { relatedRequests = relatedRequestsRequest.result as SyncRequestRecord[]; readCompleted(); };
+
+    transaction.oncomplete = () => resolve(result);
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not persist the immutable sync request snapshot."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Sync request preparation was cancelled."));
+  }).finally(() => database.close());
+}
+
+export async function getSyncRequest(requestId: string): Promise<SyncRequestRecord | null> {
+  return runTransaction<SyncRequestRecord | null>(SYNC_REQUEST_STORE, "readonly", (store, resolve) => {
+    const request = store.get(requestId);
+    request.onsuccess = () => resolve((request.result as SyncRequestRecord | undefined) ?? null);
+  });
+}
+
+export async function listSyncRequests(
+  ownerUid: string,
+  statuses?: SyncRequestStatus[],
+  limit = 100
+): Promise<SyncRequestRecord[]> {
+  validateSyncIdentity(ownerUid, "account ID");
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+  return runTransaction<SyncRequestRecord[]>(SYNC_REQUEST_STORE, "readonly", (store, resolve) => {
+    const request = store.index("ownerUid").getAll(ownerUid);
+    request.onsuccess = () => resolve((request.result as SyncRequestRecord[])
+      .filter((entry) => !statuses || statuses.includes(entry.status))
+      .sort((a, b) => a.createdAtMs - b.createdAtMs)
+      .slice(0, safeLimit));
+  });
+}
+
+/** Marks a snapshot as transmitted before the network call begins. */
+export async function markSyncRequestInFlight(
+  requestId: string,
+  ownerUid: string
+): Promise<SyncRequestRecord> {
+  validateSyncIdentity(ownerUid, "account ID");
+  const database = await openDatabase();
+  return new Promise<SyncRequestRecord>((resolve, reject) => {
+    const transaction = database.transaction(
+      [SYNC_REQUEST_STORE, SYNC_OUTBOX_STORE, SYNC_METADATA_STORE],
+      "readwrite"
+    );
+    const requests = transaction.objectStore(SYNC_REQUEST_STORE);
+    const outbox = transaction.objectStore(SYNC_OUTBOX_STORE);
+    const metadataStore = transaction.objectStore(SYNC_METADATA_STORE);
+    let result: SyncRequestRecord | null = null;
+    const request = requests.get(requestId);
+    request.onsuccess = () => {
+      const record = request.result as SyncRequestRecord | undefined;
+      if (!record || record.ownerUid !== ownerUid) {
+        transaction.abort();
+        return;
+      }
+      if (record.status === "in_flight") {
+        result = record;
+        return;
+      }
+      if (record.status !== "prepared" && record.status !== "retryable") {
+        transaction.abort();
+        return;
+      }
+      const outboxRequest = outbox.get(record.entityKey);
+      const metadataRequest = metadataStore.get(record.entityKey);
+      let completed = 0;
+      let pending: SyncOutboxRecord | undefined;
+      let metadata: SyncMetadataRecord | undefined;
+      const finish = () => {
+        completed += 1;
+        if (completed !== 2) return;
+        if (
+          !pending || pending.ownerUid !== ownerUid ||
+          !metadata || metadata.ownerUid !== ownerUid ||
+          metadata.remoteRevision !== record.baseRevision ||
+          pending.baseRevision !== record.baseRevision
+        ) {
+          transaction.abort();
+          return;
+        }
+        if (record.status === "prepared" && pending.operationId !== record.operationId) {
+          const superseded = { ...record, status: "superseded" as const, updatedAtMs: Date.now() };
+          requests.put(superseded);
+          result = superseded;
+          return;
+        }
+        const inFlight: SyncRequestRecord = {
+          ...record,
+          status: "in_flight",
+          attemptCount: Math.min(1000, record.attemptCount + 1),
+          updatedAtMs: Date.now()
+        };
+        delete inFlight.lastErrorCode;
+        requests.put(inFlight);
+        result = inFlight;
+      };
+      outboxRequest.onsuccess = () => { pending = outboxRequest.result as SyncOutboxRecord | undefined; finish(); };
+      metadataRequest.onsuccess = () => { metadata = metadataRequest.result as SyncMetadataRecord | undefined; finish(); };
+    };
+    transaction.oncomplete = () => {
+      if (result) resolve(result);
+      else reject(new Error("Sync request state was not updated."));
+    };
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not mark the sync request in flight."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Sync request is no longer eligible for transmission."));
+  }).finally(() => database.close());
+}
+
+export async function markSyncRequestFailed(
+  requestId: string,
+  ownerUid: string,
+  errorCode: string
+): Promise<void> {
+  validateSyncIdentity(ownerUid, "account ID");
+  const safeCode = errorCode.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+  if (!safeCode) throw new Error("Invalid sync request error code.");
+  const database = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(SYNC_REQUEST_STORE, "readwrite");
+    const store = transaction.objectStore(SYNC_REQUEST_STORE);
+    const request = store.get(requestId);
+    request.onsuccess = () => {
+      const record = request.result as SyncRequestRecord | undefined;
+      if (!record || record.ownerUid !== ownerUid || record.status !== "in_flight") {
+        transaction.abort();
+        return;
+      }
+      store.put({
+        ...record,
+        status: "retryable",
+        lastErrorCode: safeCode,
+        updatedAtMs: Date.now()
+      } satisfies SyncRequestRecord);
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not record the sync request failure."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Only an in-flight request can be marked retryable."));
+  }).finally(() => database.close());
+}
+
+/**
+ * Reconciles a confirmed server revision with the durable request journal.
+ * If the learner edited/deleted the entity while this request was in flight,
+ * the newer outbox operation is rebased instead of being discarded.
+ */
+export async function acknowledgeSyncRequest(
+  requestId: string,
+  ownerUid: string,
+  serverRevision: number
+): Promise<void> {
+  validateSyncIdentity(ownerUid, "account ID");
+  if (!Number.isSafeInteger(serverRevision) || serverRevision < 1) {
+    throw new Error("Invalid server sync revision.");
+  }
+  const database = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(
+      [SYNC_REQUEST_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE],
+      "readwrite"
+    );
+    const requests = transaction.objectStore(SYNC_REQUEST_STORE);
+    const metadataStore = transaction.objectStore(SYNC_METADATA_STORE);
+    const outbox = transaction.objectStore(SYNC_OUTBOX_STORE);
+    const request = requests.get(requestId);
+    request.onsuccess = () => {
+      const record = request.result as SyncRequestRecord | undefined;
+      if (!record || record.ownerUid !== ownerUid) {
+        transaction.abort();
+        return;
+      }
+      if (record.status === "acknowledged") {
+        if (serverRevision === record.baseRevision + 1) return;
+        transaction.abort();
+        return;
+      }
+      if (record.status !== "in_flight" && record.status !== "retryable") {
+        transaction.abort();
+        return;
+      }
+      if (serverRevision !== record.baseRevision + 1) {
+        transaction.abort();
+        return;
+      }
+      const metadataRequest = metadataStore.get(record.entityKey);
+      const outboxRequest = outbox.get(record.entityKey);
+      let completed = 0;
+      let metadata: SyncMetadataRecord | undefined;
+      let pending: SyncOutboxRecord | undefined;
+      const finish = () => {
+        completed += 1;
+        if (completed !== 2) return;
+        if (
+          !metadata || metadata.ownerUid !== ownerUid ||
+          metadata.remoteRevision !== record.baseRevision ||
+          !pending || pending.ownerUid !== ownerUid
+        ) {
+          transaction.abort();
+          return;
+        }
+
+        metadataStore.put({
+          ...metadata,
+          remoteRevision: serverRevision,
+          lastSyncedAtMs: Date.now()
+        });
+
+        if (pending.operationId === record.operationId) {
+          outbox.delete(record.entityKey);
+          if (record.operation === "delete") metadataStore.delete(record.entityKey);
+        } else {
+          const rebased = {
+            ...pending,
+            baseRevision: serverRevision,
+            queuedAtMs: Date.now(),
+            retryCount: 0
+          };
+          delete rebased.lastErrorCode;
+          outbox.put(rebased);
+        }
+
+        requests.put({
+          ...record,
+          status: "acknowledged",
+          updatedAtMs: Date.now()
+        } satisfies SyncRequestRecord);
+      };
+      metadataRequest.onsuccess = () => { metadata = metadataRequest.result as SyncMetadataRecord | undefined; finish(); };
+      outboxRequest.onsuccess = () => { pending = outboxRequest.result as SyncOutboxRecord | undefined; finish(); };
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not acknowledge the durable sync request."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Sync request acknowledgement was stale or did not match its durable snapshot."));
+  }).finally(() => database.close());
+}
+
+/** Keeps terminal journal history bounded without deleting unresolved requests. */
+export async function pruneSyncRequestHistory(ownerUid: string, keepLatestTerminal = 100): Promise<number> {
+  validateSyncIdentity(ownerUid, "account ID");
+  const keep = Math.max(0, Math.min(500, Math.floor(keepLatestTerminal)));
+  const database = await openDatabase();
+  return new Promise<number>((resolve, reject) => {
+    const transaction = database.transaction(SYNC_REQUEST_STORE, "readwrite");
+    const store = transaction.objectStore(SYNC_REQUEST_STORE);
+    const request = store.index("ownerUid").getAll(ownerUid);
+    let removed = 0;
+    request.onsuccess = () => {
+      const terminal = (request.result as SyncRequestRecord[])
+        .filter((entry) => entry.status === "acknowledged" || entry.status === "superseded")
+        .sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+      for (const entry of terminal.slice(keep)) {
+        store.delete(entry.requestId);
+        removed += 1;
+      }
+    };
+    transaction.oncomplete = () => resolve(removed);
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not prune sync request history."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Sync request history pruning was cancelled."));
+  }).finally(() => database.close());
+}
+
 /** Counts local records without reading or returning transcript contents. */
 export async function getLocalSyncCandidateCounts(ownerUid: string): Promise<SyncCandidateCounts> {
   validateSyncIdentity(ownerUid, "account ID");
@@ -1093,7 +1618,7 @@ export async function claimSelectedLocalSyncRecords(
   const database = await openDatabase();
   return new Promise<SyncClaimResult>((resolve, reject) => {
     const transaction = database.transaction(
-      [SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE],
+      [SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE, SYNC_REQUEST_STORE],
       "readwrite"
     );
     const sessions = transaction.objectStore(SESSION_STORE);

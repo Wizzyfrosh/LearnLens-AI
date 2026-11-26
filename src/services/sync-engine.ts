@@ -1,4 +1,5 @@
 import {
+  createSyncRequestSnapshot,
   getLocalSyncOperationSnapshots,
   getLocalSyncPreferences,
   getOrCreateSyncDeviceId
@@ -7,6 +8,8 @@ import type {
   SyncOperationSnapshot,
   SyncPreparedPayload,
   SyncPreparationBlockReason,
+  SyncRequestPreparationBlockReason,
+  SyncRequestRecord,
   SyncOperation,
   SyncEntityType
 } from "./session-store";
@@ -74,5 +77,59 @@ export async function prepareSyncBatch(
         operationId: snapshot.outbox.operationId,
         reason: snapshot.blockedReason as SyncPreparationBlockReason
       }))
+  };
+}
+
+/**
+ * Persists immutable per-operation request snapshots. Repeated preparation
+ * returns the same request ID and payload; a changed local operation receives
+ * a new request snapshot, while unresolved older requests block later writes.
+ */
+export interface PreparedSyncRequestBatch {
+  schemaVersion: 1;
+  ownerUid: string;
+  deviceId: string;
+  preparedAtMs: number;
+  requests: SyncRequestRecord[];
+  blocked: Array<{
+    entityKey: string;
+    operationId: string;
+    reason: SyncPreparationBlockReason | SyncRequestPreparationBlockReason;
+  }>;
+}
+
+export async function prepareSyncRequests(
+  ownerUid: string,
+  limit = 25
+): Promise<PreparedSyncRequestBatch> {
+  const batch = await prepareSyncBatch(ownerUid, limit);
+  const requests: SyncRequestRecord[] = [];
+  const blocked = [...batch.blocked];
+
+  for (const operation of batch.operations) {
+    const result = await createSyncRequestSnapshot(
+      ownerUid,
+      batch.deviceId,
+      operation.entityKey,
+      operation.operationId
+    );
+    if (result.request && !result.blockedReason) {
+      requests.push(result.request);
+    } else {
+      blocked.push({
+        entityKey: operation.entityKey,
+        operationId: operation.operationId,
+        reason: result.blockedReason ?? "operation_changed"
+      });
+    }
+  }
+
+  return {
+    schemaVersion: 1,
+    ownerUid,
+    deviceId: batch.deviceId,
+    preparedAtMs: Date.now(),
+    requests,
+    blocked
   };
 }
