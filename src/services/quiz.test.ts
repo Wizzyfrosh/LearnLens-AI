@@ -22,9 +22,9 @@ describe("lesson quiz validation and scoring", () => {
       sessionId: "session-1",
       title: "Lesson quiz",
       scope: "time_range" as const,
-      scopeLabel: "From 00:00 to 00:05",
+      scopeLabel: "From 00:00 to 00:04",
       rangeStartSeconds: 0,
-      rangeEndSeconds: 5,
+      rangeEndSeconds: 4,
       createdAt: 1,
       questions: []
     };
