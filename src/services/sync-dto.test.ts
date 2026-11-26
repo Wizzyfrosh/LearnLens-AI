@@ -78,6 +78,13 @@ describe("allow-listed cloud sync DTOs", () => {
     });
   });
 
+  it("rejects invalid local timestamps rather than exporting them", () => {
+    expect(() => toNoteSyncDto({
+      id: "bad-note", sessionId: "lesson", videoId: "lesson",
+      title: "Bad timestamp", content: "Local only", createdAt: Number.NaN, updatedAt: 1
+    })).toThrow(/timestamp is invalid/i);
+  });
+
   it("rejects oversized note payloads rather than truncating learner content", () => {
     const note: LearningNote = {
       id: "note-large", sessionId: "lesson", videoId: "lesson",
