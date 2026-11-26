@@ -498,3 +498,29 @@ Still required:
 - Register the current extension's App Check debug token, then verify cloud tutor, AI note drafting, quiz generation, and short-answer feedback in the real browser.
 - The build is CI-verified only. No browser runtime success is claimed.
 - Phase 4/5 runtime acceptance remains open; Phase 6 remains blocked. Audio transcription remains deferred.
+
+
+
+## 28. Phase 4/5 runtime defect fixes and visual theme update — 2026-11-26
+
+User runtime findings:
+- AI note drafting used a one-time transcript snapshot from the moment the button was clicked. Captions captured after that point were omitted until the learner clicked Draft again.
+- Quiz generation appeared unresponsive, without a useful visible error or explanation.
+- The user requested the charcoal/navy and warm yellow/gold design direction shown in the supplied Whisk Automator reference, with an optional light theme.
+- The user requested explicit bookmark export format choices.
+
+Code changes:
+- Note drafting now queues the requested draft while caption or audio capture is active. When capture is stopped, LearnLens waits briefly for the final caption/autosave updates and generates the draft from the complete captured transcript. The UI shows that the request is queued; the learner must stop capture to trigger generation. The queued request is cancelled if the active lesson changes.
+- Quiz generation now displays progress and errors directly beside the Generate quiz controls. It retries once when a generated response fails local schema/transcript-evidence validation, with the validation reason added to the repair prompt. App Check, model, and network errors remain visible and are not retried blindly.
+- Increased quiz generation output budget to reduce incomplete JSON. Prompt now explicitly asks for a single question of each supported type when a three-question quiz is requested and asks for correct answers to be grounded in transcript wording.
+- Added an explicit Quiz empty state when there is no saved lesson, with a route back to Lesson.
+- Replaced the previous palette with charcoal/navy panels, slate borders, and warm yellow/gold primary actions. Added a persistent Dark/Light switch. Theme preference is stored locally in the extension.
+- Added bookmark export options: PDF via print dialog / Save as PDF, Word-compatible .doc, TXT, Markdown, and CSV. The Word export is .doc (not .docx). PDF export opens a print layout; it is not represented as a direct PDF download.
+
+Verification:
+- CI run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45857510179
+- CI commit: 05d73be6dee107043ee20bf4c10b48c184a15607.
+- All stages passed for that run: dependency installation, TypeScript typecheck, unit tests, production build, Chrome extension package verification, and artifact upload.
+- Artifact from that run: ID 15137320173, 129,233 bytes, expires 2026-12-26. Note that the final prompt newline and overlay light-theme selector were corrected in later commits; a newer CI run is required for the exact latest source.
+- The latest UI/quiz code has not yet been re-tested in desktop Chrome. CI success is not runtime verification.
+- Phase 4/5 acceptance remains open until the user tests queued note drafting, quiz generation, and export/theme UI in Chrome. Do not start Phase 6 before runtime acceptance and any resulting fixes. Audio transcription remains deferred under Phase 3.
