@@ -122,6 +122,34 @@ describe("local learning artifact storage", () => {
     expect(await listSyncOutbox("user-a")).toEqual([]);
   });
 
+  it("invalidates an in-flight acknowledgement when a newer local edit replaces the queued payload", async () => {
+    const note = {
+      id: "stale-ack-note", sessionId: "stale-ack-lesson", videoId: "stale-ack-lesson",
+      title: "Original note", content: "Original body", createdAt: 1, updatedAt: 2
+    };
+    await saveLearningNote(note);
+    const claim = {
+      entityKey: "note:stale-ack-lesson:stale-ack-note", entityType: "note" as const,
+      lessonId: "stale-ack-lesson", entityId: "stale-ack-note", ownerUid: "user-a",
+      syncCategory: "notes" as const
+    };
+    await claimSyncEntity(claim);
+    const inFlight = await queueSyncOperation(claim.entityKey, "user-a", "upsert");
+    expect(inFlight).not.toBeNull();
+
+    await saveLearningNote({ ...note, content: "Newer body", updatedAt: 3 });
+    const [latest] = await listSyncOutbox("user-a");
+    expect(latest.operationId).not.toBe(inFlight!.operationId);
+    expect(latest.retryCount).toBe(0);
+
+    await expect(acknowledgeSyncOperation(claim.entityKey, "user-a", inFlight!.operationId, 1)).rejects.toThrow();
+    expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 0 });
+    expect(await listSyncOutbox("user-a")).toMatchObject([{ operationId: latest.operationId, baseRevision: 0 }]);
+
+    await acknowledgeSyncOperation(claim.entityKey, "user-a", latest.operationId, 1);
+    expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 1 });
+  });
+
   it("queues claimed note saves atomically but leaves unclaimed local notes alone", async () => {
     const note = {
       id: "sync-note", sessionId: "sync-lesson", videoId: "sync-lesson",

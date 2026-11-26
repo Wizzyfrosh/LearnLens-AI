@@ -1,6 +1,7 @@
 import type { TranscriptFormat } from "./transcript";
 import type { QuizAttempt, QuizDefinition } from "./quiz";
 import { toAttemptSyncDto, toLessonMetadataDto, toNoteSyncDto, toQuizSyncDto } from "./sync-dto";
+import type { AttemptSyncDto, LessonMetadataDto, NoteSyncDto, QuizSyncDto } from "./sync-dto";
 
 export interface LearningSession {
   id: string;
@@ -455,10 +456,11 @@ function queueSyncOperationInTransaction(
         metadataStore.delete(entityKey);
         return;
       }
-      const operationId = pending?.operation === operation ? pending.operationId : crypto.randomUUID();
+      // A new local mutation must invalidate any in-flight acknowledgement for an
+      // older payload. Retries keep this ID; a subsequent edit gets a fresh one.
       outboxStore.put({
         entityKey,
-        operationId,
+        operationId: crypto.randomUUID(),
         ownerUid: metadata.ownerUid,
         entityType: metadata.entityType,
         lessonId: metadata.lessonId,
@@ -467,7 +469,7 @@ function queueSyncOperationInTransaction(
         baseRevision: metadata.remoteRevision,
         payloadSchemaVersion: 1,
         queuedAtMs: Date.now(),
-        retryCount: pending?.operation === operation ? pending.retryCount : 0
+        retryCount: 0
       } satisfies SyncOutboxRecord);
     };
   };
@@ -730,6 +732,172 @@ export async function saveLocalSyncPreferences(
     store.put(preferences);
     resolve(preferences);
   });
+}
+
+export type SyncPreparedPayload =
+  | LessonMetadataDto
+  | NoteSyncDto
+  | QuizSyncDto
+  | AttemptSyncDto;
+
+export type SyncPreparationBlockReason =
+  | "invalid_outbox"
+  | "metadata_missing"
+  | "ownership_mismatch"
+  | "stale_base_revision"
+  | "local_record_missing"
+  | "local_record_present_for_tombstone"
+  | "invalid_payload"
+  | "invalid_tombstone";
+
+export interface SyncOperationSnapshot {
+  outbox: SyncOutboxRecord;
+  payload: SyncPreparedPayload | null;
+  blockedReason: SyncPreparationBlockReason | null;
+}
+
+/**
+ * Reads a bounded, account-owned snapshot of queued operations and maps upserts
+ * through the allow-listed DTOs. This is preparation only: it performs no network
+ * requests and never writes to Firebase or Firestore.
+ */
+export async function getLocalSyncOperationSnapshots(
+  ownerUid: string,
+  categories: SyncCategoryPreferences,
+  limit = 25
+): Promise<SyncOperationSnapshot[]> {
+  validateSyncIdentity(ownerUid, "account ID");
+  for (const value of Object.values(categories)) {
+    if (typeof value !== "boolean") throw new Error("Invalid local sync category selection.");
+  }
+  const safeLimit = Math.max(1, Math.min(100, Number.isFinite(limit) ? Math.floor(limit) : 25));
+  const categoryByType: Partial<Record<string, SyncCategory>> = {
+    lesson: "lessonMetadata", note: "notes", quiz: "quizzes", attempt: "attempts"
+  };
+  const storeByType: Partial<Record<string, string>> = {
+    lesson: SESSION_STORE, note: NOTE_STORE, quiz: QUIZ_STORE, attempt: QUIZ_ATTEMPT_STORE
+  };
+
+  const database = await openDatabase();
+  return new Promise<SyncOperationSnapshot[]>((resolve, reject) => {
+    const transaction = database.transaction(
+      [SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE],
+      "readonly"
+    );
+    const outboxRequest = transaction.objectStore(SYNC_OUTBOX_STORE).index("ownerUid").getAll(ownerUid);
+    let snapshots: SyncOperationSnapshot[] = [];
+
+    outboxRequest.onsuccess = () => {
+      const entries = (outboxRequest.result as SyncOutboxRecord[])
+        .filter((entry) => {
+          const category = categoryByType[String(entry.entityType)];
+          return entry.ownerUid === ownerUid && (!category || categories[category]);
+        })
+        .sort((a, b) => {
+          const left = Number.isSafeInteger(a.queuedAtMs) ? a.queuedAtMs : 0;
+          const right = Number.isSafeInteger(b.queuedAtMs) ? b.queuedAtMs : 0;
+          return left - right;
+        })
+        .slice(0, safeLimit);
+
+      snapshots = entries.map((entry) => ({
+        outbox: entry,
+        payload: null,
+        blockedReason: null
+      }));
+
+      for (const snapshot of snapshots) {
+        const entry = snapshot.outbox;
+        const category = categoryByType[String(entry.entityType)];
+        const storeName = storeByType[String(entry.entityType)];
+        let identityValid = Boolean(category && storeName);
+        try {
+          if (entry.ownerUid !== ownerUid) identityValid = false;
+          validateSyncIdentity(entry.ownerUid, "account ID");
+          validateSyncIdentity(entry.lessonId, "lesson ID");
+          validateSyncIdentity(entry.entityId, "entity ID");
+          if (entry.entityKey !== syncEntityKey(entry.entityType, entry.lessonId, entry.entityId)) identityValid = false;
+        } catch {
+          identityValid = false;
+        }
+        if (
+          !identityValid ||
+          (entry.operation !== "upsert" && entry.operation !== "delete") ||
+          typeof entry.operationId !== "string" || !entry.operationId || entry.operationId.length > 128 ||
+          !Number.isSafeInteger(entry.baseRevision) || entry.baseRevision < 0 ||
+          entry.payloadSchemaVersion !== 1 ||
+          !Number.isSafeInteger(entry.queuedAtMs) || entry.queuedAtMs < 0
+        ) {
+          snapshot.blockedReason = "invalid_outbox";
+          continue;
+        }
+
+        const metadataRequest = transaction.objectStore(SYNC_METADATA_STORE).get(entry.entityKey);
+        metadataRequest.onsuccess = () => {
+          const metadata = metadataRequest.result as SyncMetadataRecord | undefined;
+          if (!metadata) {
+            snapshot.blockedReason = "metadata_missing";
+            return;
+          }
+          if (
+            metadata.ownerUid !== ownerUid ||
+            metadata.entityKey !== entry.entityKey ||
+            metadata.entityType !== entry.entityType ||
+            metadata.lessonId !== entry.lessonId ||
+            metadata.entityId !== entry.entityId
+          ) {
+            snapshot.blockedReason = "ownership_mismatch";
+            return;
+          }
+          if (
+            metadata.syncCategory !== category ||
+            metadata.remoteRevision !== entry.baseRevision
+          ) {
+            snapshot.blockedReason = "stale_base_revision";
+            return;
+          }
+
+          const entityRequest = transaction.objectStore(storeName as string).get(entry.entityId);
+          entityRequest.onsuccess = () => {
+            const entity = entityRequest.result as
+              | LearningSession | LearningNote | QuizDefinition | QuizAttempt | undefined;
+
+            if (entry.operation === "delete") {
+              if (entry.baseRevision < 1) {
+                snapshot.blockedReason = "invalid_tombstone";
+                return;
+              }
+              if (entity) {
+                snapshot.blockedReason = "local_record_present_for_tombstone";
+                return;
+              }
+              snapshot.payload = null;
+              return;
+            }
+
+            if (!entity) {
+              snapshot.blockedReason = "local_record_missing";
+              return;
+            }
+            try {
+              if (entry.entityType === "lesson") snapshot.payload = toLessonMetadataDto(entity as LearningSession);
+              else if (entry.entityType === "note") snapshot.payload = toNoteSyncDto(entity as LearningNote);
+              else if (entry.entityType === "quiz") snapshot.payload = toQuizSyncDto(entity as QuizDefinition);
+              else if (entry.entityType === "attempt") snapshot.payload = toAttemptSyncDto(entity as QuizAttempt);
+              else snapshot.blockedReason = "invalid_outbox";
+            } catch {
+              snapshot.blockedReason = "invalid_payload";
+              snapshot.payload = null;
+            }
+          };
+        };
+      }
+    };
+
+    transaction.oncomplete = () => resolve(snapshots);
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not prepare local sync operations."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Preparing local sync operations was cancelled."));
+  }).finally(() => database.close());
 }
 
 /** Counts local records without reading or returning transcript contents. */
