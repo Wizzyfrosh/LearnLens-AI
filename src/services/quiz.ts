@@ -120,6 +120,13 @@ export function validateQuizResponse(text: string, segments: TranscriptSegment[]
       throw new Error(`Quiz question ${index + 1} has invalid answer options.`);
     }
     const options = (item.options as string[]).map((option) => option.trim());
+    if (new Set(options.map((option) => option.toLocaleLowerCase())).size !== options.length) {
+      throw new Error(`Quiz question ${index + 1} contains duplicate answer options.`);
+    }
+    const evidenceWordCount = evidence.split(/\\s+/).length;
+    if (evidenceWordCount < 3 || evidenceWordCount > 25) {
+      throw new Error(`Quiz question ${index + 1} evidence must be a short, exact transcript excerpt.`);
+    }
     if (type === "multiple_choice") {
       if (options.length < 3 || options.length > 5 || options.some((option) => !option || option.length > 180)) {
         throw new Error(`Multiple-choice question ${index + 1} must have 3 to 5 valid options.`);
@@ -128,7 +135,7 @@ export function validateQuizResponse(text: string, segments: TranscriptSegment[]
         throw new Error(`The correct answer for question ${index + 1} must match one of its options.`);
       }
     } else if (type === "true_false") {
-      if (options.length !== 2 || !["true", "false"].includes(correctAnswer.toLocaleLowerCase())) {
+      if (options.length !== 2 || !options.some((option) => option.toLocaleLowerCase() === "true") || !options.some((option) => option.toLocaleLowerCase() === "false") || !["true", "false"].includes(correctAnswer.toLocaleLowerCase())) {
         throw new Error(`True/false question ${index + 1} must have True/False options and a boolean answer.`);
       }
     } else if (options.length !== 0) {
