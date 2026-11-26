@@ -325,6 +325,15 @@ export async function claimSyncEntity(input: Omit<SyncMetadataRecord, "remoteRev
   validateSyncIdentity(input.ownerUid, "account ID");
   validateSyncIdentity(input.lessonId, "lesson ID");
   validateSyncIdentity(input.entityId, "entity ID");
+  if (input.entityKey !== `${input.entityType}:${input.lessonId}:${input.entityId}`) {
+    throw new Error("Sync entity key does not match its typed identity.");
+  }
+  const expectedCategory: Record<SyncEntityType, SyncCategory> = {
+    lesson: "lessonMetadata", note: "notes", quiz: "quizzes", attempt: "attempts"
+  };
+  if (input.syncCategory !== expectedCategory[input.entityType]) {
+    throw new Error("Sync entity category does not match its entity type.");
+  }
   const database = await openDatabase();
   return new Promise<SyncMetadataRecord>((resolve, reject) => {
     const transaction = database.transaction(SYNC_METADATA_STORE, "readwrite");
@@ -353,6 +362,9 @@ export async function queueSyncOperation(
   operation: SyncOperation
 ): Promise<SyncOutboxRecord | null> {
   validateSyncIdentity(ownerUid, "account ID");
+  if (!/^(lesson|note|quiz|attempt):[A-Za-z0-9_-]{1,128}:[A-Za-z0-9_-]{1,128}$/.test(entityKey)) {
+    throw new Error("Invalid sync entity key.");
+  }
   const database = await openDatabase();
   return new Promise<SyncOutboxRecord | null>((resolve, reject) => {
     const transaction = database.transaction([SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
@@ -392,7 +404,7 @@ export async function queueSyncOperation(
           baseRevision: metadata.remoteRevision,
           payloadSchemaVersion: 1,
           queuedAtMs: Date.now(),
-          retryCount: pending?.retryCount ?? 0
+          retryCount: pending?.operation === operation ? pending.retryCount : 0
         };
         outboxStore.put(result);
       };
