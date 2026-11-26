@@ -555,7 +555,7 @@ export default function App() {
     try {
       const draft = await askLearnLens(
         "Create clear, concise study notes from this lesson transcript. Use a short descriptive title on the first line, then structured headings and bullet points. Include only information supported by the transcript. Do not invent timestamps or facts. This is an editable draft for learner review.\n\nLesson: " + video.title,
-        segments,
+        targetSegments,
         preference,
         setProgress
       );
@@ -578,6 +578,7 @@ export default function App() {
   async function saveNote(event: FormEvent) {
     event.preventDefault();
     if (!sessionId || !savedSession || !noteTitle.trim() || !noteContent.trim()) return;
+    const targetSessionId = sessionId;
     const existing = notes.find((note) => note.id === editingNoteId);
     const now = Date.now();
     const timestamp = noteTimestamp === "" ? null : Number(noteTimestamp);
@@ -593,6 +594,7 @@ export default function App() {
     };
     try {
       await saveLearningNote(note);
+      if (activeSessionIdRef.current !== targetSessionId) return;
       setNotes((current) => [note, ...current.filter((item) => item.id !== note.id)].sort((a, b) => b.updatedAt - a.updatedAt));
       setNoteTitle("");
       setNoteContent("");
