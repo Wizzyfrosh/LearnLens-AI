@@ -37,5 +37,16 @@
       ],
       "run_at": "document_start"
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "sidepanel.html",
+        "assets/*"
+      ],
+      "matches": [
+        "https://www.youtube.com/*"
+      ]
+    }
   ]
 }
