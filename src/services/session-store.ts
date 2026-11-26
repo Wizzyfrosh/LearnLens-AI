@@ -165,8 +165,15 @@ export async function saveLearningSession(session: LearningSession): Promise<voi
       const previous = request.result as LearningSession | undefined;
       sessions.put(session);
       // Transcript-only autosaves must not enqueue a lesson metadata mutation.
-      const changed = !previous
-        || JSON.stringify(toLessonMetadataDto(previous)) !== JSON.stringify(toLessonMetadataDto(session));
+      let changed = !previous;
+      if (previous) {
+        try {
+          changed = JSON.stringify(toLessonMetadataDto(previous)) !== JSON.stringify(toLessonMetadataDto(session));
+        } catch {
+          // A malformed/oversized sync projection must not block local lesson capture.
+          changed = false;
+        }
+      }
       if (changed) queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("lesson", session.id, session.id), "upsert");
     };
     transaction.oncomplete = () => resolve();
@@ -440,7 +447,7 @@ function queueSyncOperationInTransaction(
     pendingRequest.onsuccess = () => {
       const pending = pendingRequest.result as SyncOutboxRecord | undefined;
       if (operation === "delete" && metadata.remoteRevision === 0) {
-        if (pending?.operation === "upsert") outboxStore.delete(entityKey);
+        outboxStore.delete(entityKey);
         metadataStore.delete(entityKey);
         return;
       }
