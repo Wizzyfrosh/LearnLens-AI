@@ -960,6 +960,93 @@ export default function App() {
           </section>
         )}
 
+        {savedSession && sessionId && (
+          <section className="quiz-studio">
+            <div className="section-heading">
+              <div><BrainCircuit size={17} /><h2>Quiz studio</h2></div>
+              <span>{savedQuizzes.length} quizzes · {quizAttempts.length} attempts</span>
+            </div>
+            <p className="quiz-intro">Test what you understood from this lesson. Questions are checked against transcript evidence before they are saved.</p>
+            <div className="quiz-controls">
+              <label className="field-label" htmlFor="quiz-scope">Quiz coverage</label>
+              <select id="quiz-scope" value={quizScope} onChange={(event) => setQuizScope(event.target.value as typeof quizScope)}>
+                <option value="whole_lesson">Whole lesson</option>
+                <option value="topic">Focus on a topic</option>
+                <option value="time_range">Selected timestamp range</option>
+              </select>
+              {quizScope === "topic" && (
+                <>
+                  <label className="field-label" htmlFor="quiz-topic">Topic</label>
+                  <input id="quiz-topic" value={quizTopic} onChange={(event) => setQuizTopic(event.target.value)} placeholder="e.g. Cellular respiration" />
+                </>
+              )}
+              {quizScope === "time_range" && (
+                <div className="quiz-range">
+                  <label><span>Start (seconds)</span><input type="number" min="0" value={quizStart} onChange={(event) => setQuizStart(event.target.value)} /></label>
+                  <label><span>End (seconds)</span><input type="number" min="1" value={quizEnd} onChange={(event) => setQuizEnd(event.target.value)} placeholder="e.g. 240" /></label>
+                </div>
+              )}
+              <label className="field-label" htmlFor="quiz-count">Number of questions</label>
+              <select id="quiz-count" value={quizQuestionCount} onChange={(event) => setQuizQuestionCount(Number(event.target.value))}>
+                <option value={3}>3 questions</option>
+                <option value={5}>5 questions</option>
+                <option value={8}>8 questions</option>
+                <option value={10}>10 questions</option>
+              </select>
+              <button className="primary-button quiz-generate" type="button" onClick={() => void generateLessonQuiz()} disabled={quizGenerating || !segmentCount}>
+                {quizGenerating ? <LoaderCircle className="spin" size={14} /> : <Sparkles size={14} />}
+                {quizGenerating ? "Working..." : "Generate quiz"}
+              </button>
+            </div>
+            {savedQuizzes.length > 0 && (
+              <div className="quiz-history">
+                <strong>Saved quizzes</strong>
+                {savedQuizzes.map((quiz) => (
+                  <button className={activeQuiz?.id === quiz.id ? "quiz-history-item selected" : "quiz-history-item"} key={quiz.id} type="button" onClick={() => { setActiveQuiz(quiz); setQuizAnswers({}); setQuizResult(null); }}>
+                    <span>{quiz.title}</span><small>{quiz.scopeLabel} · {quiz.questions.length} questions</small>
+                  </button>
+                ))}
+              </div>
+            )}
+            {activeQuiz && (
+              <form className="quiz-question-list" onSubmit={(event) => void submitLessonQuiz(event)}>
+                <div className="quiz-title-row"><strong>{activeQuiz.title}</strong><span>{activeQuiz.scopeLabel}</span></div>
+                {activeQuiz.questions.map((question, index) => (
+                  <article className="quiz-question" key={question.id}>
+                    <div className="quiz-question-meta"><span>QUESTION {index + 1}</span><span>{question.type.replace("_", " ")}</span></div>
+                    <h3>{question.prompt}</h3>
+                    {question.type === "short_answer" ? (
+                      <textarea rows={3} value={quizAnswers[question.id] ?? ""} onChange={(event) => setQuizAnswers((current) => ({ ...current, [question.id]: event.target.value }))} placeholder="Write your answer..." disabled={Boolean(quizResult)} />
+                    ) : (
+                      <div className="quiz-options">
+                        {question.options.map((option) => (
+                          <label key={option}>
+                            <input type="radio" name={"answer-" + question.id} value={option} checked={(quizAnswers[question.id] ?? "") === option} onChange={() => setQuizAnswers((current) => ({ ...current, [question.id]: option }))} disabled={Boolean(quizResult)} />
+                            <span>{option}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    <small className="quiz-evidence">Lesson evidence: “{question.evidence}”</small>
+                    {quizResult && <p className="quiz-feedback">{quizResult.results.find((result) => result.questionId === question.id)?.feedback}</p>}
+                  </article>
+                ))}
+                {!quizResult && <button className="primary-button quiz-submit" type="submit" disabled={quizGenerating}>{quizGenerating ? "Scoring..." : "Submit answers"}</button>}
+                {quizResult && (
+                  <div className="quiz-result">
+                    <strong>Objective score: {quizResult.objectiveScore} / {quizResult.objectiveTotal}</strong>
+                    <p>Short-answer responses receive separate AI feedback and are not included in this objective score.</p>
+                    {quizResult.topicsToReview.length > 0 ? <p>Topics to revisit: {quizResult.topicsToReview.join(", ")}</p> : <p>No objective weak topics were identified in this attempt.</p>}
+                    <button className="secondary-button" type="button" onClick={() => { setQuizAnswers({}); setQuizResult(null); }}>Try again</button>
+                  </div>
+                )}
+              </form>
+            )}
+            {quizAttempts.length > 0 && <p className="quiz-history-summary">Latest saved objective result: {quizAttempts[0].objectiveScore}/{quizAttempts[0].objectiveTotal}</p>}
+            {quizMessage && <p className="helper-text">{quizMessage}</p>}
+          </section>
+        )}
+
         <details className="fallback-import">
           <summary>Import a transcript instead (fallback)</summary>
           <label className="upload-box">
