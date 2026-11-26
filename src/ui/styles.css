@@ -646,3 +646,14 @@ body:has(.shell.theme-light) { background: #f4f5f7; color: #202938; }
 .theme-light .account-sync-preview-row>strong{color:#34569e}
 .theme-light .account-sync-preview-row>small{color:#8792a3}
 .theme-light .account-sync-loading{color:#718096}
+
+
+.sync-review-button{width:100%;justify-content:center;margin-top:9px;padding:10px;font-size:11px}
+.account-sync-review,.account-sync-review-result{margin-top:12px;padding:12px;border:1px solid #dfe6f3;border-radius:11px;background:#f8faff}
+.account-sync-review>strong,.account-sync-review-result>strong{display:block;color:#293852;font-size:11px;margin-bottom:7px}
+.account-sync-review>p{font-size:10px;line-height:1.55;color:#66738a;margin:0 0 9px}
+.account-sync-review .account-sync-preview-row{padding:8px 0;border-top:1px solid #e8edf6}
+.account-sync-review-actions{display:grid;grid-template-columns:1fr 1.5fr;gap:8px;margin-top:10px}
+.account-sync-review-actions .primary-button{font-size:10px;padding:9px}
+.account-sync-review-result{display:grid;gap:5px}
+.account-sync-review-result small{font-size:9px;color:#68758b;line-height:1.4}
