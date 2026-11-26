@@ -46,6 +46,13 @@ function assertText(value: string, field: string, maxLength: number): string {
   return value;
 }
 
+function assertTimestamp(value: number, field: string): number {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`The ${field} timestamp is invalid for cloud sync.`);
+  }
+  return value;
+}
+
 function assertSize(value: unknown, maxBytes: number, label: string): void {
   const bytes = new TextEncoder().encode(JSON.stringify(value)).byteLength;
   if (bytes > maxBytes) throw new Error(`${label} exceeds the cloud sync size limit and will remain local.`);
@@ -70,8 +77,8 @@ function safeYouTubeUrl(url: string): string {
 /** Explicit projection: transcriptText, transcriptFormat and transcriptSource never cross this boundary. */
 export function toLessonMetadataDto(session: LearningSession): LessonMetadataDto {
   const videoId = session.platform === "youtube" && ID_PATTERN.test(session.videoId) ? session.videoId : "";
-  const url = session.platform === "youtube" && videoId
-    ? `https://www.youtube.com/watch?v=${videoId}`
+  const url = session.platform === "youtube"
+    ? (videoId ? `https://www.youtube.com/watch?v=${videoId}` : "")
     : safeYouTubeUrl(session.url);
   const dto: LessonMetadataDto = {
     platform: session.platform,
@@ -87,8 +94,8 @@ export function toNoteSyncDto(note: LearningNote): NoteSyncDto {
   const dto: NoteSyncDto = {
     title: assertText(note.title, "note title", 500),
     content: assertText(note.content, "note content", MAX_NOTE_BYTES),
-    createdAtMs: note.createdAt,
-    updatedAtMs: note.updatedAt
+    createdAtMs: assertTimestamp(note.createdAt, "note creation"),
+    updatedAtMs: assertTimestamp(note.updatedAt, "note update")
   };
   assertSize(dto, MAX_NOTE_BYTES, "Note");
   return dto;
@@ -101,7 +108,7 @@ export function toQuizSyncDto(quiz: QuizDefinition): QuizSyncDto {
     scopeLabel: assertText(quiz.scopeLabel, "quiz scope label", 500),
     ...(Number.isFinite(quiz.rangeStartSeconds) ? { rangeStartSeconds: quiz.rangeStartSeconds } : {}),
     ...(Number.isFinite(quiz.rangeEndSeconds) ? { rangeEndSeconds: quiz.rangeEndSeconds } : {}),
-    createdAtMs: quiz.createdAt,
+    createdAtMs: assertTimestamp(quiz.createdAt, "quiz creation"),
     questions: quiz.questions.map((question) => ({
       id: assertText(question.id, "question ID", 64),
       type: question.type,
@@ -120,7 +127,7 @@ export function toQuizSyncDto(quiz: QuizDefinition): QuizSyncDto {
 export function toAttemptSyncDto(attempt: QuizAttempt): AttemptSyncDto {
   const dto: AttemptSyncDto = {
     quizId: assertText(attempt.quizId, "quiz ID", 128),
-    createdAtMs: attempt.createdAt,
+    createdAtMs: assertTimestamp(attempt.createdAt, "attempt creation"),
     results: attempt.results.map((result) => ({
       questionId: assertText(result.questionId, "question ID", 64),
       answer: assertText(result.answer, "learner answer", 2000),
