@@ -246,16 +246,19 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
   }
 });
 
-// Use one toolbar-click path only. Calling setPanelBehavior as well as
-// registering onClicked can cause Chrome to open the panel through its
-// built-in path instead of dispatching this action event. The action event is
-// also the invocation that grants activeTab for the current YouTube tab.
-chrome.action.onClicked.addListener((tab) => {
-  if (tab.id === undefined) return;
-  void chrome.sidePanel.open({ tabId: tab.id }).catch((error: unknown) => {
-    console.error("LearnLens could not open the side panel from the toolbar.", error);
+// Chrome's supported toolbar-click integration is the built-in side-panel
+// behavior. Calling sidePanel.open() from action.onClicked is unreliable here:
+// Chrome may not dispatch that event when the side-panel action owns the click.
+// Configure it at worker startup and after installation/update so a normal
+// left-click on the extension icon always opens LearnLens.
+function configureSidePanelAction(): void {
+  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((error: unknown) => {
+    console.error("LearnLens could not enable toolbar side-panel behavior.", error);
   });
-});
+}
+
+chrome.runtime.onInstalled.addListener(configureSidePanelAction);
+configureSidePanelAction();
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
   if (captionCaptureTabId !== null && captionCaptureTabId !== tabId) {
