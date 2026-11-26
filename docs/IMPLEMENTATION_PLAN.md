@@ -132,15 +132,36 @@ Exit: Phase 5 implementation, automated checks, and desktop Chrome runtime verif
 
 
 ### Phase 6 — Optional cloud sync
-- [ ] Add Firebase Auth when sync is ready.
-- [ ] Define Firestore schema and per-user rules.
-- [ ] Configure App Check and production-compatible attestation.
-- [ ] Sync opted-in learning artifacts only; transcripts local by default.
-- [ ] Add export/delete data workflows.
-- [ ] Use Remote Config for safe rollout if needed.
-- [ ] Test offline, conflict handling, sync, deletion.
 
-Exit: secure optional sync without cross-user data exposure.
+**Phase boundary:** Keep LearnLens local-first. A learner must be able to use lessons, notes, quizzes, and attempts without signing in. Cloud sync is an explicit opt-in and must never silently upload lesson transcripts or raw audio.
+
+**Phase 6A — Security and data design (do first)**
+- [ ] Audit the current IndexedDB stores and define a versioned cloud DTO for each syncable artifact; do not upload internal IndexedDB records blindly.
+- [ ] Decide the initial sync scope: notes, quiz definitions, quiz attempts, and minimal lesson metadata only. Transcript segments and raw audio remain device-local by default.
+- [ ] Define stable per-user document paths, ownership fields, schema versions, server timestamps, and size limits.
+- [ ] Define deletion/tombstone behavior so deletes propagate across devices without resurrecting stale records.
+- [ ] Define deterministic conflict handling (updatedAt + revision/version) and document the user-visible behavior for concurrent edits.
+- [ ] Threat-model account switching, stale credentials, replayed writes, cross-user reads, offline queues, and partial sync failures.
+
+**Phase 6B — Identity and Firebase security**
+- [ ] Add Firebase Auth behind a dedicated auth service; keep app initialization shared and avoid coupling Auth to AI request code.
+- [ ] Implement sign-in, sign-out, session restoration, and explicit account-state UI. Do not block local use when signed out.
+- [ ] Choose and document the supported sign-in methods before implementation; do not add providers the UI and recovery flow cannot support.
+- [ ] Add Firestore rules that deny by default and enforce request.auth.uid ownership on every read/write path.
+- [ ] Add emulator/security-rule tests for unauthenticated access, cross-user access, malformed payloads, and ownership changes.
+- [ ] Resolve production-compatible App Check for a Chrome extension before enabling sync. The existing debug-token provider is development-only and is not an acceptable production control.
+- [ ] Keep Firestore rules and Firebase project configuration under version control; never commit service-account credentials or debug tokens.
+
+**Phase 6C — Opt-in sync engine and user controls**
+- [ ] Add an explicit sync opt-in and clear explanation of which artifact types leave the device.
+- [ ] Keep transcript sync disabled by default; do not upload raw audio.
+- [ ] Implement bounded, batched, retryable sync with idempotent writes and backoff.
+- [ ] Handle offline edits, conflict resolution, tombstones, account sign-out, and switching accounts without leaking one account's cached data into another.
+- [ ] Add per-user export and account-data deletion workflows, including cloud and local data.
+- [ ] Use Remote Config only if it materially improves staged rollout; it is not a substitute for security rules.
+- [ ] Test multi-device sync, offline/online transitions, duplicate retries, conflict resolution, deletion propagation, and account switching.
+
+Exit: optional sync works across devices with explicit consent, production-appropriate App Check, deny-by-default tested Firestore rules, no cross-user data exposure, and local-only use remains fully functional.
 
 ### Phase 7 — Platform expansion
 - [ ] Define formal PlatformAdapter interface.
@@ -252,3 +273,10 @@ Next exit criteria:
 - Confirmed areas include note navigation and selected-note-only exports, plus successful 10-question quiz generation with transcript-grounded answer validation.
 - Phase 4 and Phase 5 are complete. Do not reopen their smoke tests unless a regression is reported.
 - Next roadmap phase: Phase 6 — Optional cloud sync. Keep cloud sync opt-in; do not change the local-first default or upload lesson transcripts by default.
+
+
+## 13. Phase 6 architecture guardrails — 2026-11-26
+- Repository review found Firebase AI Logic/App Check development wiring, but no Firebase Auth, Firestore rules, or Firebase project config files in the repository root.
+- The current App Check setup explicitly uses a debug token. This is development-only and must not be reused as production protection for cloud sync.
+- Phase 6 must begin with a security/data-model design and a production-compatible App Check decision, before any sync writes are implemented.
+- Preserve the existing local-first IndexedDB workflow. Initial cloud scope should be limited to opted-in notes, quizzes, attempts, and minimal lesson metadata; transcript segments and raw audio remain local by default.
