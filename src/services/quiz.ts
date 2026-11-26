@@ -57,7 +57,7 @@ function normalizeEvidence(value: string): string {
   // buildContextWindow prefixes timestamped cues with labels such as [02:15].
   // Gemini may include those labels or vary punctuation when quoting a cue.
   // Normalize presentation only; preserve the actual words and their order.
-  return (value.normalize("NFKC").toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).join(" ");
+  return (value.normalize("NFKC").replace(/\[\d{1,2}:\d{2}(?::\d{2})?\]/g, " ").toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).join(" ");
 }
 
 function readString(value: unknown, field: string, maxLength: number): string {
