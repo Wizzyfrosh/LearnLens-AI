@@ -443,3 +443,28 @@ Next:
 - Added tests for transcript-unsupported correct answers and version-3-to-version-4 IndexedDB migration preserving existing sessions, notes, and bookmarks.
 - The final build is code-verified but has not been run in desktop Chrome. Phase 4 and Phase 5 runtime testing remain deliberately open until the user has their PC.
 - Do not proceed to Phase 6 until combined Phase 4/5 runtime testing and fixes are complete. Phase 3 audio transcription remains deferred.
+
+
+## 26. Phase 5 scope and async-safety correction — 2026-11-26
+
+Code review found that timestamp-range quiz questions were generated and validated against the selected range, but short-answer feedback used the full lesson transcript. This could widen the AI feedback context beyond the learner's selected scope.
+
+Corrections committed:
+- `8814dba` — persist the selected quiz range boundaries in the quiz definition.
+- `976e5b4` and `adefbef` — use the saved range for short-answer feedback and fail closed if a time-range quiz has missing/invalid range metadata.
+- `b7db336` — centralize quiz feedback transcript selection in a tested helper.
+- `8e2cd95` and `ef1744e` — add and correct tests for range filtering, including the inclusive overlap boundary.
+- Added post-persistence session guards after saving generated quizzes and submitted attempts, preventing a late IndexedDB completion from updating the UI after the learner switches lessons.
+
+Verification:
+- Successful CI: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45839860487
+- Verified commit: `ef1744e6f1c02b6d0470fe7cae9a77da399c8c68`.
+- Dependency installation, TypeScript typecheck, unit tests, production build, Chrome extension package verification, and artifact upload all passed.
+- Artifact: `learnlens-chrome-extension`, ID `15128025575`, 122,956 bytes, expires 2026-12-26.
+- A first test run failed because the test's end boundary exactly touched the next caption; the implementation intentionally treats boundary-touching captions as overlapping. The test was corrected to use a non-overlapping end time, and the full CI run then passed.
+
+Current state:
+- Phase 4 and Phase 5 implementation plus CI verification are complete.
+- Combined desktop Chrome runtime QA remains open. No claim of runtime verification is made.
+- Do not start Phase 6 until the user tests the combined build and any runtime defects are fixed.
+- Phase 3 audio transcription remains deferred and is not part of this build's acceptance.
