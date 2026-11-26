@@ -25,6 +25,16 @@ export interface QuizDefinition {
   questions: QuizQuestion[];
 }
 
+export function getQuizFeedbackSegments(quiz: QuizDefinition, segments: TranscriptSegment[]): TranscriptSegment[] {
+  if (quiz.scope !== "time_range") return segments;
+  const start = quiz.rangeStartSeconds;
+  const end = quiz.rangeEndSeconds;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || (start as number) < 0 || (end as number) <= (start as number)) {
+    return [];
+  }
+  return segments.filter((segment) => segment.hasTimestamp && segment.endSeconds >= (start as number) && segment.startSeconds <= (end as number));
+}
+
 export interface QuizQuestionResult {
   questionId: string;
   answer: string;
