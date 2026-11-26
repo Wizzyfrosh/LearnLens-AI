@@ -19,6 +19,8 @@ export interface QuizDefinition {
   title: string;
   scope: "whole_lesson" | "topic" | "time_range";
   scopeLabel: string;
+  rangeStartSeconds?: number;
+  rangeEndSeconds?: number;
   createdAt: number;
   questions: QuizQuestion[];
 }
