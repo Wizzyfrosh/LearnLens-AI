@@ -12,6 +12,7 @@ Read these files before contributing or handing this project to another AI codin
 - [Google #BuildHybridAI 2026 Hackathon Brief](./docs/HACKATHON_BRIEF.md) — official requirements, judging criteria, submission checklist, and AI-agent instructions.
 - [Implementation Plan](./docs/IMPLEMENTATION_PLAN.md) — phased engineering roadmap and definition of done.
 - [Project Status](./docs/PROJECT_STATUS.md) — current checkpoint, completed work, blockers, and exact next task. **Read this first when resuming work.**
+- [Cloud Sync Data Model](./docs/CLOUD_SYNC_DATA_MODEL.md) — Phase 6 data contracts, account isolation, conflict/tombstone policy, and security threat model.
 
 ## Current milestone: Chrome extension foundation
 
