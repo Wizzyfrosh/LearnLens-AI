@@ -96,3 +96,7 @@ footer{border-top:1px solid #e8ebf2;padding-top:13px;color:#9aa3b2;font-size:9px
 .icon-button{border:0;background:transparent;color:#8994a7;padding:3px;cursor:pointer}
 .export-button{margin-top:12px}
 .inline-bookmark{display:inline-flex;vertical-align:middle;margin-left:6px;border:1px solid #dce4f3;background:#fff;color:#5270bb;border-radius:5px;padding:3px;cursor:pointer}
+
+.note-draft-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0}
+.note-draft-row p{font-size:10px;line-height:1.45;color:#7c879b;margin:0}
+.note-draft-row button{white-space:nowrap}
