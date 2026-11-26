@@ -215,7 +215,7 @@ describe("local learning artifact storage", () => {
     const defaults = await getLocalSyncPreferences("user-a");
     expect(defaults.categories).toEqual({
       lessonMetadata: false, notes: false, quizzes: false, attempts: false
-    }, []);
+    });
     await saveLocalSyncPreferences("user-a", {
       lessonMetadata: false, notes: true, quizzes: true, attempts: false
     });
