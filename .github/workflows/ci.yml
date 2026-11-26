@@ -21,12 +21,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Set up Java for Firebase Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
       - name: Install dependencies
         run: npm install --no-audit --no-fund --legacy-peer-deps
       - name: Typecheck
         run: npm run typecheck
       - name: Unit tests
         run: npm test
+      - name: Firestore Security Rules tests
+        run: npm run test:rules
       - name: Production build
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
