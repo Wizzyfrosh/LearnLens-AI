@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   deleteLearningBookmark,
+  deleteLearningSession,
   deleteLearningNote,
   getLatestSessionForVideo,
   listLearningBookmarks,
@@ -71,6 +72,29 @@ describe("local learning artifact storage", () => {
     await expect(saveLearningBookmark({ ...base, id: "bad", timestampSeconds: -1 })).rejects.toThrow(/valid non-negative/i);
     await deleteLearningBookmark("bookmark-2");
     expect(await listLearningBookmarks("video-3")).toEqual([]);
+  });
+
+  it("removes a session and its associated notes and bookmarks atomically", async () => {
+    await saveLearningSession({
+      id: "remove-me", videoId: "remove-me", title: "Temporary lesson",
+      url: "https://www.youtube.com/watch?v=remove-me", platform: "youtube",
+      transcriptText: "Temporary", transcriptFormat: "plain-text",
+      transcriptSource: "YouTube live captions", updatedAt: 1
+    });
+    await saveLearningNote({
+      id: "remove-note", sessionId: "remove-me", videoId: "remove-me",
+      title: "Temporary note", content: "Delete with parent session.",
+      timestampSeconds: null, createdAt: 1, updatedAt: 1
+    });
+    await saveLearningBookmark({
+      id: "remove-bookmark", sessionId: "remove-me", videoId: "remove-me",
+      label: "Temporary bookmark", timestampSeconds: 3, createdAt: 1
+    });
+
+    await deleteLearningSession("remove-me");
+    expect(await getLatestSessionForVideo("remove-me")).toBeNull();
+    expect(await listLearningNotes("remove-me")).toEqual([]);
+    expect(await listLearningBookmarks("remove-me")).toEqual([]);
   });
 
   it("upgrades an existing version-2 database without losing sessions", async () => {
