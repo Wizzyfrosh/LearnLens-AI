@@ -17,6 +17,7 @@ import {
   acknowledgeSyncOperation,
   claimSyncEntity,
   claimSelectedLocalSyncRecords,
+  getLocalSyncClaimCandidates,
   getOrCreateSyncDeviceId,
   getSyncMetadata,
   listSyncOutbox,
@@ -214,7 +215,7 @@ describe("local learning artifact storage", () => {
     const defaults = await getLocalSyncPreferences("user-a");
     expect(defaults.categories).toEqual({
       lessonMetadata: false, notes: false, quizzes: false, attempts: false
-    });
+    }, []);
     await saveLocalSyncPreferences("user-a", {
       lessonMetadata: false, notes: true, quizzes: true, attempts: false
     });
@@ -551,6 +552,15 @@ describe("local learning artifact storage", () => {
       syncCategory: "notes"
     });
 
+
+    const review = await getLocalSyncClaimCandidates("user-a", {
+      lessonMetadata: false, notes: true, quizzes: false, attempts: false
+    });
+    expect(review.map((item) => item.entityKey)).toEqual([
+      "note:claim-lesson-a:claim-note-a", "note:claim-lesson-b:claim-note-b"
+    ]);
+    expect(review.find((item) => item.entityKey.endsWith("claim-note-b"))?.ownership).toBe("other_account");
+
     const nothingSelected = await claimSelectedLocalSyncRecords("user-a", {
       lessonMetadata: false, notes: false, quizzes: false, attempts: false
     });
@@ -558,7 +568,7 @@ describe("local learning artifact storage", () => {
 
     const result = await claimSelectedLocalSyncRecords("user-a", {
       lessonMetadata: false, notes: true, quizzes: false, attempts: false
-    });
+    }, ["note:claim-lesson-a:claim-note-a"]);
     expect(result.claimed.notes).toBe(1);
     expect(result.skippedOtherAccount.notes).toBe(1);
     expect(result.totalQueued).toBe(1);
@@ -572,7 +582,7 @@ describe("local learning artifact storage", () => {
 
     const repeat = await claimSelectedLocalSyncRecords("user-a", {
       lessonMetadata: false, notes: true, quizzes: false, attempts: false
-    });
+    }, ["note:claim-lesson-a:claim-note-a"]);
     expect(repeat.claimed.notes).toBe(0);
     expect(repeat.alreadyOwned.notes).toBe(1);
     expect(repeat.skippedOtherAccount.notes).toBe(1);
