@@ -10,15 +10,15 @@
 
 ## 1. Latest verified build
 
-- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45897615738
-- **Code commit:** `2c031df4d0d95c7c8903d41eee44d17f2acf004c`
+- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45899842079
+- **Commit:** `e08c195a6e2837d266b32b93f515094c9c7ae99c`
 - **Result:** SUCCESS.
-- **Passed:** TypeScript typecheck, 7 Vitest files / 50 unit tests, 8 Firestore Emulator Rules tests, production build, Chrome extension package verification, and artifact upload.
-- **Artifact:** `learnlens-chrome-extension` (artifact ID `15153849016`).
-- **Artifact SHA-256:** `8eb4e7a44eb79f51cc41736c8900d8e295d0dd155290a0c0e7439f977f6b7182`.
-- **Artifact size:** 153,304 bytes.
+- **Passed:** TypeScript typecheck, 8 Vitest files / 67 unit tests, 8 Firestore Emulator Rules tests, production build, Chrome extension package verification, and artifact upload.
+- **Artifact:** `learnlens-chrome-extension` (artifact ID `15156045269`).
+- **Artifact SHA-256:** `e098a93b5ab42cfdbc66d5c3d72c1e5b9c1d6e614eb6f941d869f60f341c332a`.
+- **Artifact size:** 156,169 bytes.
 - **Package/manifest version:** 0.1.0.
-- **Note:** the remaining commits on main after this code commit are documentation-only; no executable source changed after this successful build.
+- **Note:** this successful run includes the Phase 6C local sync foundation and category-preference preview.
 
 ## 2. Phase 4 — Study notes and local persistence
 
@@ -204,9 +204,8 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - Production-compatible App Check remains a hard release gate. Do not enable or deploy learning-artifact sync.
 
 **CI**
-- Latest successful run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45899364699
-- Code commit: `cf1e866a581082dda0a5401dcd0356047c9016a7` (subsequent commits are documentation-only).
-- Result: SUCCESS — TypeScript, 8 Vitest files / 65 tests, 8 Firestore Emulator Rules tests, production build, extension package verification, and artifact upload.
+- Latest successful run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45899842079
+- Result: SUCCESS — TypeScript, 8 Vitest files / 67 tests, 8 Firestore Emulator Rules tests, production build, extension package verification, and artifact upload.
 - Package version remains 0.1.0.
 
 **Next engineering task:** Add explicit first-claim confirmation and account-switch isolation around the category preview. Keep the sync runner and Firestore artifact writes disabled until live Auth QA and production App Check are approved.
