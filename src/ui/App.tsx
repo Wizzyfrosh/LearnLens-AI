@@ -255,6 +255,11 @@ export default function App() {
     : importedTranscript?.segments ?? [];
   const segmentCount = segments.length;
   const filteredNotes = notes.filter((note) => !noteSearch.trim() || `${note.title}\n${note.content}`.toLocaleLowerCase().includes(noteSearch.trim().toLocaleLowerCase()));
+  const topicReviewCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    quizAttempts.forEach((attempt) => attempt.topicsToReview.forEach((topic) => { counts[topic] = (counts[topic] ?? 0) + 1; }));
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }, [quizAttempts]);
   const isLiveTranscript = capturedSegments.length > 0;
 
   useEffect(() => {
@@ -1047,7 +1052,7 @@ export default function App() {
                       </div>
                     )}
                     <small className="quiz-evidence">Lesson evidence: “{question.evidence}”</small>
-                    {quizResult && <p className="quiz-feedback">{quizResult.results.find((result) => result.questionId === question.id)?.feedback}</p>}
+                    {quizResult && <p className="quiz-feedback"><strong>{question.type === "short_answer" ? "AI feedback (advisory): " : "Explanation: "}</strong>{quizResult.results.find((result) => result.questionId === question.id)?.feedback}</p>}
                   </article>
                 ))}
                 {!quizResult && <button className="primary-button quiz-submit" type="submit" disabled={quizGenerating}>{quizGenerating ? "Scoring..." : "Submit answers"}</button>}
@@ -1061,7 +1066,8 @@ export default function App() {
                 )}
               </form>
             )}
-            {quizAttempts.length > 0 && <p className="quiz-history-summary">Latest saved objective result: {quizAttempts[0].objectiveScore}/{quizAttempts[0].objectiveTotal}</p>}
+            {quizAttempts.length > 0 && <div className="quiz-attempt-history"><strong>Attempt history</strong>{quizAttempts.slice(0, 5).map((attempt) => <article key={attempt.id}><span>{new Date(attempt.createdAt).toLocaleDateString()} · {attempt.objectiveScore}/{attempt.objectiveTotal} objective</span><small>{attempt.topicsToReview.length ? "Review: " + attempt.topicsToReview.join(", ") : "No objective weak topics recorded"}</small></article>)}</div>}
+            <div className="topic-review-summary"><strong>Topics to revisit</strong>{topicReviewCounts.length ? topicReviewCounts.slice(0, 5).map(([topic, count]) => <span key={topic}>{topic} · {count} missed attempts</span>) : <small>No weak topics identified yet. Complete a quiz to build this list.</small>}</div>
             {quizMessage && <p className="helper-text">{quizMessage}</p>}
           </section>
         )}
