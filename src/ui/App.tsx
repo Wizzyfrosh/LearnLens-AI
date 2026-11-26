@@ -654,6 +654,110 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
+  async function generateLessonQuiz() {
+    if (!savedSession || !sessionId || !segments.length) {
+      setQuizMessage("Save a lesson with transcript content before generating a quiz.");
+      return;
+    }
+    let quizSegments = segments;
+    let scopeLabel = "Whole lesson";
+    let focusInstruction = "";
+    if (quizScope === "topic") {
+      const topic = quizTopic.trim();
+      if (!topic) {
+        setQuizMessage("Enter a topic to focus the quiz.");
+        return;
+      }
+      scopeLabel = "Topic: " + topic;
+      focusInstruction = "Focus the questions on this topic: " + topic + ". Use only evidence in the transcript; if the transcript does not cover the topic, do not invent content.";
+    } else if (quizScope === "time_range") {
+      const start = Number(quizStart);
+      const end = Number(quizEnd);
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start) {
+        setQuizMessage("Enter a valid start and end time in seconds.");
+        return;
+      }
+      quizSegments = segments.filter((segment) => segment.hasTimestamp && segment.startSeconds >= start && segment.startSeconds <= end);
+      if (!quizSegments.length) {
+        setQuizMessage("No timestamped transcript captions were found in that range. Use the whole lesson or choose another range.");
+        return;
+      }
+      scopeLabel = "From " + formatLessonTime(start) + " to " + formatLessonTime(end);
+      focusInstruction = "Only create questions from the selected lesson range " + scopeLabel + ".";
+    }
+    setQuizGenerating(true);
+    setQuizMessage("Generating and validating questions against the lesson transcript...");
+    setQuizResult(null);
+    try {
+      const generated = await generateQuizText(quizSegments, preference, quizQuestionCount, setProgress, focusInstruction);
+      const questions = validateQuizResponse(generated.text, quizSegments);
+      const quiz: QuizDefinition = {
+        id: crypto.randomUUID(),
+        sessionId,
+        title: video.title ? video.title + " quiz" : "Lesson quiz",
+        scope: quizScope,
+        scopeLabel,
+        createdAt: Date.now(),
+        questions
+      };
+      await saveQuiz(quiz);
+      setActiveQuiz(quiz);
+      setSavedQuizzes((current) => [quiz, ...current.filter((item) => item.id !== quiz.id)]);
+      setQuizAnswers({});
+      setQuizMessage("Quiz generated and saved on this device. Review the questions and submit when ready.");
+    } catch (cause) {
+      setQuizMessage(cause instanceof Error ? cause.message : "Could not generate a valid quiz. Try again.");
+    } finally {
+      setQuizGenerating(false);
+      setProgress(null);
+    }
+  }
+
+  async function submitLessonQuiz(event: FormEvent) {
+    event.preventDefault();
+    if (!activeQuiz || !sessionId) return;
+    setQuizGenerating(true);
+    setQuizMessage("Scoring objective questions and preparing feedback for short answers...");
+    try {
+      const scored = scoreObjectiveAnswers(activeQuiz.questions, quizAnswers);
+      const results = [...scored.results];
+      for (const question of activeQuiz.questions.filter((item) => item.type === "short_answer")) {
+        const answerText = (quizAnswers[question.id] ?? "").trim();
+        if (!answerText) continue;
+        try {
+          const feedback = await askLearnLens(
+            "Give concise formative feedback on this learner's short answer. Compare it with the expected answer, but accept equivalent wording. Do not invent requirements. Start with 'Strong answer', 'Partly correct', or 'Needs improvement', then explain one specific improvement. This feedback is advisory and must not be represented as an objective score.\n\nQuestion: " + question.prompt + "\nExpected answer: " + question.correctAnswer + "\nLearner answer: " + answerText,
+            segments,
+            preference
+          );
+          const result = results.find((item) => item.questionId === question.id);
+          if (result) result.feedback = feedback.text;
+        } catch {
+          const result = results.find((item) => item.questionId === question.id);
+          if (result) result.feedback = "AI feedback could not be generated. Review the expected answer and explanation.";
+        }
+      }
+      const attempt: QuizAttempt = {
+        id: crypto.randomUUID(),
+        quizId: activeQuiz.id,
+        sessionId,
+        createdAt: Date.now(),
+        results,
+        objectiveScore: scored.score,
+        objectiveTotal: scored.total,
+        topicsToReview: scored.topicsToReview
+      };
+      await saveQuizAttempt(attempt);
+      setQuizAttempts((current) => [attempt, ...current]);
+      setQuizResult(attempt);
+      setQuizMessage("Your attempt has been saved locally. Short-answer feedback is advisory and excluded from the objective score.");
+    } catch (cause) {
+      setQuizMessage(cause instanceof Error ? cause.message : "Could not save this quiz attempt.");
+    } finally {
+      setQuizGenerating(false);
+    }
+  }
+
   async function clearSavedSession() {
     if (!savedSession || !sessionId) return;
     try {
