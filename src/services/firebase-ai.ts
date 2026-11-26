@@ -149,6 +149,7 @@ export async function generateQuizText(
     focusInstruction ? "Focus instructions: " + focusInstruction : "",
     "Use all three question types: multiple_choice, true_false, and short_answer. With three questions, use one of each type.",
     "Every question must include an evidence field containing an exact, contiguous quote copied from the transcript (6 to 20 words). Do not paraphrase the evidence quote.",
+    "Evidence must contain only the quoted lesson words: do not include [MM:SS] timestamp labels, cue numbers, or other formatting from the transcript display.",
     "Every question must include a concise explanation and a specific topic label.",
     "For multiple_choice provide 4 distinct options. Set correctAnswer to exactly one option and choose a short answer phrase explicitly stated in the transcript.",
     "For true_false provide options [\"True\", \"False\"] and correctAnswer as \"True\" or \"False\".",
