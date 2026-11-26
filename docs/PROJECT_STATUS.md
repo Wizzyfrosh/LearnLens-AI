@@ -4,7 +4,7 @@
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
 **Extension version:** 0.1.0  
-**Current checkpoint:** Phase 4 and Phase 5 are complete. The user confirmed all desktop Chrome runtime tests passed. Next: plan Phase 6 optional cloud sync.
+**Current checkpoint:** Phases 4 and 5 are complete. Phase 6A data/security design is complete. Phase 6B Auth UI and deny-by-default Firestore rules are implemented and CI-tested; live Firebase Console setup and desktop Chrome Auth verification remain.
 
 > CI and desktop Chrome runtime verification have both passed for the Phase 4 and Phase 5 scope described below.
 
@@ -87,7 +87,7 @@
 - Keep the extension version at 0.1.0 unless the user explicitly requests a version change.
 - Never commit `.env.local`, API keys, App Check secrets, or private learner data.
 
-## 6. Phase 6 — Optional cloud sync (not implemented yet)
+## 6. Phase 6 — Optional cloud sync (Phase 6B in progress)
 
 **Current state:** Planning and security design only. No cloud-sync implementation has started.
 
@@ -106,7 +106,7 @@
 - Production-compatible App Check for a Chrome extension must be resolved before sync is enabled. Do not ship the debug-token provider as production attestation.
 - Account switching, offline writes, conflict handling, deletion propagation, and local/cloud data export must be designed and tested.
 
-**Next exact task:** Start Phase 6B with Firebase Auth email/password behind a dedicated auth service and account-state UI that leaves signed-out local usage unchanged. In parallel, add Firestore Emulator configuration and deny-by-default per-UID Rules tests. Do not enable production sync or Firestore enforcement until the App Check extension-origin spike has a verified result.
+**Next exact task:** Configure the Email/Password provider in the confirmed Firebase project, then run the Account-tab desktop Chrome tests in `docs/PHASE6B_AUTH_SETUP.md`. Do not deploy rules to a live project without confirming its project ID and reviewing the deny-by-default effect. Do not enable production sync until the extension App Check strategy is verified.
 
 
 ## 2026-11-26 follow-up — notes navigation and 10-question quiz reliability
@@ -150,3 +150,33 @@
 
 **Open production gate**
 - Current App Check code uses the debug provider. Firebase's web App Check docs describe reCAPTCHA Enterprise Web keys with configured domains but do not establish compatibility with the Chrome extension origin. Verify this with the actual installed extension ID or a secure hosted attestation design before enabling sync. Never replace this with a public token-minting endpoint or a bundled secret.
+
+
+## 2026-11-26 — Phase 6B Auth and Firestore Rules implementation
+
+**Implemented**
+- `src/services/firebase-app.ts` centralizes the Firebase default app so AI Logic and Auth do not create competing app instances.
+- `src/services/firebase-auth.ts` uses `firebase/auth/web-extension` for Manifest V3 email/password Auth, account creation, verification email, resend/reload, password reset, sign-out, and session state subscription.
+- Added the Account workspace in the side panel. Sign-in remains optional and does not turn on sync or upload local content. Local notes, lessons, and quizzes remain available when signed out.
+- Added Identity Toolkit and Secure Token host permissions to the extension manifest.
+- Added `firestore.rules` with default-deny behavior. A verified user can access their own strictly shaped `users/{uid}/settings/sync` document; every learning artifact path remains denied until sync is implemented.
+- Added Firestore Emulator config and eight security rules tests under `tests/firestore.rules.test.mjs`.
+- Added Auth error-message tests under `src/services/firebase-auth.test.ts`.
+
+**CI evidence**
+- Run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45897242224
+- Commit: `70029037ca678209c70014c09f5066d87942a05a`
+- Result: SUCCESS.
+- TypeScript: passed.
+- Unit tests: 7 files, 50 tests passed.
+- Firestore Emulator Rules: 8 tests passed.
+- Production build, extension package verification, and artifact upload: passed.
+- Extension version remains 0.1.0.
+
+**Still required before Phase 6B sign-off**
+- Enable Email/Password in Firebase Console for the exact project referenced by the GitHub Actions Firebase secrets.
+- Update the existing unpacked extension without changing its ID, then test account creation, verification email, sign-in, session restore, password reset, and sign-out in desktop Chrome.
+- Confirm local learning remains available and unchanged when signed out. No live Firestore rules were deployed and no sync writes are present.
+- Resolve the production App Check strategy before any production sync release.
+
+See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and manual QA checklist.
