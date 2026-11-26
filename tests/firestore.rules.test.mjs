@@ -15,7 +15,7 @@ import {
 } from "firebase/firestore";
 
 const projectId = "demo-learnlens-rules";
-const settingsPath = (uid) => `users/${uid}/settings/sync`;
+const settingsPath = (uid) => "users/" + uid + "/settings/sync";
 
 let testEnv;
 
@@ -126,10 +126,27 @@ test("a verified user can update valid settings but cannot change the schema ver
   }));
 });
 
-test("clients cannot delete sync settings or access artifact paths before sync rules exist", async () => {
+test("clients cannot delete sync settings or access a lesson before artifact rules exist", async () => {
   const db = testEnv.authenticatedContext("user-a", { email_verified: true }).firestore();
   await assertSucceeds(setDoc(doc(db, settingsPath("user-a")), validSettings()));
   await assertFails(deleteDoc(doc(db, settingsPath("user-a"))));
   await assertFails(setDoc(doc(db, "users/user-a/lessons/lesson-a"), { title: "Lesson" }));
   await assertFails(getDoc(doc(db, "users/user-a/lessons/lesson-a")));
+});
+
+test("clients cannot read or write any sync device, artifact, receipt, or conflict path", async () => {
+  const db = testEnv.authenticatedContext("user-a", { email_verified: true }).firestore();
+  const protectedPaths = [
+    "users/user-a/devices/device-a",
+    "users/user-a/lessons/lesson-a/notes/note-a",
+    "users/user-a/lessons/lesson-a/quizzes/quiz-a",
+    "users/user-a/lessons/lesson-a/attempts/attempt-a",
+    "users/user-a/syncReceipts/request-a",
+    "users/user-a/syncConflicts/request-a"
+  ];
+
+  for (const path of protectedPaths) {
+    await assertFails(getDoc(doc(db, path)));
+    await assertFails(setDoc(doc(db, path), { schemaVersion: 1, payload: "not allowed" }));
+  }
 });
