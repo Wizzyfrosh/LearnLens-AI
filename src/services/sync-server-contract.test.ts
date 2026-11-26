@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { QuizSyncDto } from "./sync-dto";
 import {
   buildSyncFirestorePaths,
   canonicalizeSyncServerRequest,
@@ -51,7 +52,7 @@ function currentNote(overrides: Partial<SyncServerEntitySnapshot> = {}): SyncSer
   };
 }
 
-const quizPayload = {
+const quizPayload: QuizSyncDto = {
   title: "Lesson quiz",
   scope: "whole_lesson",
   scopeLabel: "Whole lesson",
