@@ -582,7 +582,7 @@ describe("local learning artifact storage", () => {
 
     const repeat = await claimSelectedLocalSyncRecords("user-a", {
       lessonMetadata: false, notes: true, quizzes: false, attempts: false
-    }, ["note:claim-lesson-a:claim-note-a"]);
+    }, ["note:claim-lesson-a:claim-note-a", "note:claim-lesson-b:claim-note-b"]);
     expect(repeat.claimed.notes).toBe(0);
     expect(repeat.alreadyOwned.notes).toBe(1);
     expect(repeat.skippedOtherAccount.notes).toBe(1);
