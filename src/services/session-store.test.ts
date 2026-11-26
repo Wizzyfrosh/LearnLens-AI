@@ -20,6 +20,7 @@ import {
   getLocalSyncClaimCandidates,
   getOrCreateSyncDeviceId,
   getSyncMetadata,
+  getLocalSyncOperationSnapshots,
   listSyncOutbox,
   queueSyncOperation,
   getLocalSyncCandidateCounts,
@@ -39,6 +40,74 @@ function deleteDatabase(): Promise<void> {
 describe("local learning artifact storage", () => {
   beforeEach(async () => {
     await deleteDatabase();
+  });
+
+  it("adds the bounded outbox index during v7 migration without losing queued records", async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local", 7);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        const notes = database.createObjectStore("learningNotes", { keyPath: "id" });
+        notes.createIndex("sessionId", "sessionId");
+        notes.createIndex("videoId", "videoId");
+        notes.createIndex("updatedAt", "updatedAt");
+        const metadata = database.createObjectStore("syncMetadata", { keyPath: "entityKey" });
+        metadata.createIndex("ownerUid", "ownerUid");
+        metadata.createIndex("lessonId", "lessonId");
+        const outbox = database.createObjectStore("syncOutbox", { keyPath: "entityKey" });
+        outbox.createIndex("ownerUid", "ownerUid");
+        outbox.createIndex("queuedAtMs", "queuedAtMs");
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(
+          ["learningNotes", "syncMetadata", "syncOutbox"],
+          "readwrite"
+        );
+        transaction.objectStore("learningNotes").put({
+          id: "migration-note", sessionId: "migration-lesson", videoId: "migration-lesson",
+          title: "Preserved note", content: "Keep queued content local.", createdAt: 1, updatedAt: 2
+        });
+        transaction.objectStore("syncMetadata").put({
+          entityKey: "note:migration-lesson:migration-note",
+          entityType: "note", lessonId: "migration-lesson", entityId: "migration-note",
+          ownerUid: "user-a", remoteRevision: 0, lastSyncedAtMs: null, syncCategory: "notes"
+        });
+        transaction.objectStore("syncOutbox").put({
+          entityKey: "note:migration-lesson:migration-note",
+          operationId: "legacy-queued-operation", ownerUid: "user-a", entityType: "note",
+          lessonId: "migration-lesson", entityId: "migration-note", operation: "upsert",
+          baseRevision: 0, payloadSchemaVersion: 1, queuedAtMs: 100, retryCount: 0
+        });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    const [snapshot] = await getLocalSyncOperationSnapshots("user-a", {
+      lessonMetadata: false, notes: true, quizzes: false, attempts: false
+    }, 10);
+    expect(snapshot).toMatchObject({
+      outbox: { operationId: "legacy-queued-operation", baseRevision: 0 },
+      payload: { title: "Preserved note", content: "Keep queued content local." },
+      blockedReason: null
+    });
+
+    const schema = await new Promise<{ version: number; indexes: string[] }>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local");
+      request.onsuccess = () => {
+        const database = request.result;
+        resolve({
+          version: database.version,
+          indexes: Array.from(database.transaction("syncOutbox").objectStore("syncOutbox").indexNames)
+        });
+        database.close();
+      };
+      request.onerror = () => reject(request.error);
+    });
+    expect(schema.version).toBe(8);
+    expect(schema.indexes).toContain("ownerUidEntityTypeQueuedAtMs");
   });
 
   it("upgrades version 5 without changing existing learning records and creates empty sync stores", async () => {
@@ -560,7 +629,7 @@ describe("local learning artifact storage", () => {
       request.onsuccess = () => { resolve(request.result.version); request.result.close(); };
       request.onerror = () => reject(request.error);
     });
-    expect(version).toBe(7);
+    expect(version).toBe(8);
   });
 
   it("requires explicit category selection, claims eligible records atomically, and isolates other accounts", async () => {

@@ -26,7 +26,7 @@ export interface LearningNote {
 }
 
 const DATABASE_NAME = "learnlens-local";
-const DATABASE_VERSION = 7;
+const DATABASE_VERSION = 8;
 const SESSION_STORE = "learningSessions";
 const NOTE_STORE = "learningNotes";
 const QUIZ_STORE = "learningQuizzes";
@@ -110,6 +110,16 @@ function openDatabase(): Promise<IDBDatabase> {
         const store = database.createObjectStore(SYNC_OUTBOX_STORE, { keyPath: "entityKey" });
         store.createIndex("ownerUid", "ownerUid", { unique: false });
         store.createIndex("queuedAtMs", "queuedAtMs", { unique: false });
+      }
+      // v8 adds a compound index so each sync batch reads only the oldest
+      // bounded operations for the selected account and entity categories.
+      const outboxStore = transaction?.objectStore(SYNC_OUTBOX_STORE);
+      if (outboxStore && !outboxStore.indexNames.contains("ownerUidEntityTypeQueuedAtMs")) {
+        outboxStore.createIndex(
+          "ownerUidEntityTypeQueuedAtMs",
+          ["ownerUid", "entityType", "queuedAtMs"],
+          { unique: false }
+        );
       }
       if (!database.objectStoreNames.contains(SYNC_DEVICE_STORE)) {
         database.createObjectStore(SYNC_DEVICE_STORE, { keyPath: "key" });
@@ -775,29 +785,29 @@ export async function getLocalSyncOperationSnapshots(
     lesson: SESSION_STORE, note: NOTE_STORE, quiz: QUIZ_STORE, attempt: QUIZ_ATTEMPT_STORE
   };
 
+  const enabledTypes: SyncEntityType[] = [];
+  if (categories.lessonMetadata) enabledTypes.push("lesson");
+  if (categories.notes) enabledTypes.push("note");
+  if (categories.quizzes) enabledTypes.push("quiz");
+  if (categories.attempts) enabledTypes.push("attempt");
+
   const database = await openDatabase();
   return new Promise<SyncOperationSnapshot[]>((resolve, reject) => {
     const transaction = database.transaction(
       [SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE],
       "readonly"
     );
-    const outboxRequest = transaction.objectStore(SYNC_OUTBOX_STORE).index("ownerUid").getAll(ownerUid);
+    const outboxIndex = transaction.objectStore(SYNC_OUTBOX_STORE).index("ownerUidEntityTypeQueuedAtMs");
+    const entries: SyncOutboxRecord[] = [];
+    let completedCategoryReads = 0;
     let snapshots: SyncOperationSnapshot[] = [];
 
-    outboxRequest.onsuccess = () => {
-      const entries = (outboxRequest.result as SyncOutboxRecord[])
-        .filter((entry) => {
-          const category = categoryByType[String(entry.entityType)];
-          return entry.ownerUid === ownerUid && (!category || categories[category]);
-        })
-        .sort((a, b) => {
-          const left = Number.isSafeInteger(a.queuedAtMs) ? a.queuedAtMs : 0;
-          const right = Number.isSafeInteger(b.queuedAtMs) ? b.queuedAtMs : 0;
-          return left - right;
-        })
+    const prepareEntries = () => {
+      const selectedEntries = entries
+        .sort((a, b) => a.queuedAtMs - b.queuedAtMs)
         .slice(0, safeLimit);
 
-      snapshots = entries.map((entry) => ({
+      snapshots = selectedEntries.map((entry) => ({
         outbox: entry,
         payload: null,
         blockedReason: null
@@ -890,6 +900,24 @@ export async function getLocalSyncOperationSnapshots(
         };
       }
     };
+
+    if (enabledTypes.length === 0) {
+      // No categories were opted in; do not scan the outbox.
+      snapshots = [];
+    } else {
+      for (const entityType of enabledTypes) {
+        const range = IDBKeyRange.bound(
+          [ownerUid, entityType, 0],
+          [ownerUid, entityType, Number.MAX_SAFE_INTEGER]
+        );
+        const request = outboxIndex.getAll(range, safeLimit);
+        request.onsuccess = () => {
+          entries.push(...(request.result as SyncOutboxRecord[]));
+          completedCategoryReads += 1;
+          if (completedCategoryReads === enabledTypes.length) prepareEntries();
+        };
+      }
+    }
 
     transaction.oncomplete = () => resolve(snapshots);
     transaction.onerror = () => reject(transaction.error ?? new Error("Could not prepare local sync operations."));
