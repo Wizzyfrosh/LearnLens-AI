@@ -71,6 +71,7 @@ users/{uid}
 - `uid` comes from the verified Firebase Auth session, never from a user-editable form field or an untrusted payload.
 - `lessonId` and artifact IDs must pass a strict path-segment validator such as `^[A-Za-z0-9_-]{1,128}$`. Reject an invalid ID; do not concatenate arbitrary input into a Firestore path.
 - Current YouTube video IDs and UUID-generated artifact IDs fit this constraint. Keep the original local ID as the cloud document ID so notes/quizzes/attempts can preserve their parent relationships.
+- Canonicalize YouTube URLs to `https://www.youtube.com/watch?v={videoId}` and strip unrelated query parameters/fragments. Do not sync arbitrary pasted URL query strings; validate allowed HTTPS hosts or store an empty URL for manual lessons without a safe source URL.
 - Do not include `ownerUid` as an authorization substitute in each document. The UID path is the ownership boundary; Rules enforce it.
 - A device document tracks a random installation-scoped device ID and its last successful sync cursor. A device ID is an identifier, not an authentication factor.
 - Receipts make a retried operation idempotent. Conflict records preserve rejected local changes for user review.
@@ -86,6 +87,7 @@ Use versioned, separately declared DTO types. Do not spread local IndexedDB obje
 type SyncEntityType = "lesson" | "note" | "quiz" | "attempt";
 
 interface CloudEnvelope {
+  entityType: SyncEntityType;
   schemaVersion: 1;
   entityId: string;
   lessonId: string;
