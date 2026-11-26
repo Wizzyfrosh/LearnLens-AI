@@ -309,17 +309,18 @@ Next exit criteria:
 ## 16. Phase 6C — local sync foundation — 2026-11-26
 
 **Implemented**
-- Upgraded IndexedDB from schema v5 to v6, adding `syncMetadata`, `syncOutbox`, and `syncDevice`. The migration leaves existing lesson transcripts, notes, quizzes, and attempts unchanged and creates no account claims or queued writes automatically.
+- Upgraded IndexedDB to schema v7, adding `syncMetadata`, `syncOutbox`, `syncDevice`, and local-only `syncPreferences`. The migration leaves existing lesson transcripts, notes, quizzes, and attempts unchanged and creates no account claims or queued writes automatically.
 - Added explicit account-bound metadata claiming. An entity already claimed by one UID cannot be reassigned to another UID.
 - Added a coalescing outbox primitive with stable operation IDs across same-operation retries, bounded retry metadata, base revisions, stale-ack rejection, and cancellation of an upsert that has never reached the server when its local record is deleted.
 - Added a stable installation-scoped device ID. It is a local identifier only, not an authentication factor.
-- Added allow-listed DTO mappers for minimal lesson metadata, notes, quiz definitions, and quiz attempts. Full transcript text, transcript format/source, raw audio, and unknown local fields are not projected.
+- Added allow-listed DTO mappers for minimal lesson metadata, notes, quiz definitions, and quiz attempts.
+- Added Account-tab category choices and local record-count/ownership preview for verified accounts. Saving choices persists them on-device only; no claims or uploads occur. Full transcript text, transcript format/source, raw audio, and unknown local fields are not projected.
 - Lesson URLs are canonicalized to YouTube watch URLs; unsafe/non-YouTube URLs are omitted. Oversized DTOs and invalid timestamps are rejected rather than truncated.
 - Added regression tests for v5→v6 preservation, account ownership, outbox coalescing/acknowledgement, stale acknowledgements, unsynced deletion, device ID persistence, DTO allow-lists, URL sanitization, timestamps, and payload size limits.
 
 **Remaining work**
 - No account-claim preview, sync consent UI, account-switch orchestration, background sync runner, Firestore artifact writes, pull cursor, conflict resolver, or tombstone propagation is enabled. The first-claim preview must explicitly queue selected existing records.
-- No account-claim preview, sync consent UI, background sync runner, Firestore artifact writes, pull cursor, conflict resolver, or tombstone propagation is enabled.
+- No explicit first-claim confirmation, account-switch orchestration, background sync runner, Firestore artifact writes, pull cursor, conflict resolver, or tombstone propagation is enabled.
 - Live Firebase Auth setup and production-compatible App Check remain release gates.
 
 **Safety boundary**
