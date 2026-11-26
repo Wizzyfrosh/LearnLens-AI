@@ -3,8 +3,8 @@ import type { FormEvent } from "react";
 import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Download, Search, FileText, History, Sun, Moon, CheckCircle2, XCircle, UserRound, LogIn, LogOut, Mail, ShieldCheck, RefreshCw } from "lucide-react";
 import { askLearnLens, generateQuizText, isAudioTranscriptionConfigured, transcribeAudioChunk } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport, serializeSegmentsAsVtt } from "../services/transcript";
-import { deleteLearningSession, deleteLearningNote, getLatestSavedSession, getLatestSessionForVideo, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt } from "../services/session-store";
-import type { LearningNote, LearningSession } from "../services/session-store";
+import { deleteLearningSession, deleteLearningNote, getLatestSavedSession, getLatestSessionForVideo, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt, getLocalSyncCandidateCounts, getLocalSyncPreferences, saveLocalSyncPreferences } from "../services/session-store";
+import type { LearningNote, LearningSession, SyncCandidateCounts, SyncCategoryPreferences } from "../services/session-store";
 import { getQuizFeedbackSegments, parseShortAnswerFeedback, scoreObjectiveAnswers, validateQuizResponse } from "../services/quiz";
 import type { QuizAttempt, QuizDefinition } from "../services/quiz";
 import type { InferencePreference, TranscriptSegment, VideoContext } from "../shared/types";
@@ -112,6 +112,14 @@ export default function App() {
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authMessage, setAuthMessage] = useState("");
+  const [syncCandidateCounts, setSyncCandidateCounts] = useState<SyncCandidateCounts | null>(null);
+  const [syncCategories, setSyncCategories] = useState<SyncCategoryPreferences>({
+    lessonMetadata: false, notes: false, quizzes: false, attempts: false
+  });
+  const [syncPreferencesLoading, setSyncPreferencesLoading] = useState(false);
+  const [syncPreferencesSaving, setSyncPreferencesSaving] = useState(false);
+  const [syncPreferencesMessage, setSyncPreferencesMessage] = useState("");
+  const [syncPreferencesError, setSyncPreferencesError] = useState("");
   const activeSessionIdRef = useRef(sessionId);
   const pendingNoteDraftSessionRef = useRef<string | null>(null);
   activeSessionIdRef.current = sessionId;
@@ -130,6 +138,29 @@ export default function App() {
     }
     return () => unsubscribe?.();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (activeTab !== "account" || !authUser?.emailVerified) {
+      setSyncCandidateCounts(null);
+      return;
+    }
+    setSyncPreferencesLoading(true);
+    setSyncPreferencesError("");
+    Promise.all([
+      getLocalSyncCandidateCounts(authUser.uid),
+      getLocalSyncPreferences(authUser.uid)
+    ]).then(([counts, preferences]) => {
+      if (cancelled) return;
+      setSyncCandidateCounts(counts);
+      setSyncCategories(preferences.categories);
+    }).catch((cause) => {
+      if (!cancelled) setSyncPreferencesError(cause instanceof Error ? cause.message : "Could not load local sync preferences.");
+    }).finally(() => {
+      if (!cancelled) setSyncPreferencesLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [activeTab, authUser?.uid, authUser?.emailVerified]);
 
   useEffect(() => {
     let cancelled = false;
@@ -672,6 +703,21 @@ export default function App() {
       setAuthError(getReadableAuthError(cause));
     } finally {
       setAuthBusy(false);
+    }
+  }
+
+  async function saveSyncCategoryChoices() {
+    if (!authUser?.emailVerified) return;
+    setSyncPreferencesSaving(true);
+    setSyncPreferencesError("");
+    setSyncPreferencesMessage("");
+    try {
+      await saveLocalSyncPreferences(authUser.uid, syncCategories);
+      setSyncPreferencesMessage("Your category choices are saved on this device. No records have been claimed or uploaded.");
+    } catch (cause) {
+      setSyncPreferencesError(cause instanceof Error ? cause.message : "Could not save your sync choices.");
+    } finally {
+      setSyncPreferencesSaving(false);
     }
   }
 
@@ -1299,9 +1345,70 @@ export default function App() {
             )}
             {authError && <p className="error-box" role="alert">{authError}</p>}
             {authMessage && <p className="account-message" role="status">{authMessage}</p>}
+            {authUser?.emailVerified && (
+              <div className="account-card account-sync-card">
+                <div className="account-sync-heading">
+                  <div><ShieldCheck size={16} /><strong>Future sync preferences</strong></div>
+                  <span>NOT ACTIVE</span>
+                </div>
+                <p className="account-sync-description">Choose which categories you may want to sync later. These choices are saved only on this device; they do not claim records or upload anything.</p>
+                {syncPreferencesLoading ? (
+                  <div className="account-sync-loading"><LoaderCircle className="spin" size={14} /> Counting your local learning records…</div>
+                ) : syncCandidateCounts ? (
+                  <>
+                    <div className="account-sync-options">
+                      {([
+                        ["lessonMetadata", "Lesson titles and source links", "Only basic lesson details. Transcript text and captions stay on this device."],
+                        ["notes", "Study notes", "Your note titles and note content."],
+                        ["quizzes", "Quiz definitions", "Questions, answer keys, explanations, and transcript evidence excerpts."],
+                        ["attempts", "Quiz attempts", "Your submitted answers, scores, and feedback."]
+                      ] as Array<[keyof SyncCategoryPreferences, string, string]>).map(([key, title, description]) => (
+                        <label className="account-sync-option" key={key}>
+                          <input
+                            type="checkbox"
+                            checked={syncCategories[key]}
+                            onChange={(event) => setSyncCategories((current) => ({ ...current, [key]: event.target.checked }))}
+                          />
+                          <span><strong>{title}</strong><small>{description}</small></span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="account-sync-preview">
+                      <strong>Local data preview</strong>
+                      {([
+                        ["lessonMetadata", "Lesson records"],
+                        ["notes", "Study notes"],
+                        ["quizzes", "Quizzes"],
+                        ["attempts", "Quiz attempts"]
+                      ] as Array<[keyof SyncCategoryPreferences, string]>).map(([key, label]) => {
+                        const count = syncCandidateCounts[key];
+                        const selected = syncCategories[key];
+                        return (
+                          <div className="account-sync-preview-row" key={key}>
+                            <span>{label}</span>
+                            <strong>{selected ? count.unclaimed + count.ownedByCurrentAccount : 0} selected</strong>
+                            <small>{count.ownedByOtherAccount} linked to another account · {count.total} on this device</small>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <button className="primary-button" type="button" onClick={() => void saveSyncCategoryChoices()} disabled={syncPreferencesSaving || syncPreferencesLoading}>
+                      {syncPreferencesSaving ? <LoaderCircle className="spin" size={14} /> : <Save size={14} />}
+                      {syncPreferencesSaving ? "Saving choices…" : "Save choices on this device"}
+                    </button>
+                  </>
+                ) : null}
+                {syncPreferencesError && <p className="error-box" role="alert">{syncPreferencesError}</p>}
+                {syncPreferencesMessage && <p className="account-message" role="status">{syncPreferencesMessage}</p>}
+                <div className="account-warning">
+                  <ShieldCheck size={15} />
+                  <div><strong>Cloud sync is still disabled</strong><p>No first-claim or upload occurs. Live account verification, production App Check, and the sync engine must pass before data can leave this device.</p></div>
+                </div>
+              </div>
+            )}
             <div className="account-privacy">
               <ShieldCheck size={15} />
-              <p>Signing in does not enable cloud sync and does not upload your saved lessons, transcripts, notes, quizzes, or attempts. Sync controls will be added separately after security testing.</p>
+              <p>Signing in does not enable cloud sync. Full lesson transcripts and raw audio remain local by default. You will be asked to review and confirm any future first sync.</p>
             </div>
           </section>
         )}
