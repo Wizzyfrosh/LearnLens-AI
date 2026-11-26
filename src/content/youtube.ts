@@ -164,6 +164,9 @@ function startCaptionCapture(): void {
 }
 
 function stopCaptionCapture(message = "Lesson capture stopped."): void {
+  // Flush the currently rendered caption before disconnecting the observer.
+  // This prevents the final debounced caption from being lost when the learner stops.
+  publishVisibleCaption();
   isCaptionCaptureActive = false;
   captureVideoId = "";
   hasCapturedCaption = false;
