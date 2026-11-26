@@ -786,6 +786,77 @@ export async function getLocalSyncCandidateCounts(ownerUid: string): Promise<Syn
 }
 
 
+export interface SyncClaimCandidate {
+  entityKey: string;
+  category: SyncCategory;
+  title: string;
+  lessonTitle: string;
+  updatedAtMs: number;
+  ownership: "unclaimed" | "current_account" | "other_account";
+}
+
+export async function getLocalSyncClaimCandidates(
+  ownerUid: string,
+  categories: SyncCategoryPreferences
+): Promise<SyncClaimCandidate[]> {
+  validateSyncIdentity(ownerUid, "account ID");
+  const database = await openDatabase();
+  return new Promise<SyncClaimCandidate[]>((resolve, reject) => {
+    const transaction = database.transaction(
+      [SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE],
+      "readonly"
+    );
+    const requests = [
+      transaction.objectStore(SESSION_STORE).getAll(),
+      transaction.objectStore(NOTE_STORE).getAll(),
+      transaction.objectStore(QUIZ_STORE).getAll(),
+      transaction.objectStore(QUIZ_ATTEMPT_STORE).getAll(),
+      transaction.objectStore(SYNC_METADATA_STORE).getAll()
+    ];
+    const values: unknown[][] = [[], [], [], [], []];
+    let complete = 0;
+    requests.forEach((request, index) => {
+      request.onsuccess = () => {
+        values[index] = request.result as unknown[];
+        complete += 1;
+        if (complete !== requests.length) return;
+        const sessions = values[0] as LearningSession[];
+        const lessonTitles = new Map(sessions.map((item) => [item.id, item.title]));
+        const metadata = new Map((values[4] as SyncMetadataRecord[]).map((item) => [item.entityKey, item]));
+        const candidates: SyncClaimCandidate[] = [];
+        const add = (category: SyncCategory, type: SyncEntityType, records: Array<{id:string;sessionId?:string;title?:string;updatedAt?:number;createdAt?:number;quizId?:string}>) => {
+          if (!categories[category]) return;
+          for (const record of records) {
+            const lessonId = type === "lesson" ? record.id : record.sessionId ?? "";
+            let entityKey: string;
+            try {
+              validateSyncIdentity(lessonId, "lesson ID");
+              validateSyncIdentity(record.id, "entity ID");
+              entityKey = syncEntityKey(type, lessonId, record.id);
+            } catch { continue; }
+            const claim = metadata.get(entityKey);
+            candidates.push({
+              entityKey, category,
+              title: record.title || (type === "attempt" ? `Quiz attempt ${record.quizId ?? ""}` : type === "lesson" ? "Untitled lesson" : "Untitled record"),
+              lessonTitle: lessonTitles.get(lessonId) ?? "Lesson unavailable",
+              updatedAtMs: record.updatedAt ?? record.createdAt ?? 0,
+              ownership: !claim ? "unclaimed" : claim.ownerUid === ownerUid ? "current_account" : "other_account"
+            });
+          }
+        };
+        add("lessonMetadata","lesson",values[0] as LearningSession[]);
+        add("notes","note",values[1] as LearningNote[]);
+        add("quizzes","quiz",values[2] as QuizDefinition[]);
+        add("attempts","attempt",values[3] as QuizAttempt[]);
+        candidates.sort((a,b)=>b.updatedAtMs-a.updatedAtMs);
+        resolve(candidates);
+      };
+    });
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not prepare the local claim review."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Local claim review was cancelled."));
+  }).finally(() => database.close());
+}
+
 export interface SyncClaimResult {
   claimed: Record<SyncCategory, number>;
   alreadyOwned: Record<SyncCategory, number>;
@@ -801,7 +872,8 @@ export interface SyncClaimResult {
  */
 export async function claimSelectedLocalSyncRecords(
   ownerUid: string,
-  categories: SyncCategoryPreferences
+  categories: SyncCategoryPreferences,
+  reviewedEntityKeys: string[]
 ): Promise<SyncClaimResult> {
   validateSyncIdentity(ownerUid, "account ID");
   for (const value of Object.values(categories)) {
@@ -814,7 +886,9 @@ export async function claimSelectedLocalSyncRecords(
     claimed: emptyCounts(), alreadyOwned: emptyCounts(),
     skippedOtherAccount: emptyCounts(), skippedInvalid: emptyCounts(), totalQueued: 0
   };
-  if (!Object.values(categories).some(Boolean)) return result;
+  if (!Object.values(categories).some(Boolean) || reviewedEntityKeys.length === 0) return result;
+  const reviewedKeys = new Set(reviewedEntityKeys);
+  if (reviewedKeys.size !== reviewedEntityKeys.length || reviewedKeys.size > 10000) throw new Error("Invalid or duplicated local claim review selection.");
 
   const database = await openDatabase();
   return new Promise<SyncClaimResult>((resolve, reject) => {
@@ -862,6 +936,7 @@ export async function claimSelectedLocalSyncRecords(
             result.skippedInvalid[group.category] += 1;
             continue;
           }
+          if (!reviewedKeys.has(entityKey)) continue;
           const existing = metadata.get(entityKey);
           if (existing && existing.ownerUid !== ownerUid) {
             result.skippedOtherAccount[group.category] += 1;
