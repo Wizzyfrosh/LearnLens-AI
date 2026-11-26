@@ -735,7 +735,7 @@ export default function App() {
     setSyncPreferencesError("");
     setSyncPreferencesMessage("");
     try {
-      const reviewedKeys = syncClaimCandidates.filter((candidate) => candidate.ownership === "unclaimed" || candidate.ownership === "current_account").map((candidate) => candidate.entityKey);
+      const reviewedKeys = syncClaimCandidates.map((candidate) => candidate.entityKey);
       const result = await claimSelectedLocalSyncRecords(authUser.uid, syncCategories, reviewedKeys);
       setSyncClaimResult(result);
       setSyncClaimReviewOpen(false);
