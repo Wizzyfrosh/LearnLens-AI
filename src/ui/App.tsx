@@ -851,7 +851,7 @@ export default function App() {
           preference,
           quizQuestionCount,
           setProgress,
-          [focusInstruction, "The previous response was rejected because: " + reason, "Return complete valid JSON with exactly the requested number of questions. Every evidence value must be copied exactly from the transcript. Every correct answer must satisfy the question type and be supported by the transcript."].filter(Boolean).join("\\n")
+          [focusInstruction, "The previous response was rejected because: " + reason, "Return complete valid JSON with exactly the requested number of questions. Every evidence value must be copied exactly from the transcript. Every correct answer must satisfy the question type and be supported by the transcript."].filter(Boolean).join("\n")
         );
         if (activeSessionIdRef.current !== targetSessionId) return;
         questions = validateQuizResponse(generated.text, quizSegments);
