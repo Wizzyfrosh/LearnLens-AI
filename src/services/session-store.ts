@@ -116,7 +116,7 @@ function runTransaction<T>(
 }
 
 export function saveLearningSession(session: LearningSession): Promise<void> {
-  return runTransaction<void>(SESSION_STORE, "readwrite", (store, resolve) => {
+  return runTransaction<void>(SESSION_STORE, "readwrite", (store) => {
     store.put(session);
   });
 }
@@ -162,7 +162,7 @@ export async function deleteLearningSession(id: string): Promise<void> {
 }
 
 export function saveLearningNote(note: LearningNote): Promise<void> {
-  return runTransaction<void>(NOTE_STORE, "readwrite", (store, resolve) => {
+  return runTransaction<void>(NOTE_STORE, "readwrite", (store) => {
     store.put(note);
   });
 }
@@ -183,7 +183,7 @@ export function searchLearningNotes(sessionId: string, query: string): Promise<L
 }
 
 export function deleteLearningNote(id: string): Promise<void> {
-  return runTransaction<void>(NOTE_STORE, "readwrite", (store, resolve) => {
+  return runTransaction<void>(NOTE_STORE, "readwrite", (store) => {
     store.delete(id);
   });
 }
@@ -192,7 +192,7 @@ export function saveLearningBookmark(bookmark: LearningBookmark): Promise<void> 
   if (!Number.isFinite(bookmark.timestampSeconds) || bookmark.timestampSeconds < 0) {
     return Promise.reject(new Error("A bookmark requires a valid non-negative lesson timestamp."));
   }
-  return runTransaction<void>(BOOKMARK_STORE, "readwrite", (store, resolve) => {
+  return runTransaction<void>(BOOKMARK_STORE, "readwrite", (store) => {
     store.put(bookmark);
   });
 }
@@ -206,7 +206,7 @@ export function listLearningBookmarks(sessionId: string): Promise<LearningBookma
 }
 
 export function deleteLearningBookmark(id: string): Promise<void> {
-  return runTransaction<void>(BOOKMARK_STORE, "readwrite", (store, resolve) => {
+  return runTransaction<void>(BOOKMARK_STORE, "readwrite", (store) => {
     store.delete(id);
   });
 }
