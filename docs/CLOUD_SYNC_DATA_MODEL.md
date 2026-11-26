@@ -1,6 +1,6 @@
 # LearnLens AI — Cloud Sync Data Model and Security Design
 
-**Status:** Phase 6A design complete; no cloud-sync code or Firestore writes have been implemented.  
+**Status:** Phase 6A design complete; Phase 6C local sync foundation implemented. No learning-artifact Firestore writes or cloud sync runner exist.  
 **Date:** 2026-11-26  
 **Scope:** Optional sync of selected learning artifacts while preserving local-first behavior.
 
@@ -186,7 +186,7 @@ Reject any document that exceeds the sync boundary's conservative size budget (i
 
 ## 5. Local sync metadata and outbox design
 
-A later IndexedDB migration (proposed schema version **6**) adds:
+IndexedDB schema version **6** now adds:
 
 ### `syncMetadata` store
 
@@ -197,7 +197,7 @@ Keyed by `entityKey` (entity type + lesson ID + entity ID), with:
 - `syncCategory`: lesson metadata, notes, quizzes, or attempts.
 - `lastKnownDeletedAt`: optional tombstone state.
 
-A separate metadata entry stores one random device ID for this extension installation. Never use the device ID as proof of identity.
+A separate `syncDevice` store persists one random device ID for this extension installation. Never use the device ID as proof of identity.
 
 ### `syncOutbox` store
 
@@ -209,7 +209,7 @@ One coalesced pending operation per entity:
 - `payloadSchemaVersion` and `queuedAtMs`.
 - Retry count and a bounded last-error code; do not store Firebase tokens or secrets.
 
-Avoid duplicating note/quiz payload contents into the outbox. The worker reads the latest local entity when processing an upsert. Delete operations need only identity and revision metadata. Outbox entries are coalesced per entity so rapid note autosaves do not create an unbounded write queue. Local entity mutation and outbox mutation must occur in the same IndexedDB transaction.
+Implemented outbox records do not duplicate note/quiz payload contents. The future worker must read the latest local entity when processing an upsert. Delete operations need only identity and revision metadata. Outbox entries are coalesced per entity so rapid note autosaves do not create an unbounded write queue. **Remaining integration requirement:** local entity mutation and outbox mutation must be wired into the same IndexedDB transaction before any sync runner is enabled. The current v6 foundation exposes explicit claim/queue/ack/retry primitives; ordinary note/quiz/session saves do not enqueue operations yet.
 
 ### Account claiming and switching
 
@@ -321,15 +321,19 @@ App Check is an app-attestation/abuse-control layer; it does not replace authent
 
 ## 11. Implementation sequence after this design
 
-1. Add IndexedDB v6 migration tests for `syncMetadata`, `syncOutbox`, and device identity while preserving all v5 lesson/note/quiz/attempt data.
-2. Implement explicit cloud DTO mappers and tests proving transcript/audio/token fields are excluded.
-3. Add Firestore emulator configuration and deny-by-default Rules; add cross-user and malformed-payload tests.
-4. Add email/password Auth state management using `firebase/auth/web-extension`; test clean install, sign-up, verification, sign-in, persistence, sign-out, and password reset.
-5. Prove a production App Check strategy in a real unpacked extension before enforcing it.
-6. Implement opt-in UI and first-claim preview, then the outbox/revision sync engine.
-7. Add conflict review, tombstone propagation, export/delete flows, and multi-device tests.
+**Completed in the Phase 6C foundation slice**
+1. IndexedDB v6 migration creates `syncMetadata`, `syncOutbox`, and `syncDevice` without modifying existing v5 learning records.
+2. Explicit lesson metadata, note, quiz, and attempt DTO mappers construct allow-listed payloads. Transcript/audio/token fields are never copied from local session objects.
+3. Unit tests cover migration preservation, per-account ownership, outbox coalescing, stale acknowledgements, unsynced-delete cancellation, stable device identity, DTO privacy, URL sanitization, and payload size bounds.
+4. Firestore Emulator configuration and deny-by-default Rules remain in place from Phase 6B.
 
-Do not jump to Firestore writes before steps 1–5 have passing tests and an approved App Check decision.
+**Still required**
+5. Wire local note/quiz/session mutations and cascade deletes to metadata/outbox updates in the same IndexedDB transaction.
+6. Add explicit sync opt-in, category consent, first-claim preview, and account-switch handling.
+7. Complete live Firebase Auth verification and prove a production App Check strategy in an actual installed extension.
+8. Only after the above gates, implement Firestore transactions, revision compare-and-set, pull cursors, receipts, conflict review, tombstone propagation, export/delete flows, and multi-device tests.
+
+Do not add Firestore learning-artifact writes or enable a sync runner before account claiming, atomic outbox integration, live Auth verification, and an approved production App Check decision.
 
 ## 12. References
 
