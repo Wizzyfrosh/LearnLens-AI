@@ -231,6 +231,24 @@ export default function App() {
   const isLiveTranscript = capturedSegments.length > 0;
 
   useEffect(() => {
+    if (!sessionId || !savedSession) {
+      setNotes([]);
+      setBookmarks([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all([listLearningNotes(sessionId), listLearningBookmarks(sessionId)]).then(([savedNotes, savedBookmarks]) => {
+      if (!cancelled) {
+        setNotes(savedNotes);
+        setBookmarks(savedBookmarks);
+      }
+    }).catch(() => {
+      if (!cancelled) setArtifactMessage("Could not load saved notes and bookmarks from this device.");
+    });
+    return () => { cancelled = true; };
+  }, [sessionId, savedSession]);
+
+  useEffect(() => {
     if (!isLiveTranscript || !video.videoId) return;
     const timer = window.setTimeout(() => {
       const allHaveTimestamps = capturedSegments.every((segment) => segment.hasTimestamp);
