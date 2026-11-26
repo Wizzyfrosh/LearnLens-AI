@@ -235,3 +235,13 @@ Next exit criteria:
 - CI: run 45881850569 passed TypeScript typecheck, unit tests, production build, Chrome package verification, and artifact upload on commit d971b2e8e73b80a2a2b38caf1c9609e741e68fa5.
 - Artifact: learnlens-chrome-extension, artifact ID 15148465175. Manifest/package version remains 0.1.0.
 - Runtime: the user previously confirmed lesson capture/notes and quiz generation worked, but the newly changed persistence, export, grading visuals, and attempt-review UI still require one desktop Chrome smoke test. Do not mark Phase 4/5 signed off until that test passes.
+
+
+## 11. Follow-up implementation — 2026-11-26 (note navigation and 10-question quizzes)
+- Notes now use a title navigation list and a single selected-note editor rather than rendering every saved note's full body at once.
+- Selecting a note opens it in the editor; the export control exports only that selected note and uses its title in the filename.
+- Note list search, autosave, editing, delete, AI note generation, and all five export formats are retained.
+- Quiz generation now requires each multiple-choice and short-answer answer key to be a verbatim contiguous phrase from transcript text, increases cloud output budget, and makes up to two validation repair attempts after the initial generation.
+- Added a 10-question transcript-grounded quiz validation regression test.
+- CI: run 45886269511 passed typecheck, unit tests, production build, Chrome package verification, and artifact upload.
+- Runtime validation of the updated navigation/export behavior and a real 10-question generation still requires desktop Chrome. Keep final sign-off open until the user confirms those two tests.

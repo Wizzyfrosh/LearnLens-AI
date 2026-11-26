@@ -4,7 +4,7 @@
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
 **Extension version:** 0.1.0  
-**Current checkpoint:** Phase 4 and Phase 5 implementation changes are complete; final desktop Chrome smoke testing remains.
+**Current checkpoint:** Phase 4 and Phase 5 fixes have been extended with per-note navigation/export and stronger 10-question quiz grounding; final desktop Chrome smoke testing remains.
 
 > A passing CI pipeline is not the same as browser runtime verification. Do not mark these phases signed off until the updated extension has been tested in Chrome.
 
@@ -90,3 +90,12 @@
 ## 6. Next exact task
 
 Run the Phase 4–5 desktop Chrome smoke test using the latest CI artifact, report results feature by feature, fix any failures, and only then move the roadmap forward.
+
+
+## 2026-11-26 follow-up — notes navigation and 10-question quiz reliability
+- Note workspace: saved note titles are now a navigation list; the main editor shows one selected note at a time. Export writes only the selected note (not all notes) and includes the note title in the export filename.
+- Quiz generation: answer keys for multiple-choice and short-answer items must be contiguous transcript quotes, not inferred or paraphrased. Cloud output allowance increased to 8192 tokens. The UI now makes up to two regeneration attempts when strict validation rejects the first result.
+- Regression coverage: added a valid 10-question quiz response test.
+- Latest CI: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45886269511 — SUCCESS for TypeScript, unit tests, production build, Chrome package verification, and artifact upload.
+- Extension version remains 0.1.0.
+- Browser runtime still required: select between two notes and export only one; then generate a 10-question quiz and confirm it completes with transcript-grounded answers. Do not claim these two behaviors have been user-tested until the user confirms.
