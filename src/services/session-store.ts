@@ -1,4 +1,5 @@
 import type { TranscriptFormat } from "./transcript";
+import type { QuizAttempt, QuizDefinition } from "./quiz";
 
 export interface LearningSession {
   id: string;
@@ -33,10 +34,12 @@ export interface LearningBookmark {
 }
 
 const DATABASE_NAME = "learnlens-local";
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 const SESSION_STORE = "learningSessions";
 const NOTE_STORE = "learningNotes";
 const BOOKMARK_STORE = "learningBookmarks";
+const QUIZ_STORE = "learningQuizzes";
+const QUIZ_ATTEMPT_STORE = "quizAttempts";
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -73,6 +76,19 @@ function openDatabase(): Promise<IDBDatabase> {
         store.createIndex("sessionId", "sessionId", { unique: false });
         store.createIndex("videoId", "videoId", { unique: false });
         store.createIndex("timestampSeconds", "timestampSeconds", { unique: false });
+      }
+
+      if (!database.objectStoreNames.contains(QUIZ_STORE)) {
+        const store = database.createObjectStore(QUIZ_STORE, { keyPath: "id" });
+        store.createIndex("sessionId", "sessionId", { unique: false });
+        store.createIndex("createdAt", "createdAt", { unique: false });
+      }
+
+      if (!database.objectStoreNames.contains(QUIZ_ATTEMPT_STORE)) {
+        const store = database.createObjectStore(QUIZ_ATTEMPT_STORE, { keyPath: "id" });
+        store.createIndex("sessionId", "sessionId", { unique: false });
+        store.createIndex("quizId", "quizId", { unique: false });
+        store.createIndex("createdAt", "createdAt", { unique: false });
       }
     };
     request.onsuccess = () => {
@@ -153,9 +169,9 @@ export function getLatestManualSession(): Promise<LearningSession | null> {
 export async function deleteLearningSession(id: string): Promise<void> {
   const database = await openDatabase();
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction([SESSION_STORE, NOTE_STORE, BOOKMARK_STORE], "readwrite");
+    const transaction = database.transaction([SESSION_STORE, NOTE_STORE, BOOKMARK_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE], "readwrite");
     transaction.objectStore(SESSION_STORE).delete(id);
-    for (const storeName of [NOTE_STORE, BOOKMARK_STORE]) {
+    for (const storeName of [NOTE_STORE, BOOKMARK_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE]) {
       const store = transaction.objectStore(storeName);
       const request = store.index("sessionId").getAllKeys(id);
       request.onsuccess = () => {
@@ -215,5 +231,33 @@ export function listLearningBookmarks(sessionId: string): Promise<LearningBookma
 export function deleteLearningBookmark(id: string): Promise<void> {
   return runTransaction<void>(BOOKMARK_STORE, "readwrite", (store) => {
     store.delete(id);
+  });
+}
+
+export function saveQuiz(quiz: QuizDefinition): Promise<void> {
+  return runTransaction<void>(QUIZ_STORE, "readwrite", (store) => { store.put(quiz); });
+}
+
+export function listQuizzes(sessionId: string): Promise<QuizDefinition[]> {
+  if (!sessionId) return Promise.resolve([]);
+  return runTransaction<QuizDefinition[]>(QUIZ_STORE, "readonly", (store, resolve) => {
+    const request = store.index("sessionId").getAll(sessionId);
+    request.onsuccess = () => resolve((request.result as QuizDefinition[]).sort((a, b) => b.createdAt - a.createdAt));
+  });
+}
+
+export function deleteQuiz(id: string): Promise<void> {
+  return runTransaction<void>(QUIZ_STORE, "readwrite", (store) => { store.delete(id); });
+}
+
+export function saveQuizAttempt(attempt: QuizAttempt): Promise<void> {
+  return runTransaction<void>(QUIZ_ATTEMPT_STORE, "readwrite", (store) => { store.put(attempt); });
+}
+
+export function listQuizAttempts(sessionId: string): Promise<QuizAttempt[]> {
+  if (!sessionId) return Promise.resolve([]);
+  return runTransaction<QuizAttempt[]>(QUIZ_ATTEMPT_STORE, "readonly", (store, resolve) => {
+    const request = store.index("sessionId").getAll(sessionId);
+    request.onsuccess = () => resolve((request.result as QuizAttempt[]).sort((a, b) => b.createdAt - a.createdAt));
   });
 }
