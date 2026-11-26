@@ -104,3 +104,15 @@ footer{border-top:1px solid #e8ebf2;padding-top:13px;color:#9aa3b2;font-size:9px
 .saved-note-heading a,.bookmark-time{font-size:10px;color:#4168c6;text-decoration:none;font-variant-numeric:tabular-nums;white-space:nowrap}
 .bookmark-time{display:inline-flex;align-items:center;gap:4px}
 .saved-note-heading a:hover,.bookmark-time:hover{text-decoration:underline}
+
+.saved-history{margin:0 0 14px;background:#fff;border:1px solid #e5eaf2;border-radius:12px;overflow:hidden}
+.saved-history summary{display:flex;align-items:center;gap:8px;padding:12px;color:#43516a;font-size:12px;font-weight:650;cursor:pointer;list-style:none}
+.saved-history summary::-webkit-details-marker{display:none}
+.saved-history summary span{margin-left:auto;border-radius:20px;background:#edf2fc;color:#526eaf;padding:2px 8px;font-size:10px}
+.saved-history-list{border-top:1px solid #edf0f5;padding:4px 11px}
+.saved-history-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #f0f2f6}
+.saved-history-item:last-child{border-bottom:0}
+.saved-history-item>div{min-width:0;display:grid;gap:4px}
+.saved-history-item strong{font-size:11px;color:#35425a;overflow-wrap:anywhere}
+.saved-history-item small{font-size:9px;color:#8590a3}
+.saved-history-item button{flex-shrink:0}
