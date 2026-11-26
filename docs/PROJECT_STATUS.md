@@ -196,8 +196,8 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - Added size and timestamp validation plus YouTube URL canonicalization/sanitization.
 - Added IndexedDB migration/outbox and DTO privacy regression tests.
 
-**Not yet wired / no live cloud writes**
-- Ordinary local saves and cascade deletes do not yet enqueue outbox operations in the same IndexedDB transaction. The current sync APIs are primitives, not a functioning sync engine.
+**Not yet implemented / no live cloud writes**
+- There is no sync opt-in/category consent UI, first-claim preview, account-switch orchestration, background sync runner, Firestore artifact write, pull cursor, conflict resolver, or tombstone propagation.
 - No sync opt-in/first-claim UI, account-switch orchestration, Firestore artifact writes, pull cursor, conflict resolver, or tombstone propagation exists yet.
 - Live Firebase Email/Password configuration and desktop Chrome Auth flow remain unverified by the user.
 - Production-compatible App Check remains a hard release gate. Do not enable or deploy learning-artifact sync.
@@ -207,4 +207,4 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - The run is being used to verify the final Phase 6C code commit; update this section with its final result before declaring this slice complete.
 - Package version remains 0.1.0.
 
-**Next engineering task:** Integrate the outbox into local save and delete transactions, including the session-delete and quiz-delete cascades, while preserving the rule that transcript-only autosaves never enqueue lesson metadata. Keep the sync runner disabled.
+**Next engineering task:** Implement sync opt-in/category consent and a first-claim preview that shows exactly which existing local records will be assigned to the signed-in UID. Keep the sync runner and Firestore artifact writes disabled until live Auth QA and production App Check are approved.
