@@ -92,6 +92,8 @@ function runTransaction<T>(
 ): Promise<T> {
   return openDatabase().then((database) => new Promise<T>((resolve, reject) => {
     let settled = false;
+    let hasResult = false;
+    let result: T;
     const finish = (callback: () => void) => {
       if (settled) return;
       settled = true;
@@ -100,9 +102,18 @@ function runTransaction<T>(
     };
     try {
       const transaction = database.transaction(storeName, mode);
-      operation(transaction.objectStore(storeName), (value) => finish(() => resolve(value)), (error) => finish(() => reject(error)));
+      transaction.oncomplete = () => finish(() => resolve(result));
       transaction.onerror = () => finish(() => reject(transaction.error ?? new Error("Local storage transaction failed.")));
       transaction.onabort = () => finish(() => reject(transaction.error ?? new Error("Local storage transaction was cancelled.")));
+      operation(
+        transaction.objectStore(storeName),
+        (value) => { result = value; hasResult = true; },
+        (error) => finish(() => reject(error))
+      );
+      if (mode === "readwrite" && !hasResult) {
+        // Write operations resolve with undefined after the transaction commits.
+        result = undefined as T;
+      }
     } catch (error) {
       finish(() => reject(error instanceof Error ? error : new Error("Could not start local storage transaction.")));
     }
@@ -112,7 +123,6 @@ function runTransaction<T>(
 export function saveLearningSession(session: LearningSession): Promise<void> {
   return runTransaction<void>(SESSION_STORE, "readwrite", (store, resolve) => {
     store.put(session);
-    store.transaction.oncomplete = () => resolve();
   });
 }
 
@@ -159,7 +169,6 @@ export async function deleteLearningSession(id: string): Promise<void> {
 export function saveLearningNote(note: LearningNote): Promise<void> {
   return runTransaction<void>(NOTE_STORE, "readwrite", (store, resolve) => {
     store.put(note);
-    store.transaction.oncomplete = () => resolve();
   });
 }
 
@@ -181,7 +190,6 @@ export function searchLearningNotes(sessionId: string, query: string): Promise<L
 export function deleteLearningNote(id: string): Promise<void> {
   return runTransaction<void>(NOTE_STORE, "readwrite", (store, resolve) => {
     store.delete(id);
-    store.transaction.oncomplete = () => resolve();
   });
 }
 
@@ -191,7 +199,6 @@ export function saveLearningBookmark(bookmark: LearningBookmark): Promise<void> 
   }
   return runTransaction<void>(BOOKMARK_STORE, "readwrite", (store, resolve) => {
     store.put(bookmark);
-    store.transaction.oncomplete = () => resolve();
   });
 }
 
@@ -206,6 +213,5 @@ export function listLearningBookmarks(sessionId: string): Promise<LearningBookma
 export function deleteLearningBookmark(id: string): Promise<void> {
   return runTransaction<void>(BOOKMARK_STORE, "readwrite", (store, resolve) => {
     store.delete(id);
-    store.transaction.oncomplete = () => resolve();
   });
 }
