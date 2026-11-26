@@ -317,11 +317,11 @@ Next exit criteria:
 - Lesson URLs are canonicalized to YouTube watch URLs; unsafe/non-YouTube URLs are omitted. Oversized DTOs and invalid timestamps are rejected rather than truncated.
 - Added regression tests for v5→v6 preservation, account ownership, outbox coalescing/acknowledgement, stale acknowledgements, unsynced deletion, device ID persistence, DTO allow-lists, URL sanitization, timestamps, and payload size limits.
 
-**Explicitly not implemented yet**
-- Lesson metadata changes, note/quiz/attempt saves, note deletion, quiz deletion with attempt children, and lesson deletion with all child artifacts now enqueue account-claimed operations atomically with the local mutation. Transcript-only lesson autosaves do not enqueue metadata. Unclaimed records remain local-only. The first-claim preview must explicitly queue selected existing records.
+**Remaining work**
+- No account-claim preview, sync consent UI, account-switch orchestration, background sync runner, Firestore artifact writes, pull cursor, conflict resolver, or tombstone propagation is enabled. The first-claim preview must explicitly queue selected existing records.
 - No account-claim preview, sync consent UI, background sync runner, Firestore artifact writes, pull cursor, conflict resolver, or tombstone propagation is enabled.
 - Live Firebase Auth setup and production-compatible App Check remain release gates.
 
 **Safety boundary**
-- No Firestore learning-artifact writes were added. Do not enable sync until mutation/outbox atomicity, opt-in controls, account-switch isolation, live Auth QA, and production App Check are verified.
+- No Firestore learning-artifact writes were added. Do not enable sync until opt-in controls, account-switch isolation, live Auth QA, and production App Check are verified. Mutation/outbox atomicity is implemented for the existing local CRUD paths.
 - Extension/package version remains 0.1.0.
