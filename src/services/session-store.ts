@@ -792,7 +792,7 @@ export interface SyncClaimCandidate {
   title: string;
   lessonTitle: string;
   updatedAtMs: number;
-  ownership: "unclaimed" | "current_account" | "other_account";
+  ownership: "unclaimed" | "current_account" | "other_account" | "invalid";
 }
 
 export async function getLocalSyncClaimCandidates(
@@ -835,12 +835,19 @@ export async function getLocalSyncClaimCandidates(
               entityKey = syncEntityKey(type, lessonId, record.id);
             } catch { continue; }
             const claim = metadata.get(entityKey);
+            let valid = true;
+            try {
+              if (type === "lesson") toLessonMetadataDto(record as LearningSession);
+              else if (type === "note") toNoteSyncDto(record as LearningNote);
+              else if (type === "quiz") toQuizSyncDto(record as QuizDefinition);
+              else toAttemptSyncDto(record as QuizAttempt);
+            } catch { valid = false; }
             candidates.push({
               entityKey, category,
               title: record.title || (type === "attempt" ? `Quiz attempt ${record.quizId ?? ""}` : type === "lesson" ? "Untitled lesson" : "Untitled record"),
               lessonTitle: lessonTitles.get(lessonId) ?? "Lesson unavailable",
               updatedAtMs: record.updatedAt ?? record.createdAt ?? 0,
-              ownership: !claim ? "unclaimed" : claim.ownerUid === ownerUid ? "current_account" : "other_account"
+              ownership: !valid ? "invalid" : !claim ? "unclaimed" : claim.ownerUid === ownerUid ? "current_account" : "other_account"
             });
           }
         };
