@@ -19,6 +19,18 @@ const firebaseConfig = {
 
 let debugAppCheckInitialized = false;
 
+async function withAppCheckGuidance<T>(request: Promise<T>): Promise<T> {
+  try {
+    return await request;
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    if (/App Check token is invalid/i.test(message) || /App Check.*401/i.test(message)) {
+      throw new Error("Firebase rejected this extension's App Check debug token. Open the LearnLens side-panel DevTools Console, copy the current 'AppCheck debug token', and register that exact token under Firebase Console → App Check → Apps → your LearnLens web app → Manage debug tokens. A new unpacked-extension folder can create a new extension ID and token. Reload the extension after registering it.");
+    }
+    throw cause instanceof Error ? cause : new Error(message);
+  }
+}
+
 function getFirebaseApp() {
   if (!firebaseConfig.apiKey || !firebaseConfig.projectId || !firebaseConfig.appId) {
     throw new Error("Firebase is not configured in this extension build. Add the Firebase web app values to GitHub Actions secrets and rebuild.");
@@ -86,10 +98,10 @@ export async function transcribeAudioChunk(
     `This is sequential audio chunk number ${sequence}. Do not invent timestamps.`
   ].join(" ");
 
-  const result = await model.generateContent([
+  const result = await withAppCheckGuidance(model.generateContent([
     { type: "text", text: prompt },
     { type: "inlineData", inlineData: { mimeType, data: dataBase64 } }
-  ]);
+  ]));
   return result.response.text().trim();
 }
 
@@ -147,7 +159,7 @@ export async function generateQuizText(
     "LESSON TRANSCRIPT:",
     transcript
   ].join("\n");
-  const result = await model.generateContent(prompt);
+  const result = await withAppCheckGuidance(model.generateContent(prompt));
   const source = result.response.inferenceSource;
   const inferenceSource: TutorReply["inferenceSource"] = source === InferenceSource.ON_DEVICE
     ? "ON_DEVICE"
