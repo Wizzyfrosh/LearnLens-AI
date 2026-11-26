@@ -304,3 +304,24 @@ Next exit criteria:
 - Added `firestore.rules` with deny-by-default behavior. A verified user can access only their own strictly validated `settings/sync` document; every artifact path remains denied until the sync engine is implemented.
 - Added Firestore Emulator configuration and eight rules tests. The CI run executed all eight tests successfully.
 - Live Firebase Console provider setup and desktop Chrome Auth flow verification are still pending. Production App Check remains a release blocker for cloud sync.
+
+
+## 16. Phase 6C — local sync foundation — 2026-11-26
+
+**Implemented**
+- Upgraded IndexedDB from schema v5 to v6, adding `syncMetadata`, `syncOutbox`, and `syncDevice`. The migration leaves existing lesson transcripts, notes, quizzes, and attempts unchanged and creates no account claims or queued writes automatically.
+- Added explicit account-bound metadata claiming. An entity already claimed by one UID cannot be reassigned to another UID.
+- Added a coalescing outbox primitive with stable operation IDs across same-operation retries, bounded retry metadata, base revisions, stale-ack rejection, and cancellation of an upsert that has never reached the server when its local record is deleted.
+- Added a stable installation-scoped device ID. It is a local identifier only, not an authentication factor.
+- Added allow-listed DTO mappers for minimal lesson metadata, notes, quiz definitions, and quiz attempts. Full transcript text, transcript format/source, raw audio, and unknown local fields are not projected.
+- Lesson URLs are canonicalized to YouTube watch URLs; unsafe/non-YouTube URLs are omitted. Oversized DTOs and invalid timestamps are rejected rather than truncated.
+- Added regression tests for v5→v6 preservation, account ownership, outbox coalescing/acknowledgement, stale acknowledgements, unsynced deletion, device ID persistence, DTO allow-lists, URL sanitization, timestamps, and payload size limits.
+
+**Explicitly not implemented yet**
+- Existing local save/delete operations are not yet atomically coupled to the outbox. The current APIs are foundation primitives only; no automatic enqueue occurs.
+- No account-claim preview, sync consent UI, background sync runner, Firestore artifact writes, pull cursor, conflict resolver, or tombstone propagation is enabled.
+- Live Firebase Auth setup and production-compatible App Check remain release gates.
+
+**Safety boundary**
+- No Firestore learning-artifact writes were added. Do not enable sync until mutation/outbox atomicity, opt-in controls, account-switch isolation, live Auth QA, and production App Check are verified.
+- Extension/package version remains 0.1.0.
