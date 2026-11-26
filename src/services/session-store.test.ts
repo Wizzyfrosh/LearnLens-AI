@@ -617,3 +617,5 @@ describe("local learning artifact storage", () => {
     expect(repeat.totalQueued).toBe(0);
     expect(await listSyncOutbox("user-a")).toHaveLength(1);
   });
+
+});
