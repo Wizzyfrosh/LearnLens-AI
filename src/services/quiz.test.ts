@@ -42,6 +42,12 @@ describe("lesson quiz validation and scoring", () => {
     expect(() => validateQuizResponse(JSON.stringify(wrongAnswer), segments)).toThrow(/match one of its options/i);
   });
 
+  it("rejects true/false questions with invalid option labels", () => {
+    const invalid = structuredClone(payload);
+    invalid.questions[1].options = ["Yes", "No"];
+    expect(() => validateQuizResponse(JSON.stringify(invalid), segments)).toThrow(/True\/False options/i);
+  });
+
   it("scores objective questions and leaves short answers outside objective scoring", () => {
     const questions = validateQuizResponse(JSON.stringify(payload), segments);
     const result = scoreObjectiveAnswers(questions, { q1: "ATP", q2: "false", q3: "cell respiration" });
