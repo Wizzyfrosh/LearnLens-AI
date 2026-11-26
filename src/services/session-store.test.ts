@@ -15,7 +15,6 @@ import {
   saveQuizAttempt,
   searchLearningNotes,
   acknowledgeSyncOperation,
-  markSyncOperationInFlight,
   claimSyncEntity,
   claimSelectedLocalSyncRecords,
   getLocalSyncClaimCandidates,
@@ -106,7 +105,6 @@ describe("local learning artifact storage", () => {
     await expect(claimSyncEntity({ ...claim, ownerUid: "user-b" })).rejects.toThrow();
     await expect(queueSyncOperation(claim.entityKey, "user-b", "upsert")).rejects.toThrow();
     await expect(acknowledgeSyncOperation(claim.entityKey, "user-a", "wrong-operation", 1)).rejects.toThrow();
-    await markSyncOperationInFlight(claim.entityKey, "user-a", first!.operationId, first!.baseRevision);
     await acknowledgeSyncOperation(claim.entityKey, "user-a", first!.operationId, 1);
     expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 1 });
     expect(await listSyncOutbox("user-a")).toEqual([]);
@@ -124,57 +122,7 @@ describe("local learning artifact storage", () => {
     expect(await listSyncOutbox("user-a")).toEqual([]);
   });
 
-  it("keeps a tombstone when a never-synced record is deleted during its in-flight create", async () => {
-    const note = {
-      id: "delete-flight-note", sessionId: "delete-flight-lesson", videoId: "delete-flight-lesson",
-      title: "Delete during upload", content: "Body", createdAt: 1, updatedAt: 2
-    };
-    await saveLearningNote(note);
-    const entityKey = "note:delete-flight-lesson:delete-flight-note";
-    await claimSyncEntity({
-      entityKey, entityType: "note", lessonId: "delete-flight-lesson",
-      entityId: "delete-flight-note", ownerUid: "user-a", syncCategory: "notes"
-    });
-    const create = await queueSyncOperation(entityKey, "user-a", "upsert");
-    await markSyncOperationInFlight(entityKey, "user-a", create!.operationId, create!.baseRevision);
-
-    await deleteLearningNote(note.id);
-    const [tombstone] = await listSyncOutbox("user-a");
-    expect(tombstone.operation).toBe("delete");
-    expect(tombstone.inFlightOperationId).toBe(create!.operationId);
-    expect(await getSyncMetadata(entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 0 });
-
-    await acknowledgeSyncOperation(entityKey, "user-a", create!.operationId, 1);
-    const [rebasedTombstone] = await listSyncOutbox("user-a");
-    expect(rebasedTombstone).toMatchObject({ operation: "delete", baseRevision: 1 });
-    expect(rebasedTombstone).not.toHaveProperty("inFlightOperationId");
-  });
-
-  it("clears a failed in-flight request without losing a newer queued edit", async () => {
-    const note = {
-      id: "retry-flight-note", sessionId: "retry-flight-lesson", videoId: "retry-flight-lesson",
-      title: "Retry note", content: "Original", createdAt: 1, updatedAt: 2
-    };
-    await saveLearningNote(note);
-    const entityKey = "note:retry-flight-lesson:retry-flight-note";
-    await claimSyncEntity({
-      entityKey, entityType: "note", lessonId: "retry-flight-lesson",
-      entityId: "retry-flight-note", ownerUid: "user-a", syncCategory: "notes"
-    });
-    const first = await queueSyncOperation(entityKey, "user-a", "upsert");
-    await markSyncOperationInFlight(entityKey, "user-a", first!.operationId, first!.baseRevision);
-    await saveLearningNote({ ...note, content: "Latest", updatedAt: 3 });
-    const [latest] = await listSyncOutbox("user-a");
-
-    const { recordSyncRetry } = await import("./session-store");
-    await recordSyncRetry(entityKey, first!.operationId, "network_error");
-    const [ready] = await listSyncOutbox("user-a");
-    expect(ready.operationId).toBe(latest.operationId);
-    expect(ready).not.toHaveProperty("inFlightOperationId");
-    expect(ready.retryCount).toBe(0);
-  });
-
-  it("rebases a newer local edit when an older in-flight operation is accepted", async () => {
+  it("rejects acknowledgements for a superseded queued operation", async () => {
     const note = {
       id: "stale-ack-note", sessionId: "stale-ack-lesson", videoId: "stale-ack-lesson",
       title: "Original note", content: "Original body", createdAt: 1, updatedAt: 2
@@ -186,28 +134,20 @@ describe("local learning artifact storage", () => {
       syncCategory: "notes" as const
     };
     await claimSyncEntity(claim);
-    const inFlight = await queueSyncOperation(claim.entityKey, "user-a", "upsert");
-    expect(inFlight).not.toBeNull();
-    await markSyncOperationInFlight(claim.entityKey, "user-a", inFlight!.operationId, inFlight!.baseRevision);
+    const original = await queueSyncOperation(claim.entityKey, "user-a", "upsert");
+    expect(original).not.toBeNull();
 
     await saveLearningNote({ ...note, content: "Newer body", updatedAt: 3 });
     const [latest] = await listSyncOutbox("user-a");
-    expect(latest.operationId).not.toBe(inFlight!.operationId);
-    expect(latest.retryCount).toBe(0);
-    expect(latest.inFlightOperationId).toBe(inFlight!.operationId);
-
-    // The older request succeeded remotely. Its acknowledgement advances the
-    // remote revision, but must not clear the newer pending local operation.
-    await acknowledgeSyncOperation(claim.entityKey, "user-a", inFlight!.operationId, 1);
-    expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 1 });
+    expect(latest.operationId).not.toBe(original!.operationId);
+    await expect(acknowledgeSyncOperation(claim.entityKey, "user-a", original!.operationId, 1)).rejects.toThrow();
+    expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 0 });
     expect(await listSyncOutbox("user-a")).toMatchObject([{
-      operationId: latest.operationId, baseRevision: 1, operation: "upsert"
+      operationId: latest.operationId, baseRevision: 0, operation: "upsert"
     }]);
-    await markSyncOperationInFlight(claim.entityKey, "user-a", latest.operationId, 1);
 
-    await acknowledgeSyncOperation(claim.entityKey, "user-a", latest.operationId, 2);
-    expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 2 });
-    expect(await listSyncOutbox("user-a")).toEqual([]);
+    await acknowledgeSyncOperation(claim.entityKey, "user-a", latest.operationId, 1);
+    expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 1 });
   });
 
   it("queues claimed note saves atomically but leaves unclaimed local notes alone", async () => {
@@ -273,11 +213,10 @@ describe("local learning artifact storage", () => {
       { entityKey: `attempt:${sessionId}:${attempt.id}`, entityType: "attempt" as const, lessonId: sessionId, entityId: attempt.id, syncCategory: "attempts" as const }
     ];
     for (const claim of claims) await claimSyncEntity({ ...claim, ownerUid: "user-a" });
-    for (const claim of claims) {
-      const queued = await queueSyncOperation(claim.entityKey, "user-a", "upsert");
-      await markSyncOperationInFlight(claim.entityKey, "user-a", queued!.operationId, queued!.baseRevision);
-      await acknowledgeSyncOperation(claim.entityKey, "user-a", queued!.operationId, 1);
-    }
+    for (const claim of claims) await acknowledgeSyncOperation(
+      claim.entityKey, "user-a",
+      (await queueSyncOperation(claim.entityKey, "user-a", "upsert"))!.operationId, 1
+    );
     await deleteLearningSession(sessionId);
     const queued = await listSyncOutbox("user-a");
     expect(queued).toHaveLength(4);
