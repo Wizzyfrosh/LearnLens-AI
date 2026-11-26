@@ -147,13 +147,16 @@ Exit: Phase 5 implementation, automated checks, and desktop Chrome runtime verif
 **Phase 6A exit:** Completed in `docs/CLOUD_SYNC_DATA_MODEL.md`. Phase 6B can begin with email/password Auth and emulator-only Rules work. Production sync remains blocked until the extension App Check strategy is proven.
 
 **Phase 6B — Identity and Firebase security**
-- [ ] Add Firebase Auth behind a dedicated auth service; keep app initialization shared and avoid coupling Auth to AI request code.
-- [ ] Implement sign-in, sign-out, session restoration, and explicit account-state UI. Do not block local use when signed out.
+- [x] Add Firebase Auth behind a dedicated auth service; share Firebase app initialization with the AI adapter.
+- [x] Implement email/password sign-in, account creation, sign-out, session restoration, verification-email resend/check, password reset, and Account workspace UI. Signed-out local use remains available.
 - [x] Choose and document email/password as the first sign-in method, including email verification and password reset; defer OAuth popup/redirect providers.
-- [ ] Add Firestore rules that deny by default and enforce request.auth.uid ownership on every read/write path.
-- [ ] Add emulator/security-rule tests for unauthenticated access, cross-user access, malformed payloads, and ownership changes.
+- [x] Add deny-by-default Firestore rules; only a verified user can access their own strictly validated sync-settings document. Lesson/artifact paths remain denied until sync is implemented.
+- [x] Add Firestore Emulator tests for unauthenticated access, verified/unverified users, cross-user access, malformed settings, timestamp validation, and denied artifact paths.
+- [ ] Enable Email/Password in the live Firebase Console project and verify create/sign-in/verification/reset/session restoration in desktop Chrome.
 - [ ] Resolve production-compatible App Check for a Chrome extension before enabling sync. The existing debug-token provider is development-only and is not an acceptable production control.
-- [ ] Keep Firestore rules and Firebase project configuration under version control; never commit service-account credentials or debug tokens.
+- [x] Keep Firestore rules and Firebase configuration files under version control; never commit service-account credentials or debug tokens.
+
+**Phase 6B implementation checkpoint:** Code and emulator coverage are in place. Live Firebase project configuration and desktop Chrome account-flow verification remain open. See `docs/PHASE6B_AUTH_SETUP.md`. Production sync remains blocked by the App Check decision.
 
 **Phase 6C — Opt-in sync engine and user controls**
 - [ ] Add an explicit sync opt-in and clear explanation of which artifact types leave the device.
@@ -291,3 +294,13 @@ Next exit criteria:
 - Selected email/password as the first Auth method using the Firebase `firebase/auth/web-extension` entry point; verification and password reset are required. OAuth popup/redirect is deferred.
 - Phase 6A is complete. No Auth, Firestore writes, sync UI, or cloud sync code has been implemented yet.
 - App Check remains a production blocker: Firebase's web documentation does not establish that the Chrome extension origin is accepted by reCAPTCHA Enterprise. A real installed-extension attestation spike is required before sync enforcement.
+
+
+## 15. Phase 6B implementation — 2026-11-26
+- Added shared Firebase app initialization in `src/services/firebase-app.ts`; Firebase AI Logic and the new Auth service use the same default app instance.
+- Added `src/services/firebase-auth.ts` using the Manifest V3 `firebase/auth/web-extension` entry point: email/password account creation/sign-in, email verification/resend/reload, password reset, sign-out, and friendly error mapping.
+- Added an optional Account workspace in the side panel. Authentication does not enable sync or upload local learning data; local-only use remains available while signed out.
+- Added Identity Toolkit/Secure Token host permissions required for email/password Auth.
+- Added `firestore.rules` with deny-by-default behavior. A verified user can access only their own strictly validated `settings/sync` document; every artifact path remains denied until the sync engine is implemented.
+- Added Firestore Emulator configuration and eight rules tests. The CI run executed all eight tests successfully.
+- Live Firebase Console provider setup and desktop Chrome Auth flow verification are still pending. Production App Check remains a release blocker for cloud sync.
