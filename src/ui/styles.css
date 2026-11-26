@@ -426,7 +426,7 @@ body:has(.shell.theme-light) { background: #f4f5f7; color: #202938; }
 .theme-light .inline-success { color: #258362; }
 .theme-light footer { border-color: #e2e6ed; color: #9aa3b2; }
 .theme-light .quiz-transcript-status, .theme-light .quiz-progress { color: #778397; }
-.theme-light .overlay-shell .quiz-studio { background: #fff; border-color: #e2e6ed; }
+.shell.theme-light.overlay-shell .quiz-studio { background: #fff; border-color: #e2e6ed; }
 .theme-light .overlay-close { background: #fff; border-color: #dfe4ec; color: #344158; }
 @media (prefers-reduced-motion: reduce) {
   .shell *, .shell *::before, .shell *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
