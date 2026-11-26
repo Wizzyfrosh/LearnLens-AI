@@ -470,6 +470,6 @@ describe("local learning artifact storage", () => {
       request.onsuccess = () => { resolve(request.result.version); request.result.close(); };
       request.onerror = () => reject(request.error);
     });
-    expect(version).toBe(5);
+    expect(version).toBe(6);
   });
 });
