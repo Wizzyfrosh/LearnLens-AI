@@ -328,8 +328,7 @@ App Check is an app-attestation/abuse-control layer; it does not replace authent
 4. Firestore Emulator configuration and deny-by-default Rules remain in place from Phase 6B.
 
 **Still required**
-5. Wire local note/quiz/session mutations and cascade deletes to metadata/outbox updates in the same IndexedDB transaction.
-6. Add explicit sync opt-in, category consent, first-claim preview, and account-switch handling.
+5. Add explicit sync opt-in, category consent, first-claim preview, and account-switch handling. Existing local CRUD operations now update the outbox atomically for already-claimed records.
 7. Complete live Firebase Auth verification and prove a production App Check strategy in an actual installed extension.
 8. Only after the above gates, implement Firestore transactions, revision compare-and-set, pull cursors, receipts, conflict review, tombstone propagation, export/delete flows, and multi-device tests.
 
