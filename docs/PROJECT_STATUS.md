@@ -406,3 +406,16 @@ Next:
 2. Confirm the final Phase 4/5 artifact is uploaded.
 3. Keep both phases runtime QA open; do not start Phase 6 until the user tests the combined build and fixes are completed.
 4. Return to Phase 3 audio transcription only after Phase 4/5 verification or if the user explicitly changes priority.
+
+
+## 24. Phase 4/5 CI verification — 2026-11-26
+
+- Latest successful workflow: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45768177952
+- Verified commit: `0bde403bbdc74959d775c2c38218fd3806a3f774`.
+- Dependency installation, TypeScript typecheck, unit tests, production build, Chrome extension package verification, and artifact upload all passed.
+- Artifact: `learnlens-chrome-extension`, ID `15093041428`, 122,790 bytes, expires 2026-12-10.
+- Added a version-3-to-version-4 IndexedDB migration test confirming existing sessions, notes, and bookmarks survive creation of quiz and attempt stores.
+- Timestamp-range quiz selection now includes transcript captions overlapping the selected interval, not only captions whose start timestamp falls inside it.
+- CI success confirms code quality gates and package generation only. No desktop Chrome runtime QA has been performed for the combined Phase 4/5 build.
+- Phase 4 feature implementation and Phase 5 feature implementation are complete in code; both remain open for combined Chrome runtime verification.
+- Audio transcription remains deferred under Phase 3. Do not start Phase 6 until the user completes combined Phase 4/5 runtime testing and resulting defects are fixed.
