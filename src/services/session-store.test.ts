@@ -2,15 +2,20 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   deleteLearningBookmark,
+  deleteQuiz,
   deleteLearningSession,
   deleteLearningNote,
   getLatestSessionForVideo,
   listLearningBookmarks,
   listLearningSessions,
+  listQuizzes,
+  listQuizAttempts,
   listLearningNotes,
   saveLearningBookmark,
   saveLearningNote,
   saveLearningSession,
+  saveQuiz,
+  saveQuizAttempt,
   searchLearningNotes
 } from "./session-store";
 
@@ -110,6 +115,22 @@ describe("local learning artifact storage", () => {
     expect(await listLearningBookmarks("remove-me")).toEqual([]);
   });
 
+  it("persists quizzes and attempts by lesson and deletes them with the session", async () => {
+    await saveLearningSession({ id: "quiz-lesson", videoId: "quiz-lesson", title: "Quiz lesson", url: "https://www.youtube.com/watch?v=quiz-lesson", platform: "youtube", transcriptText: "Lesson", transcriptFormat: "plain-text", transcriptSource: "YouTube live captions", updatedAt: 1 });
+    const quiz = { id: "quiz-1", sessionId: "quiz-lesson", title: "Lesson quiz", scope: "whole_lesson" as const, scopeLabel: "Whole lesson", createdAt: 10, questions: [] };
+    const attempt = { id: "attempt-1", quizId: "quiz-1", sessionId: "quiz-lesson", createdAt: 20, results: [], objectiveScore: 1, objectiveTotal: 2, topicsToReview: ["Photosynthesis"] };
+    await saveQuiz(quiz);
+    await saveQuizAttempt(attempt);
+    expect(await listQuizzes("quiz-lesson")).toMatchObject([{ id: "quiz-1" }]);
+    expect(await listQuizAttempts("quiz-lesson")).toMatchObject([{ id: "attempt-1", topicsToReview: ["Photosynthesis"] }]);
+    await deleteQuiz("quiz-1");
+    expect(await listQuizzes("quiz-lesson")).toEqual([]);
+    await saveQuiz(quiz);
+    await deleteLearningSession("quiz-lesson");
+    expect(await listQuizzes("quiz-lesson")).toEqual([]);
+    expect(await listQuizAttempts("quiz-lesson")).toEqual([]);
+  });
+
   it("upgrades an existing version-2 database without losing sessions", async () => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open("learnlens-local", 2);
@@ -140,6 +161,6 @@ describe("local learning artifact storage", () => {
       request.onsuccess = () => { resolve(request.result.version); request.result.close(); };
       request.onerror = () => reject(request.error);
     });
-    expect(version).toBe(3);
+    expect(version).toBe(4);
   });
 });
