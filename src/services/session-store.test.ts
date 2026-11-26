@@ -117,6 +117,19 @@ describe("local learning artifact storage", () => {
     expect(await listSyncOutbox("user-a")).toEqual([]);
   });
 
+  it("rejects sync metadata with a mismatched entity key or category", async () => {
+    await expect(claimSyncEntity({
+      entityKey: "note:lesson-1:other-note", entityType: "note",
+      lessonId: "lesson-1", entityId: "note-1", ownerUid: "user-a",
+      syncCategory: "notes"
+    })).rejects.toThrow(/entity key/i);
+    await expect(claimSyncEntity({
+      entityKey: "note:lesson-1:note-1", entityType: "note",
+      lessonId: "lesson-1", entityId: "note-1", ownerUid: "user-a",
+      syncCategory: "quizzes"
+    })).rejects.toThrow(/category/i);
+  });
+
   it("creates one stable installation-scoped device ID", async () => {
     const first = await getOrCreateSyncDeviceId();
     const second = await getOrCreateSyncDeviceId();
