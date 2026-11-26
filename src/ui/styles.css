@@ -554,3 +554,59 @@ body:has(.shell.theme-light) { background: #f4f5f7; color: #202938; }
   .note-navigation-list{grid-template-columns:repeat(2,minmax(0,1fr));max-height:190px;overflow-y:auto}
   .note-detail .note-editor textarea{min-height:220px}
 }
+
+
+/* Optional Firebase account workspace. Authentication never gates local learning. */
+.account-panel{display:grid;gap:12px}
+.account-intro{margin:0;color:#9eacc0;font-size:10px;line-height:1.6}
+.account-card{display:grid;gap:13px;padding:15px;background:#1b2634;border:1px solid #344255;border-radius:12px;color:#dce5f2}
+.account-card>span{font-size:11px;color:#aab8cc}
+.account-user-heading{display:flex;align-items:center;gap:10px}
+.account-user-icon{width:38px;height:38px;display:grid;place-items:center;flex:none;border-radius:11px;background:#2a3a51;color:#a9c8ff}
+.account-user-heading>div:last-child{display:grid;gap:4px;min-width:0}
+.account-user-heading strong{font-size:12px;color:#edf2fa;overflow-wrap:anywhere}
+.account-user-heading small{font-size:9px;color:#91a0b5}
+.account-mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:4px;background:#131e2b;border:1px solid #35445a;border-radius:10px}
+.account-mode-switch button{border:0;border-radius:7px;padding:9px 6px;background:transparent;color:#9cabc0;font-size:10px;font-weight:700;cursor:pointer}
+.account-mode-switch button.active{background:#344966;color:#dce9ff}
+.account-form{display:grid;gap:8px}
+.account-form input{width:100%;min-width:0;border:1px solid #3a4a60;border-radius:9px;background:#121c28;color:#e6edf7;padding:10px 11px;font-size:11px;outline:none}
+.account-form input:focus{border-color:#7199e8;box-shadow:0 0 0 3px #7199e81c}
+.account-form input::placeholder{color:#75869d}
+.account-form .primary-button{margin-top:5px}
+.account-link-button{justify-self:start;border:0;background:transparent;padding:2px 0;color:#a9c8ff;font-size:10px;font-weight:650;cursor:pointer}
+.account-link-button:disabled{opacity:.5;cursor:default}
+.account-warning{display:flex;align-items:flex-start;gap:9px;padding:10px;border:1px solid #765e2a;border-radius:9px;background:#302c22;color:#f1d27b}
+.account-warning>svg{flex:none;margin-top:1px}
+.account-warning>div{display:grid;gap:4px}
+.account-warning strong{font-size:10px;color:#f1d27b}
+.account-warning p{margin:0;color:#d2c7a2;font-size:10px;line-height:1.5;overflow-wrap:anywhere}
+.account-verified{display:flex;align-items:center;gap:7px;color:#81d5aa;font-size:10px}
+.account-actions{display:flex;flex-wrap:wrap;gap:7px}
+.account-message{margin:0;padding:10px;border:1px solid #426b5a;border-radius:9px;background:#1d342d;color:#b9ebd0;font-size:10px;line-height:1.55}
+.account-privacy{display:flex;align-items:flex-start;gap:8px;padding:10px 11px;border:1px solid #344255;border-radius:9px;background:#172230;color:#91a0b5}
+.account-privacy svg{flex:none;margin-top:1px;color:#91b7ff}
+.account-privacy p{margin:0;font-size:9px;line-height:1.6}
+.theme-light .account-intro{color:#718096}
+.theme-light .account-card{background:#fff;border-color:#e1e6ee;color:#344158;box-shadow:0 5px 18px #24365b0b}
+.theme-light .account-user-icon{background:#edf2fc;color:#4168c6}
+.theme-light .account-user-heading strong{color:#202938}
+.theme-light .account-user-heading small{color:#7b8799}
+.theme-light .account-mode-switch{background:#f4f6fa;border-color:#e3e7ef}
+.theme-light .account-mode-switch button{color:#657187}
+.theme-light .account-mode-switch button.active{background:#f8e58b;color:#554710}
+.theme-light .account-form input{background:#fff;border-color:#dce2eb;color:#202938}
+.theme-light .account-form input:focus{border-color:#c9aa31;box-shadow:0 0 0 3px #e4c94b24}
+.theme-light .account-form input::placeholder{color:#9aa4b3}
+.theme-light .account-link-button{color:#4168c6}
+.theme-light .account-warning{background:#fff9e8;border-color:#ead99b;color:#7a6115}
+.theme-light .account-warning strong{color:#765b10}
+.theme-light .account-warning p{color:#776a43}
+.theme-light .account-verified{color:#23845d}
+.theme-light .account-message{background:#effaf3;border-color:#b4dec4;color:#285f43}
+.theme-light .account-privacy{background:#f7f8fb;border-color:#e4e8ef;color:#718096}
+.theme-light .account-privacy svg{color:#4168c6}
+@media(max-width:380px){
+  .account-actions{display:grid;grid-template-columns:1fr}
+  .account-actions .secondary-button{justify-content:center}
+}
