@@ -73,6 +73,7 @@ export default function App() {
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
   const [noteDraftId, setNoteDraftId] = useState<string | null>(null);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [noteSaveStatus, setNoteSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [noteSearch, setNoteSearch] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -325,6 +326,7 @@ export default function App() {
     setQuizResult(null);
     setEditingNoteId(null);
     setNoteDraftId(null);
+    setSelectedNoteId(null);
     setNoteTitle("");
     setNoteContent("");
     setNoteSearch("");
@@ -336,7 +338,14 @@ export default function App() {
     let cancelled = false;
     Promise.all([listLearningNotes(sessionId), listQuizzes(sessionId), listQuizAttempts(sessionId)]).then(([savedNotes, quizzes, attempts]) => {
       if (!cancelled) {
+        const firstNote = savedNotes[0] ?? null;
         setNotes(savedNotes);
+        setSelectedNoteId(firstNote?.id ?? null);
+        setEditingNoteId(firstNote?.id ?? null);
+        setNoteDraftId(firstNote?.id ?? null);
+        setNoteTitle(firstNote?.title ?? "");
+        setNoteContent(firstNote?.content ?? "");
+        setNoteSaveStatus(firstNote ? "saved" : "idle");
         setSavedQuizzes(quizzes);
         setQuizAttempts(attempts);
       }
@@ -645,6 +654,7 @@ export default function App() {
       setNotes((current) => [note, ...current.filter((item) => item.id !== note.id)].sort((a, b) => b.updatedAt - a.updatedAt));
       setNoteTitle(note.title);
       setNoteContent(note.content);
+      setSelectedNoteId(note.id);
       setNoteDraftId(note.id);
       setEditingNoteId(note.id);
       setNoteSaveStatus("saved");
@@ -689,6 +699,7 @@ export default function App() {
     await saveLearningNote(note);
     if (activeSessionIdRef.current !== sessionId) return null;
     setNotes((current) => [note, ...current.filter((item) => item.id !== note.id)].sort((a, b) => b.updatedAt - a.updatedAt));
+    setSelectedNoteId(note.id);
     setNoteDraftId(note.id);
     setEditingNoteId(note.id);
     setNoteSaveStatus("saved");
@@ -708,35 +719,64 @@ export default function App() {
     }
   }
 
-  function startNewNote() {
-    const hasContent = Boolean(noteTitle.trim() && noteContent.trim());
-    const finish = () => {
-      setEditingNoteId(null);
-      setNoteDraftId(null);
-      setNoteTitle("");
-      setNoteContent("");
-      setNoteSaveStatus("idle");
-    };
-    if (hasContent && noteSaveStatus !== "saved") {
-      void persistCurrentNote().then(finish).catch((cause: unknown) => {
+  async function startNewNote() {
+    const hasUnsavedContent = Boolean(noteTitle.trim() && noteContent.trim() && noteSaveStatus !== "saved");
+    if (hasUnsavedContent) {
+      try {
+        await persistCurrentNote();
+      } catch (cause) {
         setNoteSaveStatus("error");
         setArtifactMessage(cause instanceof Error ? cause.message : "Could not save this note before starting a new one.");
-      });
-    } else {
-      finish();
+        return;
+      }
+    }
+    const newId = crypto.randomUUID();
+    setSelectedNoteId(newId);
+    setEditingNoteId(null);
+    setNoteDraftId(newId);
+    setNoteTitle("");
+    setNoteContent("");
+    setNoteSaveStatus("idle");
+    setArtifactMessage("New note ready. It will be saved automatically as you write.");
+  }
+
+  async function openSavedNote(note: LearningNote) {
+    const currentId = editingNoteId ?? noteDraftId;
+    const hasUnsavedContent = Boolean(
+      currentId &&
+      currentId !== note.id &&
+      noteTitle.trim() &&
+      noteContent.trim() &&
+      noteSaveStatus !== "saved"
+    );
+    try {
+      if (hasUnsavedContent) await persistCurrentNote();
+      setSelectedNoteId(note.id);
+      setEditingNoteId(note.id);
+      setNoteDraftId(note.id);
+      setNoteTitle(note.title);
+      setNoteContent(note.content);
+      setNoteSaveStatus("saved");
+      setArtifactMessage("");
+    } catch (cause) {
+      setNoteSaveStatus("error");
+      setArtifactMessage(cause instanceof Error ? cause.message : "Could not save the current note before opening another one.");
     }
   }
 
   async function removeNote(id: string) {
     try {
       await deleteLearningNote(id);
-      setNotes((current) => current.filter((note) => note.id !== id));
-      if (editingNoteId === id || noteDraftId === id) {
-        setEditingNoteId(null);
-        setNoteDraftId(null);
-        setNoteTitle("");
-        setNoteContent("");
-        setNoteSaveStatus("idle");
+      const remaining = notes.filter((note) => note.id !== id);
+      setNotes(remaining);
+      if (selectedNoteId === id || editingNoteId === id || noteDraftId === id) {
+        const next = remaining[0] ?? null;
+        setSelectedNoteId(next?.id ?? null);
+        setEditingNoteId(next?.id ?? null);
+        setNoteDraftId(next?.id ?? null);
+        setNoteTitle(next?.title ?? "");
+        setNoteContent(next?.content ?? "");
+        setNoteSaveStatus(next ? "saved" : "idle");
       }
       setArtifactMessage("Note deleted.");
     } catch {
@@ -744,88 +784,96 @@ export default function App() {
     }
   }
 
-  async function exportNotes() {
+  async function exportSelectedNote() {
     const printWindow = noteExportFormat === "pdf" ? window.open("", "_blank", "width=900,height=700") : null;
     if (noteExportFormat === "pdf" && !printWindow) {
       setArtifactMessage("The PDF print window was blocked. Allow pop-ups for this extension and try again.");
       return;
     }
     try {
-      const currentNote = noteTitle.trim() && noteContent.trim() ? await persistCurrentNote() : null;
-      const exportCollection = currentNote
-        ? [currentNote, ...notes.filter((note) => note.id !== currentNote.id)]
-        : notes;
-      if (!exportCollection.length) {
-        setArtifactMessage("There are no saved notes to export yet.");
+      const targetId = selectedNoteId ?? editingNoteId ?? noteDraftId;
+      if (!targetId) {
+        setArtifactMessage("Open a note before exporting it.");
         return;
       }
-      const title = video.title || "LearnLens study notes";
+      let selectedNote = notes.find((note) => note.id === targetId) ?? null;
+      const editorId = editingNoteId ?? noteDraftId;
+      if (editorId === targetId && noteTitle.trim() && noteContent.trim()) {
+        selectedNote = await persistCurrentNote();
+      }
+      if (!selectedNote || selectedNote.id !== targetId) {
+        setArtifactMessage("Save the selected note before exporting it.");
+        return;
+      }
+
       const source = video.url || "Saved lesson on this device";
-      const baseName = "learnlens-notes-" + (sessionId || "lesson");
-      const orderedNotes = [...exportCollection].sort((a, b) => a.createdAt - b.createdAt);
-    const textBody = [
-      title,
-      "Source: " + source,
-      "Exported: " + new Date().toLocaleString(),
-      "",
-      ...orderedNotes.flatMap((note, index) => [String(index + 1) + ". " + note.title, note.content, ""])
-    ].join("\n").trim() + "\n";
-    const markdown = "# " + title + "\n\nSource: " + source + "\n\n" +
-      orderedNotes.map((note) => "## " + note.title + "\n\n" + note.content).join("\n\n---\n\n");
-    const htmlSections = orderedNotes.map((note) =>
-      "<article><h2>" + escapeHtml(note.title) + "</h2><p>" + escapeHtml(note.content).replaceAll("\n", "<br>") + "</p></article>"
-    ).join("");
-    const htmlDocument = "<!doctype html><html><head><meta charset=\"utf-8\"><title>" + escapeHtml(title) +
-      "</title><style>body{font:14px Arial,sans-serif;color:#202938;margin:36px;line-height:1.65}h1{font-size:25px;margin:0 0 8px}h2{font-size:17px;margin:0 0 10px}header{border-bottom:3px solid #e7cd56;padding-bottom:18px;margin-bottom:24px}header p{font-size:12px;color:#69758a}article{margin:0 0 24px;padding:0 0 18px;border-bottom:1px solid #e3e7ed;break-inside:avoid}@media print{body{margin:18mm}article{break-inside:avoid}}</style></head><body><header><h1>" +
-      escapeHtml(title) + "</h1><p>" + escapeHtml(source) + " · " + escapeHtml(new Date().toLocaleDateString()) + "</p></header>" + htmlSections + "</body></html>";
+      const baseName = "learnlens-" + selectedNote.title
+        .toLocaleLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 48) || "note";
+      const textBody = [
+        selectedNote.title,
+        "Lesson: " + source,
+        "Updated: " + new Date(selectedNote.updatedAt).toLocaleString(),
+        "",
+        selectedNote.content
+      ].join("\n");
+      const markdown = "# " + selectedNote.title + "\n\n" +
+        "Lesson: " + source + "\n\n" + selectedNote.content;
+      const htmlDocument = "<!doctype html><html><head><meta charset=\"utf-8\"><title>" +
+        escapeHtml(selectedNote.title) +
+        "</title><style>body{font:14px Arial,sans-serif;color:#202938;margin:36px;line-height:1.7}h1{font-size:25px;margin:0 0 8px}header{border-bottom:3px solid #e7cd56;padding-bottom:16px;margin-bottom:24px}header p{font-size:12px;color:#69758a;overflow-wrap:anywhere}.content{white-space:pre-wrap;overflow-wrap:anywhere}@media print{body{margin:18mm}}</style></head><body><header><h1>" +
+        escapeHtml(selectedNote.title) + "</h1><p>" + escapeHtml(source) + " · Updated " +
+        escapeHtml(new Date(selectedNote.updatedAt).toLocaleDateString()) +
+        "</p></header><div class=\"content\">" + escapeHtml(selectedNote.content) + "</div></body></html>";
 
-    if (noteExportFormat === "pdf") {
-      const popup = printWindow;
-      if (!popup) return;
-      popup.document.open();
-      popup.document.write(htmlDocument);
-      popup.document.close();
-      popup.opener = null;
-      popup.focus();
-      popup.setTimeout(() => popup.print(), 350);
-      setArtifactMessage("Print view opened. Choose Save as PDF in the print destination to create your PDF.");
-      return;
-    }
+      if (noteExportFormat === "pdf") {
+        if (!printWindow) return;
+        printWindow.document.open();
+        printWindow.document.write(htmlDocument);
+        printWindow.document.close();
+        printWindow.opener = null;
+        printWindow.focus();
+        printWindow.setTimeout(() => printWindow.print(), 350);
+        setArtifactMessage("Opened “" + selectedNote.title + "” for PDF export. Choose Save as PDF in the print destination.");
+        return;
+      }
 
-    let blob: Blob;
-    let extension: string;
-    if (noteExportFormat === "doc") {
-      blob = new Blob(["\ufeff", htmlDocument], { type: "application/msword;charset=utf-8" });
-      extension = "doc";
-    } else if (noteExportFormat === "csv") {
-      const quote = String.fromCharCode(34);
-      const csvCell = (value: string) => quote + value.replaceAll(quote, quote + quote) + quote;
-      const csv = [["Note title", "Content", "Last updated"], ...orderedNotes.map((note) => [
-        note.title, note.content, new Date(note.updatedAt).toISOString()
-      ])].map((row) => row.map(csvCell).join(",")).join("\r\n");
-      blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
-      extension = "csv";
-    } else if (noteExportFormat === "md") {
-      blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
-      extension = "md";
-    } else {
-      blob = new Blob([textBody], { type: "text/plain;charset=utf-8" });
-      extension = "txt";
-    }
+      let blob: Blob;
+      let extension: string;
+      if (noteExportFormat === "doc") {
+        blob = new Blob(["\ufeff", htmlDocument], { type: "application/msword;charset=utf-8" });
+        extension = "doc";
+      } else if (noteExportFormat === "csv") {
+        const quote = String.fromCharCode(34);
+        const csvCell = (value: string) => quote + value.replaceAll(quote, quote + quote) + quote;
+        const csv = [["Note title", "Content", "Updated"], [
+          selectedNote.title, selectedNote.content, new Date(selectedNote.updatedAt).toISOString()
+        ]].map((row) => row.map(csvCell).join(",")).join("\r\n");
+        blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
+        extension = "csv";
+      } else if (noteExportFormat === "md") {
+        blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+        extension = "md";
+      } else {
+        blob = new Blob([textBody], { type: "text/plain;charset=utf-8" });
+        extension = "txt";
+      }
 
-    const objectUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = objectUrl;
-    anchor.download = baseName + "." + extension;
-    anchor.style.display = "none";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
-    setArtifactMessage("Notes exported as " + extension.toUpperCase() + ".");
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = baseName + "." + extension;
+      anchor.style.display = "none";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+      setArtifactMessage("Exported “" + selectedNote.title + "” as " + extension.toUpperCase() + ".");
     } catch (cause) {
       if (printWindow && !printWindow.closed) printWindow.close();
-      setArtifactMessage(cause instanceof Error ? cause.message : "Could not export the saved notes.");
+      setArtifactMessage(cause instanceof Error ? cause.message : "Could not export the selected note.");
     }
   }
 
@@ -1141,8 +1189,8 @@ export default function App() {
               <span>{notes.length} saved {notes.length === 1 ? "note" : "notes"}</span>
             </div>
             <div className="note-workspace-toolbar">
-              <p>Notes are saved automatically on this device. Open any saved note to continue editing it.</p>
-              <button className="secondary-button" type="button" onClick={startNewNote}>New note</button>
+              <p>Choose a note from the list to open it. Export always applies to the selected note only.</p>
+              <button className="secondary-button" type="button" onClick={() => void startNewNote()}>New note</button>
             </div>
             <div className="note-draft-row">
               <p>{noteDraftQueued ? "Waiting for lesson capture to stop before drafting the complete notes." : "Create a structured study guide from the captured lesson."}</p>
@@ -1151,65 +1199,88 @@ export default function App() {
                 {draftingNote ? "Creating notes..." : noteDraftQueued ? "Waiting for capture" : "Generate study notes"}
               </button>
             </div>
-            <form className="note-editor" onSubmit={(event) => void saveNote(event)}>
-              <div className="note-editor-heading">
-                <strong>{editingNoteId ? "Edit saved note" : "Write a note"}</strong>
-                <span className={"note-save-status " + noteSaveStatus} role="status" aria-live="polite">
-                  {noteSaveStatus === "saving" ? "Saving…" : noteSaveStatus === "saved" ? "Saved on this device" : noteSaveStatus === "error" ? "Save failed" : "Changes save automatically"}
-                </span>
-              </div>
-              <label className="field-label" htmlFor="note-title">Title</label>
-              <input id="note-title" value={noteTitle} onChange={(event) => {
-                setNoteTitle(event.target.value);
-                if (!editingNoteId) setNoteDraftId((current) => current ?? crypto.randomUUID());
-                setNoteSaveStatus("idle");
-              }} placeholder="Give this note a clear title" required />
-              <label className="field-label" htmlFor="note-content">Study notes</label>
-              <textarea id="note-content" value={noteContent} onChange={(event) => {
-                setNoteContent(event.target.value);
-                if (!editingNoteId) setNoteDraftId((current) => current ?? crypto.randomUUID());
-                setNoteSaveStatus("idle");
-              }} placeholder="Write a clear explanation, key ideas, examples, or questions…" rows={8} required />
-              <div className="note-editor-footer">
-                <small>Lesson timestamps are not added to your notes.</small>
-                <button className="primary-button note-save" type="submit" disabled={!noteTitle.trim() || !noteContent.trim() || noteSaveStatus === "saving"}>
-                  <Save size={14} /> {editingNoteId ? "Save changes" : "Save note"}
-                </button>
-              </div>
-            </form>
-            <label className="note-search"><Search size={14} /><input value={noteSearch} onChange={(event) => setNoteSearch(event.target.value)} placeholder="Search saved notes..." /></label>
-            <div className="saved-note-list">
-              {filteredNotes.length ? filteredNotes.map((note) => (
-                <article className={"saved-note " + (editingNoteId === note.id ? "active" : "")} key={note.id}>
-                  <div className="saved-note-heading">
-                    <strong>{note.title}</strong>
-                    <small>Updated {new Date(note.updatedAt).toLocaleDateString()}</small>
+            <div className="note-workspace-layout">
+              <aside className="note-navigation" aria-label="Saved notes">
+                <label className="note-search"><Search size={14} /><input value={noteSearch} onChange={(event) => setNoteSearch(event.target.value)} placeholder="Find a note..." /></label>
+                <div className="note-navigation-list">
+                  {selectedNoteId && !notes.some((note) => note.id === selectedNoteId) && (
+                    <div className="note-navigation-draft" aria-current="page">
+                      <strong>{noteTitle.trim() || "New note"}</strong>
+                      <small>Draft · saving as you write</small>
+                    </div>
+                  )}
+                  {filteredNotes.map((note) => (
+                    <button
+                      className={"note-navigation-item " + (selectedNoteId === note.id ? "selected" : "")}
+                      key={note.id}
+                      type="button"
+                      onClick={() => void openSavedNote(note)}
+                      aria-current={selectedNoteId === note.id ? "page" : undefined}
+                    >
+                      <strong>{note.title}</strong>
+                      <small>Updated {new Date(note.updatedAt).toLocaleDateString()}</small>
+                    </button>
+                  ))}
+                  {!filteredNotes.length && <p className="empty-artifact">{noteSearch ? "No notes match your search." : "No saved notes yet. Create one or generate study notes."}</p>}
+                </div>
+              </aside>
+              <div className="note-detail">
+                <form className="note-editor" onSubmit={(event) => void saveNote(event)}>
+                  <div className="note-editor-heading">
+                    <strong>{editingNoteId ? "Edit note" : "New note"}</strong>
+                    <span className={"note-save-status " + noteSaveStatus} role="status" aria-live="polite">
+                      {noteSaveStatus === "saving" ? "Saving…" : noteSaveStatus === "saved" ? "Saved on this device" : noteSaveStatus === "error" ? "Save failed" : "Changes save automatically"}
+                    </span>
                   </div>
-                  <p>{note.content}</p>
-                  <div className="session-actions">
-                    <button className="secondary-button" type="button" onClick={() => {
-                      setEditingNoteId(note.id);
-                      setNoteDraftId(note.id);
-                      setNoteTitle(note.title);
-                      setNoteContent(note.content);
-                      setNoteSaveStatus("saved");
-                    }}>Open and edit</button>
-                    <button className="secondary-button" type="button" onClick={() => void removeNote(note.id)}><Trash2 size={12} /> Delete</button>
+                  <label className="field-label" htmlFor="note-title">Title</label>
+                  <input id="note-title" value={noteTitle} onChange={(event) => {
+                    setNoteTitle(event.target.value);
+                    if (!editingNoteId && !noteDraftId) {
+                      const id = crypto.randomUUID();
+                      setNoteDraftId(id);
+                      setSelectedNoteId(id);
+                    }
+                    setNoteSaveStatus("idle");
+                  }} placeholder="Give this note a clear title" required />
+                  <label className="field-label" htmlFor="note-content">Study notes</label>
+                  <textarea id="note-content" value={noteContent} onChange={(event) => {
+                    setNoteContent(event.target.value);
+                    if (!editingNoteId && !noteDraftId) {
+                      const id = crypto.randomUUID();
+                      setNoteDraftId(id);
+                      setSelectedNoteId(id);
+                    }
+                    setNoteSaveStatus("idle");
+                  }} placeholder="Write a clear explanation, key ideas, examples, or questions…" rows={12} required />
+                  <div className="note-editor-footer">
+                    <small>Lesson timestamps are not added to your notes.</small>
+                    <button className="primary-button note-save" type="submit" disabled={!noteTitle.trim() || !noteContent.trim() || noteSaveStatus === "saving"}>
+                      <Save size={14} /> {editingNoteId ? "Save changes" : "Save note"}
+                    </button>
                   </div>
-                </article>
-              )) : <p className="empty-artifact">{noteSearch ? "No saved notes match that search." : "Your saved notes will appear here. Generate study notes or write your own to get started."}</p>}
-            </div>
-            <div className="note-export-controls">
-              <div><strong>Export notes</strong><small>Export all saved notes for this lesson.</small></div>
-              <div className="note-export-row">
-                <select id="note-export-format" className="export-format" value={noteExportFormat} onChange={(event) => setNoteExportFormat(event.target.value as typeof noteExportFormat)}>
-                  <option value="pdf">PDF · Save from print dialog</option>
-                  <option value="doc">Word document (.doc)</option>
-                  <option value="txt">Plain text (.txt)</option>
-                  <option value="md">Markdown (.md)</option>
-                  <option value="csv">Spreadsheet (.csv)</option>
-                </select>
-                <button className="secondary-button export-button" type="button" onClick={exportNotes} disabled={!notes.length}><Download size={14} /> Export notes</button>
+                </form>
+                <div className="note-export-controls">
+                  <div>
+                    <strong>Export selected note</strong>
+                    <small>{selectedNoteId ? noteTitle.trim() || "Untitled note" : "Create or select a note first."}</small>
+                  </div>
+                  <div className="note-export-row">
+                    <select id="note-export-format" className="export-format" value={noteExportFormat} onChange={(event) => setNoteExportFormat(event.target.value as typeof noteExportFormat)}>
+                      <option value="pdf">PDF · Save from print dialog</option>
+                      <option value="doc">Word document (.doc)</option>
+                      <option value="txt">Plain text (.txt)</option>
+                      <option value="md">Markdown (.md)</option>
+                      <option value="csv">Spreadsheet (.csv)</option>
+                    </select>
+                    <button className="secondary-button export-button" type="button" onClick={() => void exportSelectedNote()} disabled={!selectedNoteId || !noteTitle.trim() || !noteContent.trim()}>
+                      <Download size={14} /> Export this note
+                    </button>
+                  </div>
+                  {selectedNoteId && <button className="secondary-button note-delete-button" type="button" onClick={() => {
+                    const note = notes.find((item) => item.id === selectedNoteId);
+                    if (note) void removeNote(note.id);
+                  }} disabled={!notes.some((note) => note.id === selectedNoteId)}><Trash2 size={13} /> Delete selected note</button>}
+                </div>
               </div>
             </div>
             {artifactMessage && <p className={artifactMessage.toLowerCase().includes("could not") || artifactMessage.toLowerCase().includes("error") || artifactMessage.toLowerCase().includes("failed") ? "error-box" : "helper-text"} role="status">{artifactMessage}</p>}
