@@ -3,7 +3,7 @@
 **Last repository inspection:** 2026-11-26  
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
-**Current phase:** Phase 4 — local learning notes and bookmarks implementation. YouTube visible-caption capture is user-tested; audio transcription is paused for later Phase 3 follow-up.
+**Current phase:** Phase 5 — quiz and learning loop implementation. Phase 4 runtime testing is intentionally open until the user has desktop access. YouTube visible-caption capture is user-tested; audio transcription is paused for later Phase 3 follow-up.
 
 > Read this file first on every returning session. File existence does not prove runtime completion. Verify against code, CI, and browser behavior.
 
@@ -370,3 +370,39 @@ Next exact task:
 - Artifact: `learnlens-chrome-extension`, ID `15074252931`, 116,965 bytes, expires 2026-12-10.
 - This verifies CI only. The artifact has not yet been loaded in Chrome for Phase 4 runtime QA. Audio transcription remains paused and unverified.
 - Next: provide artifact for desktop Chrome runtime testing, then fix any observed Phase 4 issues before proceeding to quiz/revision work.
+
+
+## 23. Phase 4 completion checkpoint and Phase 5 implementation — 2026-11-26
+
+User direction:
+- The user is temporarily away from their PC.
+- Finish Phase 4 implementation, keep Chrome runtime QA open, and proceed with Phase 5 before combining Phase 4 and Phase 5 testing.
+- Audio transcription remains deferred; do not restart Phase 3 work until requested after this sequence.
+
+Phase 4 additions since checkpoint 22:
+- `f708c5d`, `dee755a`, `dd3d298`, `640549d`, `5c502f6` — added saved lesson listing, newest-first ordering, restore controls, and compact history UI.
+- Added integration test for saved lesson history ordering.
+- Markdown export remains the supported export. PDF is intentionally deferred because the current extension does not yet have a high-quality print layout and adding a PDF dependency is not justified before runtime QA.
+- Phase 4 implementation is feature-complete in code; Chrome runtime verification remains open.
+
+Phase 5 implementation added:
+- `92d4666`, `c12707c`, `e831a78`, `134882a`, `8071d42`, `42ea258`, `4eeaa9d`, `0f10541` — added typed quiz/question/attempt schemas, strict model-response parsing, transcript-evidence validation, objective scoring, advisory short-answer feedback parsing, and unit tests.
+- `81750f0`, `469bcdc`, `22c102c`, `7c4872e` — upgraded IndexedDB to version 4 with local quiz and attempt stores, indexes, CRUD/list APIs, and cascade deletion.
+- `0096e47`, `dd8f085` — added hybrid-inference quiz generation using the same selected inference preference as the tutor.
+- `ae6bb9a`, `f883e67`, `d5648aa`, `b2774d6`, `2ceb029`, `af51cd0`, `eebd3ae`, `4e69770`, `7d331ba`, `2d3c60c`, `607bffe`, `df66812` — added quiz studio UI, whole-lesson/topic/timestamp-range generation, objective scoring, advisory short-answer feedback, attempt history, topics-to-revisit summary, saved lesson restore, and session-switch safeguards.
+- Quiz generation rejects malformed JSON, unsupported question types, invalid answer options, duplicate IDs/options, and evidence quotes not found in the selected transcript segments. All three supported question types are required in each generated quiz.
+- Objective questions are scored deterministically. Short-answer feedback is generated in one model request per attempt, labeled advisory, and excluded from the objective score.
+- Actual inference source is included in the quiz-generation status message.
+- Quizzes, attempts, and weak-topic history are local to the saved lesson. Deleting a lesson removes all associated artifacts.
+
+Verification status:
+- Existing Phase 4 CI run 45725960100 verified the prior notes/bookmarks implementation.
+- New Phase 4 history and Phase 5 work is awaiting a successful CI run on the latest commit. The latest code checkpoint before this documentation update was `7d331bab27f2bd83c1cb511ee9f57843bfa12401`; later commits add documentation and final small refinements.
+- Do not claim Phase 4/5 CI success until the latest workflow passes typecheck, unit tests, production build, extension package verification, and artifact upload.
+- No Chrome runtime tests have been run for the new Phase 4 history or Phase 5 quiz workflow. Both phases must be tested together when the user has PC access.
+
+Next:
+1. Inspect latest CI and fix every type/test/build failure.
+2. Confirm the final Phase 4/5 artifact is uploaded.
+3. Keep both phases runtime QA open; do not start Phase 6 until the user tests the combined build and fixes are completed.
+4. Return to Phase 3 audio transcription only after Phase 4/5 verification or if the user explicitly changes priority.
