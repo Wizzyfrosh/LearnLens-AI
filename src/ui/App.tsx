@@ -1150,7 +1150,6 @@ export default function App() {
             setError("");
           }} placeholder="Paste transcript text here..." rows={4} />
         </details>
-        </>}
       </section>
 
       {activeTab === "tutor" && <section className="section-block tutor-block">
