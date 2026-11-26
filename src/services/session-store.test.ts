@@ -94,20 +94,22 @@ describe("local learning artifact storage", () => {
       blockedReason: null
     });
 
-    const schema = await new Promise<{ version: number; indexes: string[] }>((resolve, reject) => {
+    const schema = await new Promise<{ version: number; indexes: string[]; hasRequestStore: boolean }>((resolve, reject) => {
       const request = indexedDB.open("learnlens-local");
       request.onsuccess = () => {
         const database = request.result;
         resolve({
           version: database.version,
-          indexes: Array.from(database.transaction("syncOutbox").objectStore("syncOutbox").indexNames)
+          indexes: Array.from(database.transaction("syncOutbox").objectStore("syncOutbox").indexNames),
+          hasRequestStore: database.objectStoreNames.contains("syncRequests")
         });
         database.close();
       };
       request.onerror = () => reject(request.error);
     });
-    expect(schema.version).toBe(8);
+    expect(schema.version).toBe(9);
     expect(schema.indexes).toContain("ownerUidEntityTypeQueuedAtMs");
+    expect(schema.hasRequestStore).toBe(true);
   });
 
   it("upgrades version 5 without changing existing learning records and creates empty sync stores", async () => {
