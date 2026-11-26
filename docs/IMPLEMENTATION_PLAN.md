@@ -107,11 +107,11 @@ Exit: on a Chrome version/configuration with verified App Check and Firebase aud
 - [x] Export saved notes as PDF (print dialog / Save as PDF), Word-compatible DOC, TXT, Markdown, and CSV.
 - [x] Upgrade IndexedDB from schema v4 to v5, retaining notes and quiz history while removing note timestamp fields and the retired bookmark object store.
 - [x] Add migration tests for v3 and v4 databases, including preservation of v4 notes, quizzes, and attempts.
-- [ ] Verify the new notes experience in desktop Chrome: schema migration, extension reload, lesson restore, generated-note persistence, editing/autosave, deletion, and all export formats.
+- [x] Verify the new notes experience in desktop Chrome: schema migration, extension reload, lesson restore, generated-note persistence, editing/autosave, deletion, and all export formats.
 
 **Decision:** Timestamp bookmarks were removed because the learner wants one saved-notes workflow. The v5 migration deletes the legacy bookmark store; existing notes and quiz history are retained.
 
-Exit: Phase 4 implementation and automated checks pass. Final sign-off still requires the desktop Chrome persistence/export smoke test.
+Exit: Phase 4 implementation, automated checks, and desktop Chrome runtime verification passed. Phase 4 is complete.
 
 ### Phase 5 — Quiz and learning loop
 - [x] Define validated quiz/question and attempt schemas.
@@ -126,9 +126,9 @@ Exit: Phase 4 implementation and automated checks pass. Final sign-off still req
 - [x] Add quiz-history review so previous attempts reopen with their original answers and feedback.
 - [x] Track topics to revisit and keep open-ended AI feedback separate from objective scoring.
 - [x] Add unit tests for invalid AI output, unsupported evidence/options, objective scoring, feedback validation, and IndexedDB quiz/attempt persistence.
-- [ ] Verify updated answer-state visuals and saved-attempt review in desktop Chrome.
+- [x] Verify updated answer-state visuals and saved-attempt review in desktop Chrome.
 
-Exit: Phase 5 implementation and automated checks pass. Final sign-off still requires checking the updated grading UI and reopening a saved attempt in desktop Chrome.
+Exit: Phase 5 implementation, automated checks, and desktop Chrome runtime verification passed. Phase 5 is complete.
 
 
 ### Phase 6 — Optional cloud sync
@@ -244,4 +244,11 @@ Next exit criteria:
 - Quiz generation now requires each multiple-choice and short-answer answer key to be a verbatim contiguous phrase from transcript text, increases cloud output budget, and makes up to two validation repair attempts after the initial generation.
 - Added a 10-question transcript-grounded quiz validation regression test.
 - CI: run 45886269511 passed typecheck, unit tests, production build, Chrome package verification, and artifact upload.
-- Runtime validation of the updated navigation/export behavior and a real 10-question generation still requires desktop Chrome. Keep final sign-off open until the user confirms those two tests.
+- User completed desktop Chrome runtime testing of the updated notes navigation, selected-note exports, and 10-question quiz generation; all tested behaviors passed. Phase 4 and Phase 5 are signed off.
+
+
+## 12. Phase 4–5 runtime sign-off — 2026-11-26
+- User confirmed all Phase 4 and Phase 5 runtime tests passed in desktop Chrome.
+- Confirmed areas include note navigation and selected-note-only exports, plus successful 10-question quiz generation with transcript-grounded answer validation.
+- Phase 4 and Phase 5 are complete. Do not reopen their smoke tests unless a regression is reported.
+- Next roadmap phase: Phase 6 — Optional cloud sync. Keep cloud sync opt-in; do not change the local-first default or upload lesson transcripts by default.
