@@ -761,8 +761,9 @@ export default function App() {
             preference
           );
           const feedbackById = parseShortAnswerFeedback(feedbackReply.text, shortQuestions.map((question) => question.id));
-          for (const result of results) {
-            if (feedbackById[result.questionId]) result.feedback = feedbackById[result.questionId];
+          for (const question of shortQuestions) {
+            const result = results.find((item) => item.questionId === question.id);
+            if (result) result.feedback = feedbackById[question.id] ?? "AI feedback was unavailable for this response. Review the expected answer and explanation.";
           }
         } catch {
           for (const result of results) {
