@@ -160,7 +160,7 @@ export function scoreObjectiveAnswers(
   const results = questions.map((question) => {
     const answer = (answers[question.id] ?? "").trim();
     if (question.type === "short_answer") {
-      return { questionId: question.id, answer, correct: null, feedback: "Open-ended response requires AI feedback; it is not included in the objective score." };
+      return { questionId: question.id, answer, correct: null, feedback: answer ? "AI feedback is pending; this response is not included in the objective score." : "No answer submitted. Expected answer: " + question.correctAnswer };
     }
     total += 1;
     const correct = answer.toLocaleLowerCase() === question.correctAnswer.toLocaleLowerCase();
