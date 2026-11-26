@@ -1,6 +1,6 @@
 import type { TranscriptFormat } from "./transcript";
 import type { QuizAttempt, QuizDefinition } from "./quiz";
-import { toLessonMetadataDto } from "./sync-dto";
+import { toAttemptSyncDto, toLessonMetadataDto, toNoteSyncDto, toQuizSyncDto } from "./sync-dto";
 
 export interface LearningSession {
   id: string;
@@ -782,5 +782,129 @@ export async function getLocalSyncCandidateCounts(ownerUid: string): Promise<Syn
     }
     transaction.onerror = () => reject(transaction.error ?? new Error("Could not count local sync candidates."));
     transaction.onabort = () => reject(transaction.error ?? new Error("Counting local sync candidates was cancelled."));
+  }).finally(() => database.close());
+}
+
+
+export interface SyncClaimResult {
+  claimed: Record<SyncCategory, number>;
+  alreadyOwned: Record<SyncCategory, number>;
+  skippedOtherAccount: Record<SyncCategory, number>;
+  skippedInvalid: Record<SyncCategory, number>;
+  totalQueued: number;
+}
+
+/**
+ * Claims the currently selected local records for one verified account.
+ * The ownership metadata and payload-free outbox entries are committed atomically.
+ * DTO mappers are run as a privacy/size validation gate; their payloads are discarded.
+ */
+export async function claimSelectedLocalSyncRecords(
+  ownerUid: string,
+  categories: SyncCategoryPreferences
+): Promise<SyncClaimResult> {
+  validateSyncIdentity(ownerUid, "account ID");
+  for (const value of Object.values(categories)) {
+    if (typeof value !== "boolean") throw new Error("Invalid local sync category selection.");
+  }
+  const emptyCounts = (): Record<SyncCategory, number> => ({
+    lessonMetadata: 0, notes: 0, quizzes: 0, attempts: 0
+  });
+  const result: SyncClaimResult = {
+    claimed: emptyCounts(), alreadyOwned: emptyCounts(),
+    skippedOtherAccount: emptyCounts(), skippedInvalid: emptyCounts(), totalQueued: 0
+  };
+  if (!Object.values(categories).some(Boolean)) return result;
+
+  const database = await openDatabase();
+  return new Promise<SyncClaimResult>((resolve, reject) => {
+    const transaction = database.transaction(
+      [SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE],
+      "readwrite"
+    );
+    const sessions = transaction.objectStore(SESSION_STORE);
+    const notes = transaction.objectStore(NOTE_STORE);
+    const quizzes = transaction.objectStore(QUIZ_STORE);
+    const attempts = transaction.objectStore(QUIZ_ATTEMPT_STORE);
+    const metadataStore = transaction.objectStore(SYNC_METADATA_STORE);
+    const outboxStore = transaction.objectStore(SYNC_OUTBOX_STORE);
+    const requests = [
+      sessions.getAll(), notes.getAll(), quizzes.getAll(), attempts.getAll(), metadataStore.getAll()
+    ];
+    const values: unknown[][] = [[], [], [], [], []];
+    let completed = 0;
+
+    const process = () => {
+      const metadata = new Map((values[4] as SyncMetadataRecord[]).map((entry) => [entry.entityKey, entry]));
+      const groups: Array<{
+        category: SyncCategory; type: SyncEntityType;
+        records: Array<LearningSession | LearningNote | QuizDefinition | QuizAttempt>;
+        validate: (record: LearningSession | LearningNote | QuizDefinition | QuizAttempt) => unknown;
+      }> = [
+        { category: "lessonMetadata", type: "lesson", records: values[0] as LearningSession[], validate: (record) => toLessonMetadataDto(record as LearningSession) },
+        { category: "notes", type: "note", records: values[1] as LearningNote[], validate: (record) => toNoteSyncDto(record as LearningNote) },
+        { category: "quizzes", type: "quiz", records: values[2] as QuizDefinition[], validate: (record) => toQuizSyncDto(record as QuizDefinition) },
+        { category: "attempts", type: "attempt", records: values[3] as QuizAttempt[], validate: (record) => toAttemptSyncDto(record as QuizAttempt) }
+      ];
+      for (const group of groups) {
+        if (!categories[group.category]) continue;
+        for (const record of group.records) {
+          const entity = record as LearningSession & LearningNote & QuizDefinition & QuizAttempt;
+          const lessonId = group.type === "lesson" ? entity.id : entity.sessionId;
+          const entityId = entity.id;
+          let entityKey: string;
+          try {
+            validateSyncIdentity(lessonId, "lesson ID");
+            validateSyncIdentity(entityId, "entity ID");
+            entityKey = syncEntityKey(group.type, lessonId, entityId);
+            group.validate(record);
+          } catch {
+            result.skippedInvalid[group.category] += 1;
+            continue;
+          }
+          const existing = metadata.get(entityKey);
+          if (existing && existing.ownerUid !== ownerUid) {
+            result.skippedOtherAccount[group.category] += 1;
+            continue;
+          }
+          const wasOwned = Boolean(existing);
+          const claim: SyncMetadataRecord = existing ?? {
+            entityKey, entityType: group.type, lessonId, entityId, ownerUid,
+            remoteRevision: 0, lastSyncedAtMs: null, syncCategory: group.category
+          };
+          metadataStore.put(claim);
+          if (wasOwned) result.alreadyOwned[group.category] += 1;
+          else result.claimed[group.category] += 1;
+
+          const pending = outboxStore.get(entityKey);
+          pending.onsuccess = () => {
+            const prior = pending.result as SyncOutboxRecord | undefined;
+            if (prior && prior.ownerUid !== ownerUid) {
+              transaction.abort();
+              return;
+            }
+            if (!prior || prior.operation !== "upsert") {
+              outboxStore.put({
+                entityKey, operationId: crypto.randomUUID(), ownerUid,
+                entityType: group.type, lessonId, entityId, operation: "upsert",
+                baseRevision: claim.remoteRevision, payloadSchemaVersion: 1,
+                queuedAtMs: Date.now(), retryCount: 0
+              } satisfies SyncOutboxRecord);
+              result.totalQueued += 1;
+            }
+          };
+        }
+      }
+    };
+    requests.forEach((request, index) => {
+      request.onsuccess = () => {
+        values[index] = request.result as unknown[];
+        completed += 1;
+        if (completed === requests.length) process();
+      };
+    });
+    transaction.oncomplete = () => resolve(result);
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not claim selected local records."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Claim cancelled because local account ownership changed."));
   }).finally(() => database.close());
 }
