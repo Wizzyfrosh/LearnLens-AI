@@ -930,21 +930,37 @@ export default function App() {
     try {
       let generated = await generateQuizText(quizSegments, preference, quizQuestionCount, setProgress, focusInstruction);
       if (activeSessionIdRef.current !== targetSessionId) return;
-      let questions;
-      try {
-        questions = validateQuizResponse(generated.text, quizSegments);
-      } catch (validationCause) {
-        const reason = validationCause instanceof Error ? validationCause.message : "The response did not match the quiz schema.";
-        setQuizMessage("The first AI response did not pass validation. Retrying once with the validation feedback...");
-        generated = await generateQuizText(
-          quizSegments,
-          preference,
-          quizQuestionCount,
-          setProgress,
-          [focusInstruction, "The previous response was rejected because: " + reason, "Return complete valid JSON with exactly the requested number of questions. Every evidence value must be copied exactly from the transcript. Every correct answer must satisfy the question type and be supported by the transcript."].filter(Boolean).join("\n")
-        );
-        if (activeSessionIdRef.current !== targetSessionId) return;
-        questions = validateQuizResponse(generated.text, quizSegments);
+      let questions: ReturnType<typeof validateQuizResponse> | null = null;
+      let validationError: unknown = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (attempt > 0) {
+          const reason = validationError instanceof Error ? validationError.message : "The previous response did not match the quiz schema.";
+          setQuizMessage("The AI quiz needs a transcript-grounding correction. Regenerating the full quiz (attempt " + (attempt + 1) + " of 3)...");
+          generated = await generateQuizText(
+            quizSegments,
+            preference,
+            quizQuestionCount,
+            setProgress,
+            [
+              focusInstruction,
+              "The previous response was rejected by strict transcript validation: " + reason,
+              "Correct the reported question. Do not merely change its explanation. Every multiple_choice and short_answer correctAnswer must be copied as an exact contiguous phrase from the lesson transcript, preserving the original word order. For multiple_choice, the matching correct option must use that same verbatim phrase. Do not use synonyms, inferred conclusions, or outside facts as answer keys.",
+              "Keep every question type valid, include all three question types, return exactly " + quizQuestionCount + " distinct questions, and return complete JSON only."
+            ].filter(Boolean).join("\n")
+          );
+          if (activeSessionIdRef.current !== targetSessionId) return;
+        }
+        try {
+          questions = validateQuizResponse(generated.text, quizSegments);
+          validationError = null;
+          break;
+        } catch (cause) {
+          validationError = cause;
+        }
+      }
+      if (!questions) {
+        const reason = validationError instanceof Error ? validationError.message : "The AI response did not pass strict quiz validation.";
+        throw new Error("The AI could not produce a fully transcript-grounded quiz after three attempts. " + reason);
       }
       const quiz: QuizDefinition = {
         id: crypto.randomUUID(),
