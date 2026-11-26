@@ -88,6 +88,8 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<number | null>(null);
+  const activeSessionIdRef = useRef(sessionId);
+  activeSessionIdRef.current = sessionId;
 
   useEffect(() => {
     let cancelled = false;
@@ -545,6 +547,9 @@ export default function App() {
       setArtifactMessage("Capture or load lesson transcript text before drafting notes.");
       return;
     }
+    const targetSessionId = sessionId;
+    const targetSegments = segments;
+    const targetTitle = video.title;
     setDraftingNote(true);
     setArtifactMessage("Generating a draft from the current lesson transcript. Review it before saving.");
     try {
@@ -554,6 +559,7 @@ export default function App() {
         preference,
         setProgress
       );
+      if (activeSessionIdRef.current !== targetSessionId) return;
       const lines = draft.text.split("\n");
       const firstLine = lines.find((line) => line.trim())?.replace(/^#+\s*/, "").trim();
       setNoteTitle(firstLine || "Study notes");
@@ -678,6 +684,7 @@ export default function App() {
       setQuizMessage("Save a lesson with transcript content before generating a quiz.");
       return;
     }
+    const targetSessionId = sessionId;
     let quizSegments = segments;
     let scopeLabel = "Whole lesson";
     let focusInstruction = "";
@@ -710,9 +717,10 @@ export default function App() {
     try {
       const generated = await generateQuizText(quizSegments, preference, quizQuestionCount, setProgress, focusInstruction);
       const questions = validateQuizResponse(generated.text, quizSegments);
+      if (activeSessionIdRef.current !== targetSessionId) return;
       const quiz: QuizDefinition = {
         id: crypto.randomUUID(),
-        sessionId,
+        sessionId: targetSessionId,
         title: video.title ? video.title + " quiz" : "Lesson quiz",
         scope: quizScope,
         scopeLabel,
@@ -735,6 +743,7 @@ export default function App() {
   async function submitLessonQuiz(event: FormEvent) {
     event.preventDefault();
     if (!activeQuiz || !sessionId) return;
+    const targetSessionId = sessionId;
     setQuizGenerating(true);
     setQuizMessage("Scoring objective questions and preparing feedback for short answers...");
     try {
@@ -761,10 +770,11 @@ export default function App() {
           }
         }
       }
+      if (activeSessionIdRef.current !== targetSessionId) return;
       const attempt: QuizAttempt = {
         id: crypto.randomUUID(),
         quizId: activeQuiz.id,
-        sessionId,
+        sessionId: targetSessionId,
         createdAt: Date.now(),
         results,
         objectiveScore: scored.score,
