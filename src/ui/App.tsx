@@ -43,7 +43,8 @@ function formatLessonTime(seconds: number): string {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"lesson" | "notes" | "bookmarks" | "quiz" | "tutor" | "history">("lesson");
+  const overlayMode = new URLSearchParams(window.location.search).get("overlay") === "1";
+  const [activeTab, setActiveTab] = useState<"lesson" | "notes" | "bookmarks" | "quiz" | "tutor" | "history">(new URLSearchParams(window.location.search).get("workspace") === "quiz" ? "quiz" : "lesson");
   const [video, setVideo] = useState<VideoContext>(emptyContext);
   const [rawTranscript, setRawTranscript] = useState("");
   const [transcriptSource, setTranscriptSource] = useState("Pasted transcript");
@@ -681,6 +682,17 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
+  async function openFullScreenQuiz() {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      if (tab?.id === undefined) throw new Error("Open the YouTube lesson tab before opening the full-screen quiz.");
+      await chrome.tabs.sendMessage(tab.id, { type: "LEARNLENS_OPEN_QUIZ_OVERLAY" } satisfies ExtensionMessage);
+      setQuizMessage("Full-screen quiz opened over the lesson page. Your side panel remains available.");
+    } catch (cause) {
+      setQuizMessage(cause instanceof Error ? cause.message : "Could not open the full-screen quiz. Reload the YouTube tab and try again.");
+    }
+  }
+
   async function generateLessonQuiz() {
     if (!savedSession || !sessionId || !segments.length) {
       setQuizMessage("Save a lesson with transcript content before generating a quiz.");
@@ -819,11 +831,11 @@ export default function App() {
   }
 
   return (
-    <main className="shell">
+    <main className={overlayMode ? "shell overlay-shell" : "shell"}>
       <header className="topbar">
         <div className="brand-mark"><BrainCircuit size={21} /></div>
         <div><strong>LearnLens</strong><span>AI LEARNING COMPANION</span></div>
-        <div className="status-pill"><i /> Workspace</div>
+        {overlayMode ? <button className="overlay-close" type="button" onClick={() => window.parent.postMessage({ type: "LEARNLENS_CLOSE_OVERLAY" }, "*")} aria-label="Close full-screen quiz">Close <span>×</span></button> : <div className="status-pill"><i /> Workspace</div>}
       </header>
 
       <section className="video-card">
@@ -1028,6 +1040,7 @@ export default function App() {
               <span>{savedQuizzes.length} quizzes · {quizAttempts.length} attempts</span>
             </div>
             <p className="quiz-intro">Test what you understood from this lesson. Questions are checked against transcript evidence before they are saved.</p>
+            {!overlayMode && <button className="secondary-button full-quiz-button" type="button" onClick={() => void openFullScreenQuiz()}>Open full-screen quiz <span>↗</span></button>}
             <div className="quiz-controls">
               <label className="field-label" htmlFor="quiz-scope">Quiz coverage</label>
               <select id="quiz-scope" value={quizScope} onChange={(event) => setQuizScope(event.target.value as typeof quizScope)}>
