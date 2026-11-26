@@ -246,8 +246,18 @@ export function listQuizzes(sessionId: string): Promise<QuizDefinition[]> {
   });
 }
 
-export function deleteQuiz(id: string): Promise<void> {
-  return runTransaction<void>(QUIZ_STORE, "readwrite", (store) => { store.delete(id); });
+export async function deleteQuiz(id: string): Promise<void> {
+  const database = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction([QUIZ_STORE, QUIZ_ATTEMPT_STORE], "readwrite");
+    transaction.objectStore(QUIZ_STORE).delete(id);
+    const attempts = transaction.objectStore(QUIZ_ATTEMPT_STORE);
+    const request = attempts.index("quizId").getAllKeys(id);
+    request.onsuccess = () => { for (const key of request.result) attempts.delete(key); };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not remove the quiz and its attempts."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Quiz deletion was cancelled."));
+  }).finally(() => database.close());
 }
 
 export function saveQuizAttempt(attempt: QuizAttempt): Promise<void> {
