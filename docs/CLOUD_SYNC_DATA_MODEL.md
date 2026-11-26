@@ -209,7 +209,7 @@ One coalesced pending operation per entity:
 - `payloadSchemaVersion` and `queuedAtMs`.
 - Retry count and a bounded last-error code; do not store Firebase tokens or secrets.
 
-Implemented outbox records do not duplicate note/quiz payload contents. The future worker must read the latest local entity when processing an upsert. Delete operations need only identity and revision metadata. Outbox entries are coalesced per entity so rapid note autosaves do not create an unbounded write queue. **Remaining integration requirement:** local entity mutation and outbox mutation must be wired into the same IndexedDB transaction before any sync runner is enabled. The current v6 foundation exposes explicit claim/queue/ack/retry primitives; ordinary note/quiz/session saves do not enqueue operations yet.
+Implemented outbox records do not duplicate note/quiz payload contents. The future worker must read the latest local entity when processing an upsert. Delete operations need only identity and revision metadata. Outbox entries are coalesced per entity so rapid note autosaves do not create an unbounded write queue. Lesson metadata changes, note/quiz/attempt saves, note deletion, quiz deletion with attempt children, and lesson deletion with all child artifacts now enqueue account-claimed operations atomically with the local mutation. Transcript-only lesson autosaves do not enqueue lesson metadata. Unclaimed records remain local-only. The first-claim workflow must explicitly queue selected existing records after showing the learner a preview.
 
 ### Account claiming and switching
 
