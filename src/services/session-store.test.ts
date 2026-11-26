@@ -15,6 +15,7 @@ import {
   saveQuizAttempt,
   searchLearningNotes,
   acknowledgeSyncOperation,
+  markSyncOperationInFlight,
   claimSyncEntity,
   claimSelectedLocalSyncRecords,
   getLocalSyncClaimCandidates,
@@ -105,6 +106,7 @@ describe("local learning artifact storage", () => {
     await expect(claimSyncEntity({ ...claim, ownerUid: "user-b" })).rejects.toThrow();
     await expect(queueSyncOperation(claim.entityKey, "user-b", "upsert")).rejects.toThrow();
     await expect(acknowledgeSyncOperation(claim.entityKey, "user-a", "wrong-operation", 1)).rejects.toThrow();
+    await markSyncOperationInFlight(claim.entityKey, "user-a", first!.operationId, first!.baseRevision);
     await acknowledgeSyncOperation(claim.entityKey, "user-a", first!.operationId, 1);
     expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 1 });
     expect(await listSyncOutbox("user-a")).toEqual([]);
@@ -122,6 +124,56 @@ describe("local learning artifact storage", () => {
     expect(await listSyncOutbox("user-a")).toEqual([]);
   });
 
+  it("keeps a tombstone when a never-synced record is deleted during its in-flight create", async () => {
+    const note = {
+      id: "delete-flight-note", sessionId: "delete-flight-lesson", videoId: "delete-flight-lesson",
+      title: "Delete during upload", content: "Body", createdAt: 1, updatedAt: 2
+    };
+    await saveLearningNote(note);
+    const entityKey = "note:delete-flight-lesson:delete-flight-note";
+    await claimSyncEntity({
+      entityKey, entityType: "note", lessonId: "delete-flight-lesson",
+      entityId: "delete-flight-note", ownerUid: "user-a", syncCategory: "notes"
+    });
+    const create = await queueSyncOperation(entityKey, "user-a", "upsert");
+    await markSyncOperationInFlight(entityKey, "user-a", create!.operationId, create!.baseRevision);
+
+    await deleteLearningNote(note.id);
+    const [tombstone] = await listSyncOutbox("user-a");
+    expect(tombstone.operation).toBe("delete");
+    expect(tombstone.inFlightOperationId).toBe(create!.operationId);
+    expect(await getSyncMetadata(entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 0 });
+
+    await acknowledgeSyncOperation(entityKey, "user-a", create!.operationId, 1);
+    const [rebasedTombstone] = await listSyncOutbox("user-a");
+    expect(rebasedTombstone).toMatchObject({ operation: "delete", baseRevision: 1 });
+    expect(rebasedTombstone).not.toHaveProperty("inFlightOperationId");
+  });
+
+  it("clears a failed in-flight request without losing a newer queued edit", async () => {
+    const note = {
+      id: "retry-flight-note", sessionId: "retry-flight-lesson", videoId: "retry-flight-lesson",
+      title: "Retry note", content: "Original", createdAt: 1, updatedAt: 2
+    };
+    await saveLearningNote(note);
+    const entityKey = "note:retry-flight-lesson:retry-flight-note";
+    await claimSyncEntity({
+      entityKey, entityType: "note", lessonId: "retry-flight-lesson",
+      entityId: "retry-flight-note", ownerUid: "user-a", syncCategory: "notes"
+    });
+    const first = await queueSyncOperation(entityKey, "user-a", "upsert");
+    await markSyncOperationInFlight(entityKey, "user-a", first!.operationId, first!.baseRevision);
+    await saveLearningNote({ ...note, content: "Latest", updatedAt: 3 });
+    const [latest] = await listSyncOutbox("user-a");
+
+    const { recordSyncRetry } = await import("./session-store");
+    await recordSyncRetry(entityKey, first!.operationId, "network_error");
+    const [ready] = await listSyncOutbox("user-a");
+    expect(ready.operationId).toBe(latest.operationId);
+    expect(ready).not.toHaveProperty("inFlightOperationId");
+    expect(ready.retryCount).toBe(0);
+  });
+
   it("rebases a newer local edit when an older in-flight operation is accepted", async () => {
     const note = {
       id: "stale-ack-note", sessionId: "stale-ack-lesson", videoId: "stale-ack-lesson",
@@ -136,11 +188,13 @@ describe("local learning artifact storage", () => {
     await claimSyncEntity(claim);
     const inFlight = await queueSyncOperation(claim.entityKey, "user-a", "upsert");
     expect(inFlight).not.toBeNull();
+    await markSyncOperationInFlight(claim.entityKey, "user-a", inFlight!.operationId, inFlight!.baseRevision);
 
     await saveLearningNote({ ...note, content: "Newer body", updatedAt: 3 });
     const [latest] = await listSyncOutbox("user-a");
     expect(latest.operationId).not.toBe(inFlight!.operationId);
     expect(latest.retryCount).toBe(0);
+    expect(latest.inFlightOperationId).toBe(inFlight!.operationId);
 
     // The older request succeeded remotely. Its acknowledgement advances the
     // remote revision, but must not clear the newer pending local operation.
@@ -149,6 +203,7 @@ describe("local learning artifact storage", () => {
     expect(await listSyncOutbox("user-a")).toMatchObject([{
       operationId: latest.operationId, baseRevision: 1, operation: "upsert"
     }]);
+    await markSyncOperationInFlight(claim.entityKey, "user-a", latest.operationId, 1);
 
     await acknowledgeSyncOperation(claim.entityKey, "user-a", latest.operationId, 2);
     expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 2 });
@@ -218,10 +273,517 @@ describe("local learning artifact storage", () => {
       { entityKey: `attempt:${sessionId}:${attempt.id}`, entityType: "attempt" as const, lessonId: sessionId, entityId: attempt.id, syncCategory: "attempts" as const }
     ];
     for (const claim of claims) await claimSyncEntity({ ...claim, ownerUid: "user-a" });
-    for (const claim of claims) await acknowledgeSyncOperation(
-      claim.entityKey, "user-a",
-      (await queueSyncOperation(claim.entityKey, "user-a", "upsert"))!.operationId, 1
-    );
+    for (const claim of claims) {
+      const queued = await queueSyncOperation(claim.entityKey, "user-a", "upsert");
+      await markSyncOperationInFlight(claim.entityKey, "user-a", queued!.operationId, queued!.baseRevision);
+      await acknowledgeSyncOperation(claim.entityKey, "user-a", queued!.operationId, 1);
+    }
+    await deleteLearningSession(sessionId);
+    const queued = await listSyncOutbox("user-a");
+    expect(queued).toHaveLength(4);
+    expect(queued.every((entry) => entry.operation === "delete" && entry.baseRevision === 1)).toBe(true);
+    expect(await listLearningNotes(sessionId)).toEqual([]);
+    expect(await listQuizzes(sessionId)).toEqual([]);
+    expect(await listQuizAttempts(sessionId)).toEqual([]);
+  });
+
+  it("rejects sync metadata with a mismatched entity key or category", async () => {
+    await expect(claimSyncEntity({
+      entityKey: "note:lesson-1:other-note", entityType: "note",
+      lessonId: "lesson-1", entityId: "note-1", ownerUid: "user-a",
+      syncCategory: "notes"
+    })).rejects.toThrow(/entity key/i);
+    await expect(claimSyncEntity({
+      entityKey: "note:lesson-1:note-1", entityType: "note",
+      lessonId: "lesson-1", entityId: "note-1", ownerUid: "user-a",
+      syncCategory: "quizzes"
+    })).rejects.toThrow(/category/i);
+  });
+
+  it("stores category choices locally per account without enabling uploads", async () => {
+    const defaults = await getLocalSyncPreferences("user-a");
+    expect(defaults.categories).toEqual({
+      lessonMetadata: false, notes: false, quizzes: false, attempts: false
+    });
+    await saveLocalSyncPreferences("user-a", {
+      lessonMetadata: false, notes: true, quizzes: true, attempts: false
+    });
+    await saveLocalSyncPreferences("user-b", {
+      lessonMetadata: true, notes: false, quizzes: false, attempts: true
+    });
+    expect(await getLocalSyncPreferences("user-a")).toMatchObject({
+      categories: { lessonMetadata: false, notes: true, quizzes: true, attempts: false }
+    });
+    expect(await getLocalSyncPreferences("user-b")).toMatchObject({
+      categories: { lessonMetadata: true, notes: false, quizzes: false, attempts: true }
+    });
+  });
+
+  it("previews counts by category and account ownership without returning lesson content", async () => {
+    await saveLearningSession({
+      id: "preview-lesson", videoId: "preview-lesson", title: "Preview lesson",
+      url: "https://www.youtube.com/watch?v=preview-lesson", platform: "youtube",
+      transcriptText: "Private transcript must not be returned", transcriptFormat: "plain-text",
+      transcriptSource: "captions", updatedAt: 1
+    });
+    await saveLearningNote({
+      id: "preview-note", sessionId: "preview-lesson", videoId: "preview-lesson",
+      title: "Preview note", content: "Private note body", createdAt: 1, updatedAt: 1
+    });
+    await saveQuiz({
+      id: "preview-quiz", sessionId: "preview-lesson", title: "Preview quiz",
+      scope: "whole_lesson", scopeLabel: "Whole lesson", createdAt: 1, questions: []
+    });
+    await saveQuizAttempt({
+      id: "preview-attempt", quizId: "preview-quiz", sessionId: "preview-lesson",
+      createdAt: 1, results: [], objectiveScore: 0, objectiveTotal: 0, topicsToReview: []
+    });
+    await claimSyncEntity({
+      entityKey: "note:preview-lesson:preview-note", entityType: "note",
+      lessonId: "preview-lesson", entityId: "preview-note", ownerUid: "user-a",
+      syncCategory: "notes"
+    });
+    await claimSyncEntity({
+      entityKey: "attempt:preview-lesson:preview-attempt", entityType: "attempt",
+      lessonId: "preview-lesson", entityId: "preview-attempt", ownerUid: "user-b",
+      syncCategory: "attempts"
+    });
+    const counts = await getLocalSyncCandidateCounts("user-a");
+    expect(counts.lessonMetadata).toMatchObject({ total: 1, unclaimed: 1 });
+    expect(counts.notes).toMatchObject({ total: 1, ownedByCurrentAccount: 1 });
+    expect(counts.quizzes).toMatchObject({ total: 1, unclaimed: 1 });
+    expect(counts.attempts).toMatchObject({ total: 1, ownedByOtherAccount: 1 });
+    expect(JSON.stringify(counts)).not.toContain("Private transcript");
+    expect(JSON.stringify(counts)).not.toContain("Private note body");
+  });
+
+  it("creates one stable installation-scoped device ID", async () => {
+    const first = await getOrCreateSyncDeviceId();
+    const second = await getOrCreateSyncDeviceId();
+    expect(first).toBe(second);
+    expect(first).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
+  it("creates the current schema and persists notes by session", async () => {
+    await saveLearningSession({
+      id: "video-1", videoId: "video-1", title: "Biology lesson",
+      url: "https://www.youtube.com/watch?v=video-1", platform: "youtube",
+      transcriptText: "Mitochondria produce ATP.", transcriptFormat: "plain-text",
+      transcriptSource: "YouTube live captions", updatedAt: 10
+    });
+    await saveLearningNote({
+      id: "note-1", sessionId: "video-1", videoId: "video-1",
+      title: "ATP production", content: "Mitochondria generate ATP through cellular respiration.",
+      createdAt: 11, updatedAt: 12
+    });
+    expect(await getLatestSessionForVideo("video-1")).toMatchObject({ title: "Biology lesson" });
+    expect(await listLearningNotes("video-1")).toMatchObject([{ id: "note-1", content: "Mitochondria generate ATP through cellular respiration." }]);
+  });
+
+
+  it("restores the most recently saved lesson even when it is a YouTube session", async () => {
+    await saveLearningSession({
+      id: "older-manual", videoId: "", title: "Imported lesson",
+      url: "", platform: "manual", transcriptText: "Older transcript",
+      transcriptFormat: "plain-text", transcriptSource: "Pasted transcript", updatedAt: 10
+    });
+    await saveLearningSession({
+      id: "newer-youtube", videoId: "youtube-lesson", title: "Latest YouTube lesson",
+      url: "https://www.youtube.com/watch?v=youtube-lesson", platform: "youtube",
+      transcriptText: "Latest transcript", transcriptFormat: "plain-text",
+      transcriptSource: "YouTube live captions", updatedAt: 20
+    });
+    const { getLatestSavedSession } = await import("./session-store");
+    expect(await getLatestSavedSession()).toMatchObject({ id: "newer-youtube", title: "Latest YouTube lesson" });
+  });
+
+  it("lists saved sessions newest first", async () => {
+    const base = {
+      videoId: "history-video", title: "History lesson",
+      url: "https://www.youtube.com/watch?v=history-video", platform: "youtube" as const,
+      transcriptText: "Lesson content", transcriptFormat: "plain-text" as const,
+      transcriptSource: "YouTube live captions"
+    };
+    await saveLearningSession({ ...base, id: "older", updatedAt: 10 });
+    await saveLearningSession({ ...base, id: "newer", updatedAt: 20, title: "Newer lesson" });
+    expect((await listLearningSessions()).map((session) => session.id)).toEqual(["newer", "older"]);
+  });
+
+  it("searches notes case-insensitively and supports updates and deletion", async () => {
+    const note = {
+      id: "note-2", sessionId: "video-2", videoId: "video-2",
+      title: "Photosynthesis", content: "Chlorophyll absorbs light energy.",
+      timestampSeconds: null, createdAt: 1, updatedAt: 1
+    };
+    await saveLearningNote(note);
+    await saveLearningNote({ ...note, content: "Chlorophyll absorbs sunlight.", updatedAt: 2 });
+    expect(await searchLearningNotes("video-2", "CHLOROPHYLL")).toHaveLength(1);
+    expect((await listLearningNotes("video-2"))[0].content).toBe("Chlorophyll absorbs sunlight.");
+    await deleteLearningNote("note-2");
+    expect(await listLearningNotes("video-2")).toEqual([]);
+  });
+
+  it("removes a session and its associated notes atomically", async () => {
+    await saveLearningSession({
+      id: "remove-me", videoId: "remove-me", title: "Temporary lesson",
+      url: "https://www.youtube.com/watch?v=remove-me", platform: "youtube",
+      transcriptText: "Temporary", transcriptFormat: "plain-text",
+      transcriptSource: "YouTube live captions", updatedAt: 1
+    });
+    await saveLearningNote({
+      id: "remove-note", sessionId: "remove-me", videoId: "remove-me",
+      title: "Temporary note", content: "Delete with parent session.",
+      createdAt: 1, updatedAt: 1
+    });
+    await deleteLearningSession("remove-me");
+    expect(await getLatestSessionForVideo("remove-me")).toBeNull();
+    expect(await listLearningNotes("remove-me")).toEqual([]);
+  });
+
+  it("persists quizzes and attempts by lesson and deletes them with the session", async () => {
+    await saveLearningSession({ id: "quiz-lesson", videoId: "quiz-lesson", title: "Quiz lesson", url: "https://www.youtube.com/watch?v=quiz-lesson", platform: "youtube", transcriptText: "Lesson", transcriptFormat: "plain-text", transcriptSource: "YouTube live captions", updatedAt: 1 });
+    const quiz = { id: "quiz-1", sessionId: "quiz-lesson", title: "Lesson quiz", scope: "whole_lesson" as const, scopeLabel: "Whole lesson", createdAt: 10, questions: [] };
+    const attempt = { id: "attempt-1", quizId: "quiz-1", sessionId: "quiz-lesson", createdAt: 20, results: [], objectiveScore: 1, objectiveTotal: 2, topicsToReview: ["Photosynthesis"] };
+    await saveQuiz(quiz);
+    await saveQuizAttempt(attempt);
+    expect(await listQuizzes("quiz-lesson")).toMatchObject([{ id: "quiz-1" }]);
+    expect(await listQuizAttempts("quiz-lesson")).toMatchObject([{ id: "attempt-1", topicsToReview: ["Photosynthesis"] }]);
+    await deleteQuiz("quiz-1");
+    expect(await listQuizzes("quiz-lesson")).toEqual([]);
+    expect(await listQuizAttempts("quiz-lesson")).toEqual([]);
+    await saveQuiz(quiz);
+    await deleteLearningSession("quiz-lesson");
+    expect(await listQuizzes("quiz-lesson")).toEqual([]);
+    expect(await listQuizAttempts("quiz-lesson")).toEqual([]);
+  });
+
+  it("upgrades a version-3 database, preserves notes, and retires timestamp bookmarks", async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local", 3);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        const sessions = database.createObjectStore("learningSessions", { keyPath: "id" });
+        sessions.createIndex("videoId", "videoId", { unique: false });
+        sessions.createIndex("updatedAt", "updatedAt", { unique: false });
+        sessions.createIndex("platform", "platform", { unique: false });
+        const notes = database.createObjectStore("learningNotes", { keyPath: "id" });
+        notes.createIndex("sessionId", "sessionId", { unique: false });
+        notes.createIndex("videoId", "videoId", { unique: false });
+        notes.createIndex("updatedAt", "updatedAt", { unique: false });
+        const bookmarks = database.createObjectStore("learningBookmarks", { keyPath: "id" });
+        bookmarks.createIndex("sessionId", "sessionId", { unique: false });
+        bookmarks.createIndex("videoId", "videoId", { unique: false });
+        bookmarks.createIndex("timestampSeconds", "timestampSeconds", { unique: false });
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(["learningSessions", "learningNotes", "learningBookmarks"], "readwrite");
+        transaction.objectStore("learningSessions").put({
+          id: "v3-lesson", videoId: "v3-lesson", title: "Existing lesson",
+          url: "https://www.youtube.com/watch?v=v3-lesson", platform: "youtube",
+          transcriptText: "Existing transcript", transcriptFormat: "plain-text",
+          transcriptSource: "YouTube live captions", updatedAt: 10
+        });
+        transaction.objectStore("learningNotes").put({
+          id: "v3-note", sessionId: "v3-lesson", videoId: "v3-lesson",
+          title: "Existing note", content: "Keep this note", timestampSeconds: 12,
+          createdAt: 10, updatedAt: 10
+        });
+        transaction.objectStore("learningBookmarks").put({
+          id: "v3-bookmark", sessionId: "v3-lesson", videoId: "v3-lesson",
+          label: "Keep this bookmark", timestampSeconds: 12, createdAt: 10
+        });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    expect(await getLatestSessionForVideo("v3-lesson")).toMatchObject({ title: "Existing lesson" });
+    expect(await listLearningNotes("v3-lesson")).toMatchObject([{ id: "v3-note", content: "Keep this note" }]);
+    expect((await listLearningNotes("v3-lesson"))[0]).not.toHaveProperty("timestampSeconds");
+    const upgraded = await new Promise<DOMStringList>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local");
+      request.onsuccess = () => { const database = request.result; const names = database.objectStoreNames; database.close(); resolve(names); };
+      request.onerror = () => reject(request.error);
+    });
+    expect(Array.from(upgraded)).not.toContain("learningBookmarks");
+    expect(await listQuizzes("v3-lesson")).toEqual([]);
+    expect(await listQuizAttempts("v3-lesson")).toEqual([]);
+  });
+
+  it("migrates real version-4 data without losing notes or quiz history", async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local", 4);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        const sessions = database.createObjectStore("learningSessions", { keyPath: "id" });
+        sessions.createIndex("videoId", "videoId", { unique: false });
+        sessions.createIndex("updatedAt", "updatedAt", { unique: false });
+        sessions.createIndex("platform", "platform", { unique: false });
+        const notes = database.createObjectStore("learningNotes", { keyPath: "id" });
+        notes.createIndex("sessionId", "sessionId", { unique: false });
+        notes.createIndex("videoId", "videoId", { unique: false });
+        notes.createIndex("updatedAt", "updatedAt", { unique: false });
+        const bookmarks = database.createObjectStore("learningBookmarks", { keyPath: "id" });
+        bookmarks.createIndex("sessionId", "sessionId", { unique: false });
+        bookmarks.createIndex("videoId", "videoId", { unique: false });
+        bookmarks.createIndex("timestampSeconds", "timestampSeconds", { unique: false });
+        const quizzes = database.createObjectStore("learningQuizzes", { keyPath: "id" });
+        quizzes.createIndex("sessionId", "sessionId", { unique: false });
+        quizzes.createIndex("createdAt", "createdAt", { unique: false });
+        const attempts = database.createObjectStore("quizAttempts", { keyPath: "id" });
+        attempts.createIndex("sessionId", "sessionId", { unique: false });
+        attempts.createIndex("quizId", "quizId", { unique: false });
+        attempts.createIndex("createdAt", "createdAt", { unique: false });
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(
+          ["learningSessions", "learningNotes", "learningBookmarks", "learningQuizzes", "quizAttempts"],
+          "readwrite"
+        );
+        transaction.objectStore("learningSessions").put({
+          id: "v4-lesson", videoId: "v4-lesson", title: "Existing v4 lesson",
+          url: "https://www.youtube.com/watch?v=v4-lesson", platform: "youtube",
+          transcriptText: "Existing transcript", transcriptFormat: "plain-text",
+          transcriptSource: "YouTube live captions", updatedAt: 30
+        });
+        transaction.objectStore("learningNotes").put({
+          id: "v4-note", sessionId: "v4-lesson", videoId: "v4-lesson",
+          title: "Existing v4 note", content: "Keep this note after upgrade.",
+          timestampSeconds: 42, createdAt: 20, updatedAt: 25
+        });
+        transaction.objectStore("learningBookmarks").put({
+          id: "v4-bookmark", sessionId: "v4-lesson", videoId: "v4-lesson",
+          label: "Retired bookmark", timestampSeconds: 42, createdAt: 20
+        });
+        transaction.objectStore("learningQuizzes").put({
+          id: "v4-quiz", sessionId: "v4-lesson", title: "Existing quiz",
+          scope: "whole_lesson", scopeLabel: "Whole lesson", createdAt: 21, questions: []
+        });
+        transaction.objectStore("quizAttempts").put({
+          id: "v4-attempt", quizId: "v4-quiz", sessionId: "v4-lesson",
+          createdAt: 22, results: [], objectiveScore: 2, objectiveTotal: 3,
+          topicsToReview: ["Photosynthesis"]
+        });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    expect(await getLatestSessionForVideo("v4-lesson")).toMatchObject({ title: "Existing v4 lesson" });
+    expect(await listLearningNotes("v4-lesson")).toMatchObject([{ id: "v4-note", content: "Keep this note after upgrade." }]);
+    expect((await listLearningNotes("v4-lesson"))[0]).not.toHaveProperty("timestampSeconds");
+    expect(await listQuizzes("v4-lesson")).toMatchObject([{ id: "v4-quiz", title: "Existing quiz" }]);
+    expect(await listQuizAttempts("v4-lesson")).toMatchObject([{ id: "v4-attempt", objectiveScore: 2 }]);
+    const storeNames = await new Promise<string[]>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local");
+      request.onsuccess = () => {
+        const database = request.result;
+        const names = Array.from(database.objectStoreNames);
+        database.close();
+        resolve(names);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    expect(storeNames).not.toContain("learningBookmarks");
+  });
+
+  it("upgrades an existing version-2 database without losing sessions", async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local", 2);
+      request.onupgradeneeded = () => {
+        const store = request.result.createObjectStore("learningSessions", { keyPath: "id" });
+        store.createIndex("videoId", "videoId", { unique: false });
+        store.createIndex("updatedAt", "updatedAt", { unique: false });
+        store.createIndex("platform", "platform", { unique: false });
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction("learningSessions", "readwrite");
+        transaction.objectStore("learningSessions").put({
+          id: "legacy-video", videoId: "legacy-video", title: "Existing lesson",
+          url: "https://www.youtube.com/watch?v=legacy-video", platform: "youtube",
+          transcriptText: "Legacy transcript", transcriptFormat: "plain-text",
+          transcriptSource: "YouTube live captions", updatedAt: 5
+        });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    expect(await getLatestSessionForVideo("legacy-video")).toMatchObject({ title: "Existing lesson" });
+    const version = await new Promise<number>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local");
+      request.onsuccess = () => { resolve(request.result.version); request.result.close(); };
+      request.onerror = () => reject(request.error);
+    });
+    expect(version).toBe(7);
+  });
+
+  it("requires explicit category selection, claims eligible records atomically, and isolates other accounts", async () => {
+    await saveLearningNote({
+      id: "claim-note-a", sessionId: "claim-lesson-a", videoId: "claim-lesson-a",
+      title: "Eligible note", content: "This content is validated but never copied into the outbox.",
+      createdAt: 10, updatedAt: 11
+    });
+    await saveLearningNote({
+      id: "claim-note-b", sessionId: "claim-lesson-b", videoId: "claim-lesson-b",
+      title: "Other owner's note", content: "Keep ownership isolated.",
+      createdAt: 12, updatedAt: 13
+    });
+    await claimSyncEntity({
+      entityKey: "note:claim-lesson-b:claim-note-b", entityType: "note",
+      lessonId: "claim-lesson-b", entityId: "claim-note-b", ownerUid: "user-b",
+      syncCategory: "notes"
+    });
+
+
+    const review = await getLocalSyncClaimCandidates("user-a", {
+      lessonMetadata: false, notes: true, quizzes: false, attempts: false
+    });
+    expect(review.map((item) => item.entityKey).sort()).toEqual([
+      "note:claim-lesson-a:claim-note-a", "note:claim-lesson-b:claim-note-b"
+    ].sort());
+    expect(review.find((item) => item.entityKey.endsWith("claim-note-b"))?.ownership).toBe("other_account");
+
+    const nothingSelected = await claimSelectedLocalSyncRecords("user-a", {
+      lessonMetadata: false, notes: false, quizzes: false, attempts: false
+    }, []);
+    expect(nothingSelected.totalQueued).toBe(0);
+
+    const result = await claimSelectedLocalSyncRecords("user-a", {
+      lessonMetadata: false, notes: true, quizzes: false, attempts: false
+    }, ["note:claim-lesson-a:claim-note-a", "note:claim-lesson-b:claim-note-b"]);
+    expect(result.claimed.notes).toBe(1);
+    expect(result.skippedOtherAccount.notes).toBe(1);
+    expect(result.totalQueued).toBe(1);
+    expect(await getSyncMetadata("note:claim-lesson-a:claim-note-a")).toMatchObject({ ownerUid: "user-a" });
+    expect(await getSyncMetadata("note:claim-lesson-b:claim-note-b")).toMatchObject({ ownerUid: "user-b" });
+    const outbox = await listSyncOutbox("user-a");
+    expect(outbox).toHaveLength(1);
+    expect(outbox[0]).toMatchObject({ entityKey: "note:claim-lesson-a:claim-note-a", operation: "upsert" });
+    expect(outbox[0]).not.toHaveProperty("content");
+    expect(outbox[0]).not.toHaveProperty("transcriptText");
+
+    const repeat = await claimSelectedLocalSyncRecords("user-a", {
+      lessonMetadata: false, notes: true, quizzes: false, attempts: false
+    }, ["note:claim-lesson-a:claim-note-a", "note:claim-lesson-b:claim-note-b"]);
+    expect(repeat.claimed.notes).toBe(0);
+    expect(repeat.alreadyOwned.notes).toBe(1);
+    expect(repeat.skippedOtherAccount.notes).toBe(1);
+    expect(repeat.totalQueued).toBe(0);
+    expect(await listSyncOutbox("user-a")).toHaveLength(1);
+  });
+
+});
+
+    const note = {
+      id: "stale-ack-note", sessionId: "stale-ack-lesson", videoId: "stale-ack-lesson",
+      title: "Original note", content: "Original body", createdAt: 1, updatedAt: 2
+    };
+    await saveLearningNote(note);
+    const claim = {
+      entityKey: "note:stale-ack-lesson:stale-ack-note", entityType: "note" as const,
+      lessonId: "stale-ack-lesson", entityId: "stale-ack-note", ownerUid: "user-a",
+      syncCategory: "notes" as const
+    };
+    await claimSyncEntity(claim);
+    const inFlight = await queueSyncOperation(claim.entityKey, "user-a", "upsert");
+    expect(inFlight).not.toBeNull();
+    await markSyncOperationInFlight(claim.entityKey, "user-a", inFlight!.operationId, inFlight!.baseRevision);
+
+    await saveLearningNote({ ...note, content: "Newer body", updatedAt: 3 });
+    const [latest] = await listSyncOutbox("user-a");
+    expect(latest.operationId).not.toBe(inFlight!.operationId);
+    expect(latest.retryCount).toBe(0);
+    expect(latest.inFlightOperationId).toBe(inFlight!.operationId);
+
+    // The older request succeeded remotely. Its acknowledgement advances the
+    // remote revision, but must not clear the newer pending local operation.
+    await acknowledgeSyncOperation(claim.entityKey, "user-a", inFlight!.operationId, 1);
+    expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 1 });
+    expect(await listSyncOutbox("user-a")).toMatchObject([{
+      operationId: latest.operationId, baseRevision: 1, operation: "upsert"
+    }]);
+    await markSyncOperationInFlight(claim.entityKey, "user-a", latest.operationId, 1);
+
+    await acknowledgeSyncOperation(claim.entityKey, "user-a", latest.operationId, 2);
+    expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 2 });
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+  });
+
+  it("queues claimed note saves atomically but leaves unclaimed local notes alone", async () => {
+    const note = {
+      id: "sync-note", sessionId: "sync-lesson", videoId: "sync-lesson",
+      title: "Local first", content: "Only the opted-in copy is queued.",
+      createdAt: 1, updatedAt: 2
+    };
+    await saveLearningNote(note);
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+    await claimSyncEntity({
+      entityKey: "note:sync-lesson:sync-note", entityType: "note",
+      lessonId: "sync-lesson", entityId: "sync-note", ownerUid: "user-a",
+      syncCategory: "notes"
+    });
+    await saveLearningNote({ ...note, content: "Updated content", updatedAt: 3 });
+    const queued = await listSyncOutbox("user-a");
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      entityKey: "note:sync-lesson:sync-note", operation: "upsert",
+      ownerUid: "user-a", baseRevision: 0
+    });
+    expect(queued[0]).not.toHaveProperty("content");
+  });
+
+  it("does not enqueue transcript-only lesson autosaves but queues metadata changes", async () => {
+    const session = {
+      id: "sync-video-123", videoId: "sync-video-123", title: "Lesson title",
+      url: "https://www.youtube.com/watch?v=sync-video-123", platform: "youtube" as const,
+      transcriptText: "First transcript", transcriptFormat: "plain-text" as const,
+      transcriptSource: "captions", updatedAt: 1
+    };
+    await saveLearningSession(session);
+    await claimSyncEntity({
+      entityKey: "lesson:sync-video-123:sync-video-123", entityType: "lesson",
+      lessonId: "sync-video-123", entityId: "sync-video-123", ownerUid: "user-a",
+      syncCategory: "lessonMetadata"
+    });
+    await saveLearningSession({ ...session, transcriptText: "Transcript expanded", updatedAt: 2 });
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+    await saveLearningSession({ ...session, title: "Corrected lesson title", transcriptText: "Transcript expanded", updatedAt: 3 });
+    expect(await listSyncOutbox("user-a")).toMatchObject([{ operation: "upsert", entityKey: "lesson:sync-video-123:sync-video-123" }]);
+  });
+
+  it("queues tombstones for claimed artifacts during lesson cascade deletion", async () => {
+    const sessionId = "cascade-lesson";
+    await saveLearningSession({
+      id: sessionId, videoId: sessionId, title: "Cascade lesson",
+      url: "https://www.youtube.com/watch?v=cascade-lesson", platform: "youtube",
+      transcriptText: "Private transcript", transcriptFormat: "plain-text",
+      transcriptSource: "captions", updatedAt: 1
+    });
+    const note = { id: "cascade-note", sessionId, videoId: sessionId, title: "Note", content: "Note body", createdAt: 1, updatedAt: 1 };
+    const quiz = { id: "cascade-quiz", sessionId, title: "Quiz", scope: "whole_lesson" as const, scopeLabel: "Whole lesson", createdAt: 1, questions: [] };
+    const attempt = { id: "cascade-attempt", quizId: quiz.id, sessionId, createdAt: 1, results: [], objectiveScore: 0, objectiveTotal: 0, topicsToReview: [] };
+    await saveLearningNote(note);
+    await saveQuiz(quiz);
+    await saveQuizAttempt(attempt);
+    const claims = [
+      { entityKey: `lesson:${sessionId}:${sessionId}`, entityType: "lesson" as const, lessonId: sessionId, entityId: sessionId, syncCategory: "lessonMetadata" as const },
+      { entityKey: `note:${sessionId}:${note.id}`, entityType: "note" as const, lessonId: sessionId, entityId: note.id, syncCategory: "notes" as const },
+      { entityKey: `quiz:${sessionId}:${quiz.id}`, entityType: "quiz" as const, lessonId: sessionId, entityId: quiz.id, syncCategory: "quizzes" as const },
+      { entityKey: `attempt:${sessionId}:${attempt.id}`, entityType: "attempt" as const, lessonId: sessionId, entityId: attempt.id, syncCategory: "attempts" as const }
+    ];
+    for (const claim of claims) await claimSyncEntity({ ...claim, ownerUid: "user-a" });
+    for (const claim of claims) {
+      const queued = await queueSyncOperation(claim.entityKey, "user-a", "upsert");
+      await markSyncOperationInFlight(claim.entityKey, "user-a", queued!.operationId, queued!.baseRevision);
+      await acknowledgeSyncOperation(claim.entityKey, "user-a", queued!.operationId, 1);
+    }
     await deleteLearningSession(sessionId);
     const queued = await listSyncOutbox("user-a");
     expect(queued).toHaveLength(4);

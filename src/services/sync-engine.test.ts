@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   acknowledgeSyncOperation,
+  markSyncOperationInFlight,
   claimSyncEntity,
   deleteLearningNote,
   queueSyncOperation,
@@ -87,6 +88,7 @@ describe("local sync batch preparation", () => {
       entityId: "deleted-note", ownerUid: "user-a", syncCategory: "notes"
     });
     const initial = await queueSyncOperation(entityKey, "user-a", "upsert");
+    await markSyncOperationInFlight(entityKey, "user-a", initial!.operationId, initial!.baseRevision);
     await acknowledgeSyncOperation(entityKey, "user-a", initial!.operationId, 1);
     await deleteLearningNote("deleted-note");
     await saveLocalSyncPreferences("user-a", noteCategories);

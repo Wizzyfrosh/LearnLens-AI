@@ -424,6 +424,9 @@ export interface SyncOutboxRecord {
   queuedAtMs: number;
   retryCount: number;
   lastErrorCode?: string;
+  /** The operation currently being transmitted, distinct from a newer queued edit. */
+  inFlightOperationId?: string;
+  inFlightBaseRevision?: number;
 }
 
 export interface SyncDeviceRecord {
@@ -448,26 +451,45 @@ function queueSyncOperationInTransaction(
   metadataRequest.onsuccess = () => {
     const metadata = metadataRequest.result as SyncMetadataRecord | undefined;
     if (!metadata) return; // Local-only records are never queued implicitly.
-    if (operation === "delete" && metadata.remoteRevision === 0) {
-      outboxStore.delete(entityKey);
-      metadataStore.delete(entityKey);
-      return;
-    }
-    // A new local mutation must invalidate any in-flight acknowledgement for an
-    // older payload. Retries keep this ID; a subsequent edit gets a fresh one.
-    outboxStore.put({
-      entityKey,
-      operationId: crypto.randomUUID(),
-      ownerUid: metadata.ownerUid,
-      entityType: metadata.entityType,
-      lessonId: metadata.lessonId,
-      entityId: metadata.entityId,
-      operation,
-      baseRevision: metadata.remoteRevision,
-      payloadSchemaVersion: 1,
-      queuedAtMs: Date.now(),
-      retryCount: 0
-    } satisfies SyncOutboxRecord);
+    const pendingRequest = outboxStore.get(entityKey);
+    pendingRequest.onsuccess = () => {
+      const pending = pendingRequest.result as SyncOutboxRecord | undefined;
+      if (pending && pending.ownerUid !== metadata.ownerUid) {
+        outboxStore.transaction.abort();
+        return;
+      }
+      // A never-sent create followed by a local delete can be discarded. If
+      // its upsert is already in flight, retain ownership and queue a delete
+      // behind it so a late server acceptance cannot leave an orphan remotely.
+      if (operation === "delete" && metadata.remoteRevision === 0 && !pending?.inFlightOperationId) {
+        outboxStore.delete(entityKey);
+        metadataStore.delete(entityKey);
+        return;
+      }
+      // Each local mutation gets a fresh operation ID. Preserve the explicitly
+      // marked in-flight request so its eventual response can safely rebase this
+      // newer operation without allowing arbitrary stale acknowledgements.
+      const next: SyncOutboxRecord = {
+        entityKey,
+        operationId: crypto.randomUUID(),
+        ownerUid: metadata.ownerUid,
+        entityType: metadata.entityType,
+        lessonId: metadata.lessonId,
+        entityId: metadata.entityId,
+        operation,
+        baseRevision: metadata.remoteRevision,
+        payloadSchemaVersion: 1,
+        queuedAtMs: Date.now(),
+        retryCount: 0,
+        ...(pending?.inFlightOperationId && Number.isSafeInteger(pending.inFlightBaseRevision)
+          ? {
+              inFlightOperationId: pending.inFlightOperationId,
+              inFlightBaseRevision: pending.inFlightBaseRevision
+            }
+          : {})
+      };
+      outboxStore.put(next);
+    };
   };
 }
 
@@ -549,17 +571,18 @@ export async function queueSyncOperation(
           transaction.abort();
           return;
         }
-        if (operation === "delete" && metadata.remoteRevision === 0 && pending?.operation === "upsert") {
+        if (
+          operation === "delete" && metadata.remoteRevision === 0 &&
+          pending?.operation === "upsert" && !pending.inFlightOperationId
+        ) {
           outboxStore.delete(entityKey);
           result = null;
           return;
         }
-        const operationId = pending && pending.operation === operation
-          ? pending.operationId
-          : crypto.randomUUID();
+        const samePendingOperation = pending?.operation === operation;
         result = {
           entityKey,
-          operationId,
+          operationId: samePendingOperation ? pending.operationId : crypto.randomUUID(),
           ownerUid,
           entityType: metadata.entityType,
           lessonId: metadata.lessonId,
@@ -567,8 +590,14 @@ export async function queueSyncOperation(
           operation,
           baseRevision: metadata.remoteRevision,
           payloadSchemaVersion: 1,
-          queuedAtMs: Date.now(),
-          retryCount: pending?.operation === operation ? pending.retryCount : 0
+          queuedAtMs: samePendingOperation ? pending.queuedAtMs : Date.now(),
+          retryCount: samePendingOperation ? pending.retryCount : 0,
+          ...(pending?.inFlightOperationId && Number.isSafeInteger(pending.inFlightBaseRevision)
+            ? {
+                inFlightOperationId: pending.inFlightOperationId,
+                inFlightBaseRevision: pending.inFlightBaseRevision
+              }
+            : {})
         };
         outboxStore.put(result);
       };
@@ -590,6 +619,46 @@ export async function listSyncOutbox(ownerUid: string, limit = 100): Promise<Syn
   });
 }
 
+export async function markSyncOperationInFlight(
+  entityKey: string,
+  ownerUid: string,
+  operationId: string,
+  baseRevision: number
+): Promise<void> {
+  validateSyncIdentity(ownerUid, "account ID");
+  if (!operationId || operationId.length > 128 || !Number.isSafeInteger(baseRevision) || baseRevision < 0) {
+    throw new Error("Invalid in-flight sync operation.");
+  }
+  const database = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(SYNC_OUTBOX_STORE, "readwrite");
+    const store = transaction.objectStore(SYNC_OUTBOX_STORE);
+    const request = store.get(entityKey);
+    request.onsuccess = () => {
+      const pending = request.result as SyncOutboxRecord | undefined;
+      if (
+        !pending || pending.ownerUid !== ownerUid ||
+        pending.operationId !== operationId || pending.baseRevision !== baseRevision ||
+        (pending.inFlightOperationId && (
+          pending.inFlightOperationId !== operationId ||
+          pending.inFlightBaseRevision !== baseRevision
+        ))
+      ) {
+        transaction.abort();
+        return;
+      }
+      store.put({
+        ...pending,
+        inFlightOperationId: operationId,
+        inFlightBaseRevision: baseRevision
+      });
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not mark the sync operation as in flight."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("The sync operation changed before it could be sent."));
+  }).finally(() => database.close());
+}
+
 export async function acknowledgeSyncOperation(
   entityKey: string,
   ownerUid: string,
@@ -605,18 +674,19 @@ export async function acknowledgeSyncOperation(
     const request = outboxStore.get(entityKey);
     request.onsuccess = () => {
       const pending = request.result as SyncOutboxRecord | undefined;
-      if (!pending || pending.ownerUid !== ownerUid) {
+      if (!pending || pending.ownerUid !== ownerUid || pending.inFlightOperationId !== operationId) {
         transaction.abort();
         return;
       }
-      if (newRevision !== pending.baseRevision + 1) {
+      const inFlightBaseRevision = pending.inFlightBaseRevision;
+      if (!Number.isSafeInteger(inFlightBaseRevision) || newRevision !== (inFlightBaseRevision as number) + 1) {
         transaction.abort();
         return;
       }
       const metadataRequest = metadataStore.get(entityKey);
       metadataRequest.onsuccess = () => {
         const metadata = metadataRequest.result as SyncMetadataRecord | undefined;
-        if (!metadata || metadata.ownerUid !== ownerUid || metadata.remoteRevision !== pending.baseRevision) {
+        if (!metadata || metadata.ownerUid !== ownerUid || metadata.remoteRevision !== inFlightBaseRevision) {
           transaction.abort();
           return;
         }
@@ -626,9 +696,9 @@ export async function acknowledgeSyncOperation(
           return;
         }
 
-        // The server accepted an older in-flight operation after a newer local
-        // mutation replaced it. Advance the base revision but keep the newer
-        // operation queued so the latest payload is still uploaded.
+        // The confirmed older request advanced the server revision. Keep the
+        // newer local operation and rebase it; never acknowledge an ID that was
+        // not explicitly recorded as in flight.
         const rebased = {
           ...pending,
           baseRevision: newRevision,
@@ -636,12 +706,14 @@ export async function acknowledgeSyncOperation(
           retryCount: 0
         };
         delete rebased.lastErrorCode;
+        delete rebased.inFlightOperationId;
+        delete rebased.inFlightBaseRevision;
         outboxStore.put(rebased);
       };
     };
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error ?? new Error("Could not acknowledge the sync operation."));
-    transaction.onabort = () => reject(transaction.error ?? new Error("Sync acknowledgement was stale or did not match the pending operation."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Sync acknowledgement was stale or did not match an in-flight operation."));
   }).finally(() => database.close());
 }
 
@@ -656,8 +728,27 @@ export async function recordSyncRetry(
     const request = store.get(entityKey);
     request.onsuccess = () => {
       const pending = request.result as SyncOutboxRecord | undefined;
-      if (!pending || pending.operationId !== operationId) return;
-      store.put({ ...pending, retryCount: Math.min(20, pending.retryCount + 1), lastErrorCode: safeCode });
+      if (!pending) return;
+      if (pending.operationId === operationId && pending.inFlightOperationId === operationId) {
+        const retry = {
+          ...pending,
+          retryCount: Math.min(20, pending.retryCount + 1),
+          lastErrorCode: safeCode
+        };
+        delete retry.inFlightOperationId;
+        delete retry.inFlightBaseRevision;
+        store.put(retry);
+        return;
+      }
+      if (pending.inFlightOperationId === operationId) {
+        // The older transmitted version failed. The current queued payload is
+        // newer and has not been sent, so clear only the old in-flight marker.
+        const retry = { ...pending, queuedAtMs: Date.now() };
+        delete retry.inFlightOperationId;
+        delete retry.inFlightBaseRevision;
+        delete retry.lastErrorCode;
+        store.put(retry);
+      }
     };
   });
 }
@@ -759,7 +850,8 @@ export type SyncPreparationBlockReason =
   | "local_record_missing"
   | "local_record_present_for_tombstone"
   | "invalid_payload"
-  | "invalid_tombstone";
+  | "invalid_tombstone"
+  | "operation_in_flight";
 
 export interface SyncOperationSnapshot {
   outbox: SyncOutboxRecord;
@@ -865,6 +957,10 @@ export async function getLocalSyncOperationSnapshots(
             metadata.remoteRevision !== entry.baseRevision
           ) {
             snapshot.blockedReason = "stale_base_revision";
+            return;
+          }
+          if (entry.inFlightOperationId) {
+            snapshot.blockedReason = "operation_in_flight";
             return;
           }
 
