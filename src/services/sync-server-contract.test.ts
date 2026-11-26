@@ -164,6 +164,35 @@ describe("server-side sync mutation contract", () => {
     }))).toThrow(/unsupported field/i);
   });
 
+
+  it("rejects duplicate quiz question IDs and incorrect multiple-choice keys", () => {
+    const duplicateQuestions = { ...quizPayload, questions: [quizPayload.questions[0], quizPayload.questions[0]] };
+    expect(() => validateSyncServerRequest(rawRequest({
+      entityType: "quiz",
+      entityId: "quiz-1",
+      payload: duplicateQuestions
+    }))).toThrow(/IDs must be unique/i);
+
+    const incorrectAnswer = {
+      ...quizPayload,
+      questions: quizPayload.questions.map((question, index) =>
+        index === 0 ? { ...question, correctAnswer: "Not an option" } : question
+      )
+    };
+    expect(() => validateSyncServerRequest(rawRequest({
+      entityType: "quiz",
+      entityId: "quiz-1",
+      payload: incorrectAnswer
+    }))).toThrow(/must match an allowed option/i);
+  });
+
+  it("revalidates typed requests before deriving server mutation paths or decisions", () => {
+    const forged = { ...rawRequest(), entityId: "../escape" } as unknown as SyncServerMutationRequest;
+    expect(() => buildSyncFirestorePaths("verified-user", forged)).toThrow(/entity ID/i);
+    expect(decideSyncServerMutation(forged, null, null, fingerprint))
+      .toEqual({ kind: "reject", code: "invalid_request" });
+  });
+
   it("derives all Firestore paths from authenticated UID and validated IDs", () => {
     const request = parseRequest();
     expect(buildSyncFirestorePaths("verified-user", request)).toEqual({

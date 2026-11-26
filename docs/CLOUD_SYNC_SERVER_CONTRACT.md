@@ -104,7 +104,6 @@ An accepted mutation writes:
 - updatedAt = server timestamp for every accepted mutation;
 - modifiedByDeviceId = request device ID, diagnostic only;
 - lastOperationId = requestId;
-- clientUpdatedAtMs = informational only, never conflict ordering;
 - deletedAt = null for active content or server timestamp for a tombstone.
 
 A delete must remove the payload from the document and retain only its envelope/tombstone metadata. Tombstones are not hard-deleted in v1. There is no restore operation; a new upsert cannot resurrect a tombstoned entity.
@@ -122,15 +121,14 @@ An applied request writes the entity mutation and outcome=applied receipt atomic
 ## 8. Required endpoint transaction sequence
 
 1. Verify Firebase ID token, email_verified=true, and App Check token.
-2. Read sync settings and verify enabled/category consent for this UID.
-3. Validate the exact request envelope, path IDs, payload schema, field allow-list, and byte limit.
-4. Canonicalize and SHA-256 the validated request server-side.
-5. Derive entity, receipt, conflict, and device paths from authenticated UID.
-6. Start a Firestore transaction. Read the receipt first and the target entity; no writes may happen before these reads.
-7. If a receipt exists, verify its fingerprint and replay or reject key reuse.
-8. Otherwise call the deterministic decision function in sync-server-contract.ts.
-9. For apply, atomically write the new entity/tombstone and receipt. For conflict, atomically write conflict and receipt. For reject, write nothing.
-10. Return a minimal typed result. Never return credentials, tokens, or unrelated user data.
+2. Validate the exact request envelope, path IDs, payload schema, field allow-list, and byte limit.
+3. Canonicalize and SHA-256 the validated request server-side, then derive entity, receipt, conflict, and device paths from authenticated UID.
+4. Start a Firestore transaction. Read sync settings, the receipt, and the target entity before performing any writes.
+5. Inside that same transaction, verify enabled/category consent for this UID. This prevents a concurrent opt-out from racing a request that checked settings before the transaction.
+6. If a receipt exists, verify its fingerprint and replay or reject key reuse.
+7. Otherwise call the deterministic decision function in sync-server-contract.ts.
+8. For apply, atomically write the new entity/tombstone and receipt. For conflict, atomically write conflict and receipt. For reject, write nothing.
+9. Return a minimal typed result. Never return credentials, tokens, or unrelated user data.
 
 The Firestore Admin SDK bypasses Firestore Security Rules. The endpoint must not assume the current deny-by-default Rules validate its writes.
 

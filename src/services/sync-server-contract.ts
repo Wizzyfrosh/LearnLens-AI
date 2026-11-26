@@ -86,7 +86,7 @@ export type SyncServerDecision =
     }
   | {
       kind: "reject";
-      code: "invalid_fingerprint" | "idempotency_key_reused" | "corrupt_remote_record" | "entity_not_found";
+      code: "invalid_request" | "invalid_fingerprint" | "idempotency_key_reused" | "corrupt_remote_record" | "entity_not_found";
     };
 
 export interface SyncFirestorePaths {
@@ -203,10 +203,13 @@ function validateQuizPayload(value: unknown): void {
   if (!Array.isArray(value.questions) || value.questions.length < 1 || value.questions.length > 10) {
     throw new Error("Quiz questions must contain between 1 and 10 items.");
   }
+  const questionIds = new Set<string>();
   for (const question of value.questions) {
     if (!isRecord(question)) throw new Error("Invalid quiz question.");
     assertExactKeys(question, ["id", "type", "prompt", "options", "correctAnswer", "explanation", "topic", "evidence"]);
     assertString(question.id, "question ID", 64, false);
+    if (questionIds.has(question.id)) throw new Error("Quiz question IDs must be unique.");
+    questionIds.add(question.id);
     assertString(question.prompt, "question prompt", 500, false);
     assertString(question.correctAnswer, "correct answer", 500, false);
     assertString(question.explanation, "question explanation", 1200);
@@ -218,6 +221,9 @@ function validateQuizPayload(value: unknown): void {
     }
     if (question.type === "multiple_choice") {
       if (question.options.length < 3) throw new Error("Multiple-choice questions require at least three options.");
+      if (!question.options.some((option) => (option as string).toLocaleLowerCase() === (question.correctAnswer as string).toLocaleLowerCase())) {
+        throw new Error("Multiple-choice correct answers must match an allowed option.");
+      }
     } else if (question.type === "true_false") {
       const normalized = question.options.map((option) => (option as string).toLocaleLowerCase());
       if (normalized.length !== 2 || !normalized.includes("true") || !normalized.includes("false") ||
@@ -315,7 +321,7 @@ export function canonicalizeSyncServerRequest(request: SyncServerMutationRequest
     if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
     const entries = Object.entries(value as Record<string, unknown>)
       .filter(([, item]) => item !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right));
+      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
     return "{" + entries.map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
   }
   return canonical(request);
@@ -324,20 +330,21 @@ export function canonicalizeSyncServerRequest(request: SyncServerMutationRequest
 /** Build paths only after parsing the request and deriving uid from verified Auth claims. */
 export function buildSyncFirestorePaths(uid: string, request: SyncServerMutationRequest): SyncFirestorePaths {
   assertId(uid, "authenticated account ID");
+  const validatedRequest = validateSyncServerRequest(request);
   const root = "users/" + uid;
-  const lessonPath = root + "/lessons/" + request.lessonId;
-  const entity = request.entityType === "lesson"
+  const lessonPath = root + "/lessons/" + validatedRequest.lessonId;
+  const entity = validatedRequest.entityType === "lesson"
     ? lessonPath
     : lessonPath + "/" + ({
         note: "notes",
         quiz: "quizzes",
         attempt: "attempts"
-      } as const)[request.entityType] + "/" + request.entityId;
+      } as const)[validatedRequest.entityType] + "/" + validatedRequest.entityId;
   return {
     entity,
-    receipt: root + "/syncReceipts/" + request.requestId,
-    conflict: root + "/syncConflicts/" + request.requestId,
-    device: root + "/devices/" + request.deviceId
+    receipt: root + "/syncReceipts/" + validatedRequest.requestId,
+    conflict: root + "/syncConflicts/" + validatedRequest.requestId,
+    device: root + "/devices/" + validatedRequest.deviceId
   };
 }
 
@@ -352,11 +359,18 @@ export function decideSyncServerMutation(
   existingReceipt: SyncServerReceiptSnapshot | null,
   requestFingerprint: string
 ): SyncServerDecision {
+  try {
+    request = validateSyncServerRequest(request);
+  } catch {
+    return { kind: "reject", code: "invalid_request" };
+  }
   if (!/^[a-f0-9]{64}$/i.test(requestFingerprint)) return { kind: "reject", code: "invalid_fingerprint" };
+  const normalizedFingerprint = requestFingerprint.toLowerCase();
 
   if (existingReceipt) {
     if (existingReceipt.requestId !== request.requestId ||
-      existingReceipt.requestFingerprint !== requestFingerprint ||
+      existingReceipt.requestFingerprint.toLowerCase() !== normalizedFingerprint ||
+      (existingReceipt.outcome !== "applied" && existingReceipt.outcome !== "conflict") ||
       !Number.isSafeInteger(existingReceipt.resultRevision) ||
       existingReceipt.resultRevision < 0) {
       return { kind: "reject", code: "idempotency_key_reused" };
@@ -383,7 +397,7 @@ export function decideSyncServerMutation(
 
   const receiptBase = {
     requestId: request.requestId,
-    requestFingerprint,
+    requestFingerprint: normalizedFingerprint,
     deviceId: request.deviceId,
     entityType: request.entityType,
     lessonId: request.lessonId,
