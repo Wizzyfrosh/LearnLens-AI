@@ -143,7 +143,9 @@ Exit: Phase 5 implementation, automated checks, and desktop Chrome runtime verif
 - [x] Define revision-based conflict handling that does not rely on client clocks, and document user-visible behavior for concurrent edits.
 - [x] Threat-model account switching, stale credentials, replayed writes, cross-user reads, offline queues, and partial sync failures.
 
-**Phase 6A exit:** Completed in `docs/CLOUD_SYNC_DATA_MODEL.md`. Phase 6B can begin with email/password Auth and emulator-only Rules work. Production sync remains blocked until the extension App Check strategy is proven.\n\n**Phase 6B — Identity and Firebase security**
+**Phase 6A exit:** Completed in `docs/CLOUD_SYNC_DATA_MODEL.md`. Phase 6B can begin with email/password Auth and emulator-only Rules work. Production sync remains blocked until the extension App Check strategy is proven.
+
+**Phase 6B — Identity and Firebase security**
 - [ ] Add Firebase Auth behind a dedicated auth service; keep app initialization shared and avoid coupling Auth to AI request code.
 - [ ] Implement sign-in, sign-out, session restoration, and explicit account-state UI. Do not block local use when signed out.
 - [x] Choose and document email/password as the first sign-in method, including email verification and password reset; defer OAuth popup/redirect providers.
