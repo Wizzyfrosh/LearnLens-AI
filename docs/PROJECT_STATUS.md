@@ -91,7 +91,7 @@
 
 ## 6. Phase 6 — Optional cloud sync (Phase 6B in progress)
 
-**Current state:** Planning and security design only. No cloud-sync implementation has started.
+**Current state:** Phase 6A design and the initial Phase 6B Auth/Rules implementation are complete. The cloud sync engine and learning-artifact Firestore writes have not been implemented.
 
 **Repository findings**
 - Firebase AI Logic and development App Check wiring exist; a shared Firebase app module and Firebase email/password Auth service are now implemented.
@@ -149,7 +149,7 @@
 - Added [Cloud Sync Data Model](./CLOUD_SYNC_DATA_MODEL.md) defining cloud DTO allow-lists, Firestore paths under `users/{uid}`, v6 local sync metadata/outbox stores, revision compare-and-set, conflict copies, child tombstones, account-switch safeguards, and the threat model.
 - Full transcript text, transcript segments, raw audio, tutor prompts/conversations, tokens, and browser state are excluded from v1 sync. Quiz evidence quotes and learner answers are included only when their respective sync categories are explicitly enabled.
 - Selected email/password as the first Auth method, with verification and password-reset flows. OAuth popup/redirect is deferred.
-- Phase 6A is complete. No Auth, Firestore writes, or sync code has been implemented yet.
+- Phase 6A was completed before Auth or sync implementation began; the subsequent Phase 6B implementation is recorded below. No learning-artifact Firestore writes or sync engine have been implemented.
 
 **Open production gate**
 - Current App Check code uses the debug provider. Firebase's web App Check docs describe reCAPTCHA Enterprise Web keys with configured domains but do not establish compatibility with the Chrome extension origin. Verify this with the actual installed extension ID or a secure hosted attestation design before enabling sync. Never replace this with a public token-minting endpoint or a bundled secret.
