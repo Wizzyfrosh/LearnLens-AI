@@ -210,3 +210,21 @@ textarea:focus,select:focus,.note-editor input:focus,.note-search input:focus,.q
 .quiz-question textarea:disabled{opacity:.8}
 footer{border-color:#2a3544;color:#78889e}
 @media(max-width:380px){.workspace-nav{gap:2px}.workspace-tab{font-size:8px;padding:8px 1px}.workspace-tab svg{width:13px;height:13px}}
+
+
+/* Full-page quiz overlay injected over the active lesson page */
+.overlay-shell{width:100%;max-width:1080px;min-height:100vh;margin:0 auto;padding:0 28px 48px}
+.overlay-shell .topbar{height:72px}
+.overlay-shell .quiz-studio{max-width:920px;margin:22px auto;padding:24px;background:#1b2634;border:1px solid #344255;border-radius:18px}
+.overlay-shell .quiz-question-list{gap:14px}
+.overlay-shell .quiz-question{padding:18px}
+.overlay-shell .quiz-question h3{font-size:15px;line-height:1.6}
+.overlay-shell .quiz-options label{padding:12px;font-size:13px}
+.overlay-shell .quiz-evidence{font-size:11px}
+.overlay-shell .quiz-controls{grid-template-columns:1fr 1fr;gap:12px}
+.overlay-shell .quiz-controls .quiz-generate{grid-column:1/-1}
+.overlay-close{margin-left:auto;border:1px solid #485a73;background:#253244;color:#eaf1fb;border-radius:9px;padding:8px 13px;font-size:12px;font-weight:700;cursor:pointer}
+.overlay-close span{margin-left:8px;font-size:17px;line-height:10px}
+.full-quiz-button{width:100%;justify-content:center;margin:8px 0 14px;padding:10px 12px;font-size:11px}
+.full-quiz-button span{font-size:15px}
+@media(max-width:600px){.overlay-shell{padding:0 12px 28px}.overlay-shell .quiz-studio{padding:14px}.overlay-shell .quiz-controls{grid-template-columns:1fr}}
