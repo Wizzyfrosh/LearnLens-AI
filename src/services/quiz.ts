@@ -142,6 +142,10 @@ export function validateQuizResponse(text: string, segments: TranscriptSegment[]
       throw new Error(`Short-answer question ${index + 1} must not include multiple-choice options.`);
     }
 
+    if (type !== "true_false" && !transcript.includes(normalizeEvidence(correctAnswer))) {
+      throw new Error(`The correct answer for question ${index + 1} is not explicitly supported by the lesson transcript.`);
+    }
+
     return { id, type, prompt, options, correctAnswer, explanation, topic, evidence };
   });
   if (new Set(questions.map((question) => question.type)).size !== 3) {
