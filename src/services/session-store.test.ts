@@ -13,7 +13,13 @@ import {
   saveLearningSession,
   saveQuiz,
   saveQuizAttempt,
-  searchLearningNotes
+  searchLearningNotes,
+  acknowledgeSyncOperation,
+  claimSyncEntity,
+  getOrCreateSyncDeviceId,
+  getSyncMetadata,
+  listSyncOutbox,
+  queueSyncOperation
 } from "./session-store";
 
 function deleteDatabase(): Promise<void> {
@@ -28,6 +34,94 @@ function deleteDatabase(): Promise<void> {
 describe("local learning artifact storage", () => {
   beforeEach(async () => {
     await deleteDatabase();
+  });
+
+  it("upgrades version 5 without changing existing learning records and creates empty sync stores", async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local", 5);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        const sessions = db.createObjectStore("learningSessions", { keyPath: "id" });
+        sessions.createIndex("videoId", "videoId");
+        sessions.createIndex("updatedAt", "updatedAt");
+        sessions.createIndex("platform", "platform");
+        const notes = db.createObjectStore("learningNotes", { keyPath: "id" });
+        notes.createIndex("sessionId", "sessionId");
+        notes.createIndex("videoId", "videoId");
+        notes.createIndex("updatedAt", "updatedAt");
+        const quizzes = db.createObjectStore("learningQuizzes", { keyPath: "id" });
+        quizzes.createIndex("sessionId", "sessionId");
+        quizzes.createIndex("createdAt", "createdAt");
+        const attempts = db.createObjectStore("quizAttempts", { keyPath: "id" });
+        attempts.createIndex("sessionId", "sessionId");
+        attempts.createIndex("quizId", "quizId");
+        attempts.createIndex("createdAt", "createdAt");
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        const tx = db.transaction(["learningSessions", "learningNotes"], "readwrite");
+        tx.objectStore("learningSessions").put({
+          id: "legacy-v5", videoId: "legacy-v5", title: "Preserved lesson",
+          url: "https://www.youtube.com/watch?v=legacy-v5", platform: "youtube",
+          transcriptText: "Private transcript stays local", transcriptFormat: "plain-text",
+          transcriptSource: "captions", updatedAt: 100
+        });
+        tx.objectStore("learningNotes").put({
+          id: "legacy-note", sessionId: "legacy-v5", videoId: "legacy-v5",
+          title: "Preserved note", content: "Keep local", createdAt: 1, updatedAt: 2
+        });
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => reject(tx.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    expect(await getLatestSessionForVideo("legacy-v5")).toMatchObject({ title: "Preserved lesson", transcriptText: "Private transcript stays local" });
+    expect(await listLearningNotes("legacy-v5")).toMatchObject([{ id: "legacy-note", content: "Keep local" }]);
+    const names = await new Promise<string[]>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local");
+      request.onsuccess = () => { const db = request.result; const result = Array.from(db.objectStoreNames); db.close(); resolve(result); };
+      request.onerror = () => reject(request.error);
+    });
+    expect(names).toEqual(expect.arrayContaining(["syncMetadata", "syncOutbox", "syncDevice"]));
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+  });
+
+  it("binds claimed records to one account and coalesces their pending operations", async () => {
+    const claim = {
+      entityKey: "note:lesson-1:note-1", entityType: "note" as const,
+      lessonId: "lesson-1", entityId: "note-1", ownerUid: "user-a",
+      syncCategory: "notes" as const
+    };
+    await claimSyncEntity(claim);
+    const first = await queueSyncOperation(claim.entityKey, "user-a", "upsert");
+    const second = await queueSyncOperation(claim.entityKey, "user-a", "upsert");
+    expect(first?.operationId).toBe(second?.operationId);
+    expect(await listSyncOutbox("user-a")).toHaveLength(1);
+    await expect(claimSyncEntity({ ...claim, ownerUid: "user-b" })).rejects.toThrow();
+    await expect(queueSyncOperation(claim.entityKey, "user-b", "upsert")).rejects.toThrow();
+    await expect(acknowledgeSyncOperation(claim.entityKey, "user-a", "wrong-operation", 1)).rejects.toThrow();
+    await acknowledgeSyncOperation(claim.entityKey, "user-a", first!.operationId, 1);
+    expect(await getSyncMetadata(claim.entityKey)).toMatchObject({ ownerUid: "user-a", remoteRevision: 1 });
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+  });
+
+  it("cancels a never-uploaded upsert when that local record is deleted", async () => {
+    const claim = {
+      entityKey: "note:lesson-2:note-2", entityType: "note" as const,
+      lessonId: "lesson-2", entityId: "note-2", ownerUid: "user-a",
+      syncCategory: "notes" as const
+    };
+    await claimSyncEntity(claim);
+    await queueSyncOperation(claim.entityKey, "user-a", "upsert");
+    expect(await queueSyncOperation(claim.entityKey, "user-a", "delete")).toBeNull();
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+  });
+
+  it("creates one stable installation-scoped device ID", async () => {
+    const first = await getOrCreateSyncDeviceId();
+    const second = await getOrCreateSyncDeviceId();
+    expect(first).toBe(second);
+    expect(first).toMatch(/^[0-9a-f-]{36}$/i);
   });
 
   it("creates the current schema and persists notes by session", async () => {
