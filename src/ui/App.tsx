@@ -821,6 +821,9 @@ export default function App() {
     anchor.remove();
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
     setArtifactMessage("Notes exported as " + extension.toUpperCase() + ".");
+    } catch (cause) {
+      setArtifactMessage(cause instanceof Error ? cause.message : "Could not export the saved notes.");
+    }
   }
 
   async function openFullScreenQuiz() {
