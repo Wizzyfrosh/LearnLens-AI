@@ -525,3 +525,28 @@ Verification:
 - Final Chrome extension artifact: `learnlens-chrome-extension`, ID 15136203852, 129,235 bytes, expires 2026-12-26.
 - The code is CI-verified but has not yet been re-tested in desktop Chrome. CI success is not runtime verification.
 - Phase 4/5 acceptance remains open until the user tests queued note drafting, quiz generation, and export/theme UI in Chrome. Do not start Phase 6 before runtime acceptance and any resulting fixes. Audio transcription remains deferred under Phase 3.
+
+
+## 29. Toolbar and visible-caption regression fixes — 2026-11-26
+
+User-reported regressions after recent extension changes:
+- Clicking the toolbar icon no longer opened the side panel; opening it from the extension context menu still worked.
+- Automatic visible-caption capture remained stuck waiting and produced zero transcript segments.
+
+Root cause confirmed for toolbar regression:
+- Commit 1b9f4ad removed the previously working `chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })` configuration and replaced it with `chrome.action.onClicked` + `chrome.sidePanel.open()`.
+- Restored the supported built-in toolbar action behavior, configured on worker startup and on install/update.
+
+Caption robustness change:
+- The observer was attached to the player node present at capture start. If YouTube replaces that player subtree during playback/navigation, the observer can remain attached to a detached node.
+- Kept the MutationObserver for low-latency updates and added a 500 ms active-capture polling fallback that reads the currently rendered caption nodes. The poll is cleared when capture stops.
+
+Commits:
+- `545346d` — restore built-in toolbar side-panel opening.
+- `2b0dfa6` — keep caption capture alive across YouTube player replacement.
+- `b403a36` — bump Chrome extension version to 0.1.2 and trigger combined CI build.
+
+Verification:
+- GitHub Actions run 45863693688 was triggered for commit `b403a36`; status pending at the time of this update.
+- The prior intermediate run for `2b0dfa6` was cancelled by the subsequent version-bump push; use the final combined run for verification.
+- Browser runtime verification is still required. Do not claim toolbar or caption behavior fixed until the user tests the new artifact in Chrome.
