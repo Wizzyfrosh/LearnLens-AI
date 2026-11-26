@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Download, Search, FileText, History, Sun, Moon, CheckCircle2, XCircle } from "lucide-react";
+import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Download, Search, FileText, History, Sun, Moon, CheckCircle2, XCircle, UserRound, LogIn, LogOut, Mail, ShieldCheck, RefreshCw } from "lucide-react";
 import { askLearnLens, generateQuizText, isAudioTranscriptionConfigured, transcribeAudioChunk } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport, serializeSegmentsAsVtt } from "../services/transcript";
 import { deleteLearningSession, deleteLearningNote, getLatestSavedSession, getLatestSessionForVideo, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt } from "../services/session-store";
@@ -9,6 +9,8 @@ import { getQuizFeedbackSegments, parseShortAnswerFeedback, scoreObjectiveAnswer
 import type { QuizAttempt, QuizDefinition } from "../services/quiz";
 import type { InferencePreference, TranscriptSegment, VideoContext } from "../shared/types";
 import type { AudioCaptureStatus, CaptionCaptureStatus, ExtensionMessage } from "../shared/messages";
+import { createEmailPasswordAccount, getReadableAuthError, observeAuthState, refreshAuthUser, requestPasswordReset, resendVerificationEmail, signInWithEmailPassword, signOutCurrentUser } from "../services/firebase-auth";
+import type { AuthUser } from "../services/firebase-auth";
 
 const emptyContext: VideoContext = {
   videoId: "",
@@ -47,7 +49,7 @@ function escapeHtml(value: string): string {
 
 export default function App() {
   const overlayMode = new URLSearchParams(window.location.search).get("overlay") === "1";
-  const [activeTab, setActiveTab] = useState<"lesson" | "notes" | "quiz" | "tutor" | "history">(new URLSearchParams(window.location.search).get("workspace") === "quiz" ? "quiz" : "lesson");
+  const [activeTab, setActiveTab] = useState<"lesson" | "notes" | "quiz" | "tutor" | "history" | "account">(new URLSearchParams(window.location.search).get("workspace") === "quiz" ? "quiz" : "lesson");
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     try { return window.localStorage.getItem("learnlens-theme") === "light" ? "light" : "dark"; }
     catch { return "dark"; }
@@ -100,9 +102,34 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<number | null>(null);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [authUnavailableMessage, setAuthUnavailableMessage] = useState("");
+  const [authMode, setAuthMode] = useState<"sign_in" | "create_account">("sign_in");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authPasswordConfirm, setAuthPasswordConfirm] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
   const activeSessionIdRef = useRef(sessionId);
   const pendingNoteDraftSessionRef = useRef<string | null>(null);
   activeSessionIdRef.current = sessionId;
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    try {
+      unsubscribe = observeAuthState((user) => {
+        setAuthUser(user);
+        setAuthReady(true);
+        setAuthUnavailableMessage("");
+      });
+    } catch (cause) {
+      setAuthReady(true);
+      setAuthUnavailableMessage(getReadableAuthError(cause) + " Local learning remains available without an account.");
+    }
+    return () => unsubscribe?.();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -532,6 +559,120 @@ export default function App() {
     setAudioCaptureMessage("Audio transcription stopped. Raw audio chunks are not retained.");
     setAudioCaptureTabId(null);
     audioCaptureTabIdRef.current = null;
+  }
+
+  async function submitAuthForm(event: FormEvent) {
+    event.preventDefault();
+    setAuthError("");
+    setAuthMessage("");
+    const email = authEmail.trim();
+    if (!email || !authPassword) {
+      setAuthError("Enter your email address and password.");
+      return;
+    }
+    if (authMode === "create_account") {
+      if (authPassword.length < 8) {
+        setAuthError("Use a password with at least 8 characters.");
+        return;
+      }
+      if (authPassword !== authPasswordConfirm) {
+        setAuthError("The passwords do not match.");
+        return;
+      }
+    }
+
+    setAuthBusy(true);
+    try {
+      if (authMode === "create_account") {
+        const result = await createEmailPasswordAccount(email, authPassword);
+        setAuthUser(result.user);
+        setAuthPassword("");
+        setAuthPasswordConfirm("");
+        setAuthMessage(
+          result.verificationEmailSent
+            ? "Your account is ready. Check your inbox for the verification email. Local learning still works while you verify."
+            : "Your account was created, but Firebase could not send the verification email. Use Resend verification email below."
+        );
+      } else {
+        const user = await signInWithEmailPassword(email, authPassword);
+        setAuthUser(user);
+        setAuthPassword("");
+        setAuthMessage(
+          user.emailVerified
+            ? "Signed in. Your local lessons and notes have not been uploaded."
+            : "Signed in, but your email is not verified yet. Verify it before cloud features become available."
+        );
+      }
+    } catch (cause) {
+      setAuthError(getReadableAuthError(cause));
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function sendVerificationAgain() {
+    if (!authUser) return;
+    setAuthBusy(true);
+    setAuthError("");
+    setAuthMessage("");
+    try {
+      await resendVerificationEmail(authUser);
+      setAuthMessage("A new verification email has been sent.");
+    } catch (cause) {
+      setAuthError(getReadableAuthError(cause));
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function checkEmailVerification() {
+    if (!authUser) return;
+    setAuthBusy(true);
+    setAuthError("");
+    setAuthMessage("");
+    try {
+      const refreshed = await refreshAuthUser(authUser);
+      setAuthUser(refreshed);
+      setAuthMessage(refreshed.emailVerified ? "Email verified successfully." : "Firebase still reports this email as unverified. Open the verification link, then check again.");
+    } catch (cause) {
+      setAuthError(getReadableAuthError(cause));
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function sendPasswordReset() {
+    setAuthError("");
+    setAuthMessage("");
+    if (!authEmail.trim()) {
+      setAuthError("Enter your email address first.");
+      return;
+    }
+    setAuthBusy(true);
+    try {
+      await requestPasswordReset(authEmail.trim());
+      setAuthMessage("If an account exists for this email, Firebase will send a password reset link.");
+    } catch (cause) {
+      setAuthError(getReadableAuthError(cause));
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function signOutAccount() {
+    setAuthBusy(true);
+    setAuthError("");
+    setAuthMessage("");
+    try {
+      await signOutCurrentUser();
+      setAuthPassword("");
+      setAuthPasswordConfirm("");
+      setAuthMessage("Signed out. Your local lessons, notes, quizzes, and attempts remain on this device.");
+    } catch (cause) {
+      setAuthError(getReadableAuthError(cause));
+    } finally {
+      setAuthBusy(false);
+    }
   }
 
   async function submitQuestion(event: FormEvent) {
@@ -1072,7 +1213,7 @@ export default function App() {
 
       <nav className="workspace-nav" aria-label="Learning workspace">
         {([
-          ["lesson", "Lesson", Captions], ["notes", "Notes", FileText], ["quiz", "Quiz", BrainCircuit], ["tutor", "Tutor", Sparkles], ["history", "History", History]
+          ["lesson", "Lesson", Captions], ["notes", "Notes", FileText], ["quiz", "Quiz", BrainCircuit], ["tutor", "Tutor", Sparkles], ["history", "History", History], ["account", "Account", UserRound]
         ] as const).map(([tab, label, Icon]) => (
           <button key={tab} type="button" className={activeTab === tab ? "workspace-tab active" : "workspace-tab"} onClick={() => setActiveTab(tab)} aria-current={activeTab === tab ? "page" : undefined}>
             <Icon size={14} /><span>{label}</span>
@@ -1098,6 +1239,72 @@ export default function App() {
       )}
 
       <section className="section-block">
+        {activeTab === "account" && (
+          <section className="account-panel">
+            <div className="section-heading">
+              <div><UserRound size={17} /><h2>Account</h2></div>
+              <span>{authReady ? (authUser ? "ACCOUNT ACTIVE" : "OPTIONAL") : "CHECKING SESSION"}</span>
+            </div>
+            <p className="account-intro">Sign in is optional. You can capture lessons, create notes, and take quizzes without an account.</p>
+            {!authReady ? (
+              <div className="account-card"><LoaderCircle className="spin" size={16} /><span>Checking your account session…</span></div>
+            ) : authUnavailableMessage ? (
+              <div className="account-card account-warning">
+                <ShieldCheck size={18} />
+                <div><strong>Account service unavailable</strong><p>{authUnavailableMessage}</p></div>
+              </div>
+            ) : authUser ? (
+              <div className="account-card">
+                <div className="account-user-heading">
+                  <div className="account-user-icon"><UserRound size={20} /></div>
+                  <div><strong>{authUser.email || "Signed-in learner"}</strong><small>{authUser.emailVerified ? "Email verified" : "Email verification required"}</small></div>
+                </div>
+                {!authUser.emailVerified && (
+                  <div className="account-warning">
+                    <Mail size={16} />
+                    <div><strong>Verify your email</strong><p>Cloud features will require a verified email. Open the link Firebase sent to your inbox, then check verification here.</p></div>
+                  </div>
+                )}
+                {authUser.emailVerified && <div className="account-verified"><ShieldCheck size={15} /> Email verification confirmed</div>}
+                <div className="account-actions">
+                  {!authUser.emailVerified && <button className="secondary-button" type="button" onClick={() => void sendVerificationAgain()} disabled={authBusy}><Mail size={13} /> Resend verification</button>}
+                  {!authUser.emailVerified && <button className="secondary-button" type="button" onClick={() => void checkEmailVerification()} disabled={authBusy}><RefreshCw size={13} /> Check verification</button>}
+                  <button className="secondary-button" type="button" onClick={() => void signOutAccount()} disabled={authBusy}><LogOut size={13} /> Sign out</button>
+                </div>
+              </div>
+            ) : (
+              <div className="account-card">
+                <div className="account-mode-switch">
+                  <button type="button" className={authMode === "sign_in" ? "active" : ""} onClick={() => { setAuthMode("sign_in"); setAuthError(""); setAuthMessage(""); }}>Sign in</button>
+                  <button type="button" className={authMode === "create_account" ? "active" : ""} onClick={() => { setAuthMode("create_account"); setAuthError(""); setAuthMessage(""); }}>Create account</button>
+                </div>
+                <form className="account-form" onSubmit={(event) => void submitAuthForm(event)}>
+                  <label className="field-label" htmlFor="account-email">Email address</label>
+                  <input id="account-email" type="email" autoComplete="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} placeholder="you@example.com" required />
+                  <label className="field-label" htmlFor="account-password">Password</label>
+                  <input id="account-password" type="password" autoComplete={authMode === "create_account" ? "new-password" : "current-password"} value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} placeholder={authMode === "create_account" ? "At least 8 characters" : "Enter your password"} minLength={authMode === "create_account" ? 8 : undefined} required />
+                  {authMode === "create_account" && (
+                    <>
+                      <label className="field-label" htmlFor="account-password-confirm">Confirm password</label>
+                      <input id="account-password-confirm" type="password" autoComplete="new-password" value={authPasswordConfirm} onChange={(event) => setAuthPasswordConfirm(event.target.value)} placeholder="Enter the password again" minLength={8} required />
+                    </>
+                  )}
+                  <button className="primary-button" type="submit" disabled={authBusy}>
+                    {authBusy ? <LoaderCircle className="spin" size={15} /> : authMode === "create_account" ? <UserRound size={15} /> : <LogIn size={15} />}
+                    {authBusy ? "Please wait…" : authMode === "create_account" ? "Create account" : "Sign in"}
+                  </button>
+                </form>
+                {authMode === "sign_in" && <button className="account-link-button" type="button" onClick={() => void sendPasswordReset()} disabled={authBusy}>Forgot password?</button>}
+              </div>
+            )}
+            {authError && <p className="error-box" role="alert">{authError}</p>}
+            {authMessage && <p className="account-message" role="status">{authMessage}</p>}
+            <div className="account-privacy">
+              <ShieldCheck size={15} />
+              <p>Signing in does not enable cloud sync and does not upload your saved lessons, transcripts, notes, quizzes, or attempts. Sync controls will be added separately after security testing.</p>
+            </div>
+          </section>
+        )}
         {activeTab === "lesson" && <>
         <div className="section-heading">
           <div><Captions size={17} /><h2>Lesson transcript</h2></div>
@@ -1303,7 +1510,7 @@ export default function App() {
           </section>
         )}
 
-        {activeTab !== "lesson" && activeTab !== "tutor" && activeTab !== "history" && activeTab !== "quiz" && !savedSession && (
+        {activeTab !== "lesson" && activeTab !== "tutor" && activeTab !== "history" && activeTab !== "quiz" && activeTab !== "account" && !savedSession && (
           <div className="workspace-empty">
             <BookOpen size={22} />
             <strong>Save a lesson to use this workspace</strong>
