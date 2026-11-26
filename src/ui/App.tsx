@@ -43,6 +43,7 @@ function formatLessonTime(seconds: number): string {
 }
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState<"lesson" | "notes" | "bookmarks" | "quiz" | "tutor" | "history">("lesson");
   const [video, setVideo] = useState<VideoContext>(emptyContext);
   const [rawTranscript, setRawTranscript] = useState("");
   const [transcriptSource, setTranscriptSource] = useState("Pasted transcript");
@@ -832,8 +833,18 @@ export default function App() {
         {video.url && <a href={video.url} target="_blank" rel="noreferrer">Open source video</a>}
       </section>
 
-      {savedSessions.length > 0 && (
-        <details className="saved-history">
+      <nav className="workspace-nav" aria-label="Learning workspace">
+        {([
+          ["lesson", "Lesson", Captions], ["notes", "Notes", FileText], ["bookmarks", "Bookmarks", Bookmark], ["quiz", "Quiz", BrainCircuit], ["tutor", "Tutor", Sparkles], ["history", "History", History]
+        ] as const).map(([tab, label, Icon]) => (
+          <button key={tab} type="button" className={activeTab === tab ? "workspace-tab active" : "workspace-tab"} onClick={() => setActiveTab(tab)} aria-current={activeTab === tab ? "page" : undefined}>
+            <Icon size={14} /><span>{label}</span>
+          </button>
+        ))}
+      </nav>
+
+      {activeTab === "history" && savedSessions.length > 0 && (
+        <details className="saved-history" open>
           <summary><History size={15} /> Saved lessons <span>{savedSessions.length}</span></summary>
           <div className="saved-history-list">
             {savedSessions.map((session) => (
@@ -850,6 +861,7 @@ export default function App() {
       )}
 
       <section className="section-block">
+        {activeTab === "lesson" && <>
         <div className="section-heading">
           <div><Captions size={17} /><h2>Lesson transcript</h2></div>
           <span>{segmentCount} segments</span>
@@ -947,12 +959,15 @@ export default function App() {
         )}
 
 
-        {savedSession && sessionId && (
+        </>}
+
+        {savedSession && sessionId && (activeTab === "notes" || activeTab === "bookmarks") && (
           <section className="learning-artifacts">
             <div className="section-heading">
               <div><FileText size={17} /><h2>Lesson notes</h2></div>
               <span>{notes.length} notes · {bookmarks.length} bookmarks</span>
             </div>
+            {activeTab === "notes" && <>
             <div className="note-draft-row">
               <p>AI drafts are suggestions only. Review and edit before saving.</p>
               <button className="secondary-button" type="button" onClick={() => void draftNoteWithTutor()} disabled={draftingNote || !segmentCount}>
@@ -990,7 +1005,8 @@ export default function App() {
                 </article>
               )) : <p className="empty-artifact">{noteSearch ? "No notes match that search." : "Your saved lesson notes will appear here."}</p>}
             </div>
-            <div className="bookmark-list">
+            </>}
+            {activeTab === "bookmarks" && <div className="bookmark-list">
               <strong>Bookmarks</strong>
               {bookmarks.length ? bookmarks.map((item) => (
                 <div className="bookmark-row" key={item.id}>
@@ -1000,12 +1016,12 @@ export default function App() {
                 </div>
               )) : <p className="empty-artifact">No timestamp bookmarks yet. Use the bookmark control beside a timed caption below.</p>}
             </div>
-            <button className="secondary-button export-button" type="button" onClick={exportNotes} disabled={!notes.length && !bookmarks.length}><Download size={14} /> Export notes as Markdown</button>
-            {artifactMessage && <p className="helper-text">{artifactMessage}</p>}
+            {activeTab === "bookmarks" && <button className="secondary-button export-button" type="button" onClick={exportNotes} disabled={!notes.length && !bookmarks.length}><Download size={14} /> Export notes as Markdown</button>}
+            {artifactMessage && <p className={artifactMessage.toLowerCase().includes("could not") || artifactMessage.toLowerCase().includes("error") || artifactMessage.toLowerCase().includes("invalid") ? "error-box" : "helper-text"} role="status">{artifactMessage}</p>}
           </section>
         )}
 
-        {savedSession && sessionId && (
+        {savedSession && sessionId && activeTab === "quiz" && (
           <section className="quiz-studio">
             <div className="section-heading">
               <div><BrainCircuit size={17} /><h2>Quiz studio</h2></div>
@@ -1089,7 +1105,7 @@ export default function App() {
             )}
             {quizAttempts.length > 0 && <div className="quiz-attempt-history"><strong>Attempt history</strong>{quizAttempts.slice(0, 5).map((attempt) => <article key={attempt.id}><span>{new Date(attempt.createdAt).toLocaleDateString()} · {attempt.objectiveScore}/{attempt.objectiveTotal} objective</span><small>{attempt.topicsToReview.length ? "Review: " + attempt.topicsToReview.join(", ") : "No objective weak topics recorded"}</small></article>)}</div>}
             <div className="topic-review-summary"><strong>Topics to revisit</strong>{topicReviewCounts.length ? topicReviewCounts.slice(0, 5).map(([topic, count]) => <span key={topic}>{topic} · {count} missed attempts</span>) : <small>No weak topics identified yet. Complete a quiz to build this list.</small>}</div>
-            {quizMessage && <p className="helper-text">{quizMessage}</p>}
+            {quizMessage && <p className={quizMessage.toLowerCase().includes("error") || quizMessage.toLowerCase().includes("invalid") || quizMessage.toLowerCase().includes("could not") ? "error-box" : "helper-text"} role="status">{quizMessage}</p>}
           </section>
         )}
 
@@ -1112,9 +1128,10 @@ export default function App() {
             setError("");
           }} placeholder="Paste transcript text here..." rows={4} />
         </details>
+        </>}
       </section>
 
-      <section className="section-block tutor-block">
+      {activeTab === "tutor" && <section className="section-block tutor-block">
         <div className="section-heading">
           <div><Sparkles size={17} /><h2>Ask your tutor</h2></div>
           <span className="ai-label">AI TUTOR</span>
@@ -1137,6 +1154,8 @@ export default function App() {
         {error && <div className="error-box"><CircleHelp size={15} />{error}</div>}
         {answer && <article className="answer-card"><div className="answer-meta">LEARNLENS RESPONSE <span>{source === "ON_DEVICE" ? "ON DEVICE" : source === "IN_CLOUD" ? "CLOUD" : "SOURCE UNKNOWN"}</span></div><p>{answer}</p></article>}
       </section>
+
+      </section>}
 
       <footer>Captured captions and saved lessons stay in this browser. Audio transcription sends lesson audio to Firebase only after separate learner consent and App Check configuration.</footer>
     </main>
