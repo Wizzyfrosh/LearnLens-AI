@@ -337,9 +337,10 @@ User decision:
 
 Implemented directly on `main`:
 - `ac1fb2e` — upgraded IndexedDB from schema version 2 to 3; added `learningNotes` and `learningBookmarks` stores with session/video/timestamp indexes.
+- `dc2d148`, `2a424bd`, `d542091`, `43eec46` — cascade session deletion across its notes/bookmarks and ensure IndexedDB operations settle only after transaction commit; removed unused callback parameters.
 - `f1eb002` and `af0b7c6` — added `fake-indexeddb` and integration tests for notes/bookmarks persistence, updates, deletes, search, timestamp validation, and version-2-to-version-3 migration.
 - `022e07b`, `63789eb`, `614a7c0`, `9dc23e7` — added note create/edit/delete/search UI, timestamp-linked notes, evidence-based caption bookmarks, reviewable AI note drafts, and Markdown export; corrected the lesson-time helper and added loading of saved artifacts.
-- `fbb428e`, `15464b4` — added styles for the notes/bookmarks workspace and AI draft controls.
+- `fbb428e`, `15464b4`, `d42b2f4`, `55ced53` — added styles for the notes/bookmarks workspace and AI draft controls and linked timestamp references back to the YouTube video.
 - `8afb24d` — updated the implementation roadmap.
 
 Important behavior and boundaries:
@@ -350,11 +351,22 @@ Important behavior and boundaries:
 - The current bookmark action is available beside timed captured captions; arbitrary timestamp entry is not supported.
 
 Verification still pending:
-- Latest GitHub Actions run must pass typecheck, all tests, production build, extension package smoke check, and artifact upload.
-- Load the latest artifact in desktop Chrome and verify schema upgrade, notes/bookmarks CRUD, search, AI draft review, Markdown export, and persistence after extension reload.
+- [x] GitHub Actions run 45725960100 passed dependency installation, TypeScript typecheck, unit tests, production build, Chrome extension package smoke check, and artifact upload.
+- [ ] Load the latest artifact in desktop Chrome and verify schema upgrade, notes/bookmarks CRUD, search, AI draft review, Markdown export, and persistence after extension reload.
 - Audio transcription remains paused; do not resume it unless the user explicitly asks to return to Phase 3.
 
 Next exact task:
 1. Inspect the latest CI result and fix any type/test/build failures.
 2. Only after CI passes, provide the artifact for Phase 4 Chrome runtime QA.
 3. Continue Phase 4 with session history/restore polish and any runtime defects found; then return to the remaining Phase 3 audio work later.
+
+
+## 22. Phase 4 CI result — 2026-11-26
+
+- Successful workflow: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45725960100
+- Verified commit: `55ced53912c4ed60687d7cecf64bb9ea820de5c4`.
+- Dependency installation, TypeScript typecheck, unit tests, production build, Chrome extension package smoke check, and artifact upload all passed.
+- New integration coverage passed for IndexedDB schema creation, notes/bookmarks persistence, case-insensitive note search, update/delete, invalid bookmark timestamp rejection, version-2-to-version-3 migration without losing sessions, and cascade deletion of a session's learning artifacts.
+- Artifact: `learnlens-chrome-extension`, ID `15074252931`, 116,965 bytes, expires 2026-12-10.
+- This verifies CI only. The artifact has not yet been loaded in Chrome for Phase 4 runtime QA. Audio transcription remains paused and unverified.
+- Next: provide artifact for desktop Chrome runtime testing, then fix any observed Phase 4 issues before proceeding to quiz/revision work.
