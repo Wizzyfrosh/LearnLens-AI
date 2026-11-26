@@ -431,3 +431,15 @@ Next:
 - Phase 4 implementation and CI checks are complete; desktop Chrome runtime QA remains open.
 - Phase 5 implementation and CI checks are complete; desktop Chrome runtime QA remains open.
 - Neither phase is declared fully complete until the combined browser tests pass. Audio transcription remains deferred.
+
+
+## 25. Final Phase 4/5 build — 2026-11-26
+
+- Final successful workflow: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45768472304
+- Verified code commit: `a7d213e7291a950b5b78dbd2b03cd2191e663761`.
+- All CI stages passed: dependency installation, TypeScript typecheck, unit tests, production build, Chrome extension package verification, and artifact upload.
+- Final artifact: `learnlens-chrome-extension`, ID `15093386245`, 122,807 bytes, expires 2026-12-26 (30-day retention).
+- Added final grounding guard: multiple-choice and short-answer correct answers must themselves appear in the lesson transcript; all question types must include exact transcript evidence.
+- Added tests for transcript-unsupported correct answers and version-3-to-version-4 IndexedDB migration preserving existing sessions, notes, and bookmarks.
+- The final build is code-verified but has not been run in desktop Chrome. Phase 4 and Phase 5 runtime testing remain deliberately open until the user has their PC.
+- Do not proceed to Phase 6 until combined Phase 4/5 runtime testing and fixes are complete. Phase 3 audio transcription remains deferred.
