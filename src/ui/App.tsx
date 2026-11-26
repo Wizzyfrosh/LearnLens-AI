@@ -735,7 +735,7 @@ export default function App() {
     setSyncPreferencesError("");
     setSyncPreferencesMessage("");
     try {
-      const reviewedKeys = syncClaimCandidates.filter((candidate) => candidate.ownership !== "other_account").map((candidate) => candidate.entityKey);
+      const reviewedKeys = syncClaimCandidates.filter((candidate) => candidate.ownership === "unclaimed" || candidate.ownership === "current_account").map((candidate) => candidate.entityKey);
       const result = await claimSelectedLocalSyncRecords(authUser.uid, syncCategories, reviewedKeys);
       setSyncClaimResult(result);
       setSyncClaimReviewOpen(false);
@@ -1438,8 +1438,8 @@ export default function App() {
                           {syncClaimCandidates.map((candidate) => (
                             <div className="account-sync-item" key={candidate.entityKey}>
                               <div><strong>{candidate.title}</strong><small>{candidate.category} · {candidate.lessonTitle}</small></div>
-                              <span className={candidate.ownership === "other_account" ? "ownership-locked" : "ownership-eligible"}>
-                                {candidate.ownership === "other_account" ? "Other account — excluded" : candidate.ownership === "current_account" ? "Already yours" : "Will be claimed"}
+                              <span className={candidate.ownership === "other_account" || candidate.ownership === "invalid" ? "ownership-locked" : "ownership-eligible"}>
+                                {candidate.ownership === "other_account" ? "Other account — excluded" : candidate.ownership === "invalid" ? "Invalid — remains local" : candidate.ownership === "current_account" ? "Already yours" : "Will be claimed"}
                               </span>
                               <small>{candidate.updatedAtMs ? new Date(candidate.updatedAtMs).toLocaleString() : "Date unavailable"}</small>
                             </div>
@@ -1448,7 +1448,7 @@ export default function App() {
                         </div>
                         <div className="account-sync-review-actions">
                           <button className="secondary-button" type="button" onClick={() => setSyncClaimReviewOpen(false)} disabled={syncClaimBusy}>Cancel</button>
-                          <button className="primary-button" type="button" onClick={() => void confirmLocalSyncClaim()} disabled={syncClaimBusy || syncClaimCandidates.filter((candidate) => candidate.ownership !== "other_account").length === 0}>
+                          <button className="primary-button" type="button" onClick={() => void confirmLocalSyncClaim()} disabled={syncClaimBusy || syncClaimCandidates.filter((candidate) => candidate.ownership === "unclaimed" || candidate.ownership === "current_account").length === 0}>
                             {syncClaimBusy ? <LoaderCircle className="spin" size={14} /> : <ShieldCheck size={14} />}
                             {syncClaimBusy ? "Claiming locally…" : "Confirm local claim"}
                           </button>
