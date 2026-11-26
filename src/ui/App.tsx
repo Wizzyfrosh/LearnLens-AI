@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square } from "lucide-react";
+import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Bookmark, Download, Search, FileText } from "lucide-react";
 import { askLearnLens, isAudioTranscriptionConfigured, transcribeAudioChunk } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport, serializeSegmentsAsVtt } from "../services/transcript";
-import { deleteLearningSession, getLatestManualSession, getLatestSessionForVideo, saveLearningSession } from "../services/session-store";
+import { deleteLearningSession, deleteLearningNote, deleteLearningBookmark, getLatestManualSession, getLatestSessionForVideo, listLearningBookmarks, listLearningNotes, saveLearningBookmark, saveLearningNote, saveLearningSession } from "../services/session-store";
+import type { LearningBookmark, LearningNote } from "../services/session-store";
 import type { InferencePreference, TranscriptSegment, VideoContext } from "../shared/types";
 import type { AudioCaptureStatus, CaptionCaptureStatus, ExtensionMessage } from "../shared/messages";
 
@@ -22,7 +23,7 @@ const captureStatusLabel: Record<CaptionCaptureStatus, string> = {
   error: "Capture unavailable"
 };
 
-export default function App() {
+export default function formatLessonTime(seconds: number): string {\n  const minutes = Math.floor(seconds / 60);\n  const remaining = Math.floor(seconds % 60);\n  return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;\n}\n\nfunction App() {
   const [video, setVideo] = useState<VideoContext>(emptyContext);
   const [rawTranscript, setRawTranscript] = useState("");
   const [transcriptSource, setTranscriptSource] = useState("Pasted transcript");
@@ -39,6 +40,14 @@ export default function App() {
   const [sessionId, setSessionId] = useState("");
   const [savedSession, setSavedSession] = useState(false);
   const [storageNotice, setStorageNotice] = useState("");
+  const [notes, setNotes] = useState<LearningNote[]>([]);
+  const [bookmarks, setBookmarks] = useState<LearningBookmark[]>([]);
+  const [noteTitle, setNoteTitle] = useState("");
+  const [noteContent, setNoteContent] = useState("");
+  const [noteTimestamp, setNoteTimestamp] = useState("");
+  const [noteSearch, setNoteSearch] = useState("");
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [artifactMessage, setArtifactMessage] = useState("");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [source, setSource] = useState("");
@@ -212,6 +221,7 @@ export default function App() {
     ? capturedSegments
     : importedTranscript?.segments ?? [];
   const segmentCount = segments.length;
+  const filteredNotes = notes.filter((note) => !noteSearch.trim() || `${note.title}\n${note.content}`.toLocaleLowerCase().includes(noteSearch.trim().toLocaleLowerCase()));
   const isLiveTranscript = capturedSegments.length > 0;
 
   useEffect(() => {
@@ -418,6 +428,110 @@ export default function App() {
     }
   }
 
+  async function saveNote(event: FormEvent) {
+    event.preventDefault();
+    if (!sessionId || !savedSession || !noteTitle.trim() || !noteContent.trim()) return;
+    const existing = notes.find((note) => note.id === editingNoteId);
+    const now = Date.now();
+    const timestamp = noteTimestamp === "" ? null : Number(noteTimestamp);
+    const note: LearningNote = {
+      id: existing?.id ?? crypto.randomUUID(),
+      sessionId,
+      videoId: video.videoId,
+      title: noteTitle.trim(),
+      content: noteContent.trim(),
+      timestampSeconds: timestamp !== null && Number.isFinite(timestamp) && timestamp >= 0 ? timestamp : null,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now
+    };
+    try {
+      await saveLearningNote(note);
+      setNotes((current) => [note, ...current.filter((item) => item.id !== note.id)].sort((a, b) => b.updatedAt - a.updatedAt));
+      setNoteTitle("");
+      setNoteContent("");
+      setNoteTimestamp("");
+      setEditingNoteId(null);
+      setArtifactMessage(existing ? "Note updated on this device." : "Note saved on this device.");
+    } catch (cause) {
+      setArtifactMessage(cause instanceof Error ? cause.message : "Could not save this note.");
+    }
+  }
+
+  async function removeNote(id: string) {
+    try {
+      await deleteLearningNote(id);
+      setNotes((current) => current.filter((note) => note.id !== id));
+      if (editingNoteId === id) {
+        setEditingNoteId(null);
+        setNoteTitle("");
+        setNoteContent("");
+        setNoteTimestamp("");
+      }
+      setArtifactMessage("Note deleted.");
+    } catch {
+      setArtifactMessage("Could not delete this note.");
+    }
+  }
+
+  async function addBookmark(segment: TranscriptSegment) {
+    if (!sessionId || !savedSession || !segment.hasTimestamp) return;
+    const timestampSeconds = segment.startSeconds;
+    if (bookmarks.some((item) => item.timestampSeconds === timestampSeconds)) {
+      setArtifactMessage("A bookmark already exists at this lesson timestamp.");
+      return;
+    }
+    const bookmark: LearningBookmark = {
+      id: crypto.randomUUID(),
+      sessionId,
+      videoId: video.videoId,
+      label: segment.text.slice(0, 120),
+      timestampSeconds,
+      createdAt: Date.now()
+    };
+    try {
+      await saveLearningBookmark(bookmark);
+      setBookmarks((current) => [...current, bookmark].sort((a, b) => a.timestampSeconds - b.timestampSeconds));
+      setArtifactMessage("Bookmark saved with the caption's timestamp.");
+    } catch {
+      setArtifactMessage("Could not save this bookmark.");
+    }
+  }
+
+  async function removeBookmark(id: string) {
+    try {
+      await deleteLearningBookmark(id);
+      setBookmarks((current) => current.filter((item) => item.id !== id));
+      setArtifactMessage("Bookmark deleted.");
+    } catch {
+      setArtifactMessage("Could not delete this bookmark.");
+    }
+  }
+
+  function exportNotes() {
+    const lines = [
+      `# ${video.title || "LearnLens lesson notes"}`,
+      "",
+      `Source: ${video.url || "Imported lesson"}`,
+      "",
+      ...notes.flatMap((note) => [
+        `## ${note.title}`,
+        note.timestampSeconds === null ? "" : `Timestamp: ${formatLessonTime(note.timestampSeconds)}`,
+        "",
+        note.content,
+        ""
+      ]),
+      "## Bookmarks",
+      ...bookmarks.map((item) => `- [${formatLessonTime(item.timestampSeconds)}] ${item.label}`)
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `learnlens-notes-${sessionId || "lesson"}.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function clearSavedSession() {
     if (!savedSession || !sessionId) return;
     try {
@@ -538,6 +652,58 @@ export default function App() {
             )}
             {storageNotice && <p className="helper-text">{storageNotice}</p>}
           </div>
+        )}
+
+
+        {savedSession && sessionId && (
+          <section className="learning-artifacts">
+            <div className="section-heading">
+              <div><FileText size={17} /><h2>Lesson notes</h2></div>
+              <span>{notes.length} notes · {bookmarks.length} bookmarks</span>
+            </div>
+            <form className="note-editor" onSubmit={(event) => void saveNote(event)}>
+              <label className="field-label" htmlFor="note-title">Note title</label>
+              <input id="note-title" value={noteTitle} onChange={(event) => setNoteTitle(event.target.value)} placeholder="e.g. How ATP is produced" required />
+              <label className="field-label" htmlFor="note-content">Your notes</label>
+              <textarea id="note-content" value={noteContent} onChange={(event) => setNoteContent(event.target.value)} placeholder="Write your explanation, key ideas, or questions..." rows={4} required />
+              <label className="field-label" htmlFor="note-timestamp">Link to a captured lesson timestamp (optional)</label>
+              <select id="note-timestamp" value={noteTimestamp} onChange={(event) => setNoteTimestamp(event.target.value)}>
+                <option value="">No timestamp</option>
+                {segments.filter((segment) => segment.hasTimestamp).map((segment) => (
+                  <option key={segment.id} value={String(segment.startSeconds)}>{formatLessonTime(segment.startSeconds)} — {segment.text.slice(0, 72)}</option>
+                ))}
+              </select>
+              <div className="session-actions">
+                <button className="primary-button note-save" type="submit">{editingNoteId ? "Update note" : "Save note"}</button>
+                {editingNoteId && <button className="secondary-button" type="button" onClick={() => { setEditingNoteId(null); setNoteTitle(""); setNoteContent(""); setNoteTimestamp(""); }}>Cancel edit</button>}
+              </div>
+            </form>
+            <label className="note-search"><Search size={14} /><input value={noteSearch} onChange={(event) => setNoteSearch(event.target.value)} placeholder="Search saved notes..." /></label>
+            <div className="saved-note-list">
+              {filteredNotes.length ? filteredNotes.map((note) => (
+                <article className="saved-note" key={note.id}>
+                  <div className="saved-note-heading"><strong>{note.title}</strong>{note.timestampSeconds !== null && <span>{formatLessonTime(note.timestampSeconds)}</span>}</div>
+                  <p>{note.content}</p>
+                  <div className="session-actions">
+                    <button className="secondary-button" type="button" onClick={() => { setEditingNoteId(note.id); setNoteTitle(note.title); setNoteContent(note.content); setNoteTimestamp(note.timestampSeconds === null ? "" : String(note.timestampSeconds)); }}>Edit</button>
+                    <button className="secondary-button" type="button" onClick={() => void removeNote(note.id)}><Trash2 size={12} /> Delete</button>
+                  </div>
+                </article>
+              )) : <p className="empty-artifact">{noteSearch ? "No notes match that search." : "Your saved lesson notes will appear here."}</p>}
+            </div>
+            <div className="bookmark-list">
+              <strong>Bookmarks</strong>
+              {bookmarks.length ? bookmarks.map((item) => (
+                <div className="bookmark-row" key={item.id}>
+                  <span><Bookmark size={13} /> {formatLessonTime(item.timestampSeconds)}</span>
+                  <p>{item.label}</p>
+                  <button className="icon-button" type="button" aria-label="Delete bookmark" onClick={() => void removeBookmark(item.id)}><Trash2 size={13} /></button>
+                </div>
+              )) : <p className="empty-artifact">No timestamp bookmarks yet. Use the bookmark control beside a timed caption below.</p>}
+            </div>
+            <button className="secondary-button export-button" type="button" onClick={exportNotes} disabled={!notes.length && !bookmarks.length}><Download size={14} /> Export notes as Markdown</button>
+            {artifactMessage && <p className="helper-text">{artifactMessage}</p>}
+          </section>
         )}
 
         <details className="fallback-import">
