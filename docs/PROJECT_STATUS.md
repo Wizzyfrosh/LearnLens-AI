@@ -192,19 +192,20 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - Added account-bound entity claiming and guards that prevent one account from reassigning another account's local entity.
 - Added coalesced outbox operations, stable retry operation IDs, base revisions, retry metadata, acknowledgement checks, and cancellation of never-uploaded upserts on local deletion.
 - Added an installation-scoped device ID.
+- Integrated account-claimed outbox updates atomically with lesson metadata changes, note/quiz/attempt saves, note deletion, quiz deletion with attempt children, and lesson deletion with all child artifacts. Transcript-only lesson autosaves never enqueue lesson metadata; unclaimed records remain local-only.
 - Added allow-listed DTO mappers for lesson metadata, notes, quizzes, and quiz attempts. Full transcript/audio and unrecognized local fields are excluded.
 - Added size and timestamp validation plus YouTube URL canonicalization/sanitization.
 - Added IndexedDB migration/outbox and DTO privacy regression tests.
 
 **Not yet implemented / no live cloud writes**
 - There is no sync opt-in/category consent UI, first-claim preview, account-switch orchestration, background sync runner, Firestore artifact write, pull cursor, conflict resolver, or tombstone propagation.
-- No sync opt-in/first-claim UI, account-switch orchestration, Firestore artifact writes, pull cursor, conflict resolver, or tombstone propagation exists yet.
 - Live Firebase Email/Password configuration and desktop Chrome Auth flow remain unverified by the user.
 - Production-compatible App Check remains a hard release gate. Do not enable or deploy learning-artifact sync.
 
 **CI**
-- Latest run for this slice: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45898931300
-- The run is being used to verify the final Phase 6C code commit; update this section with its final result before declaring this slice complete.
+- Latest successful run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45899364699
+- Code commit: `cf1e866a581082dda0a5401dcd0356047c9016a7` (subsequent commits are documentation-only).
+- Result: SUCCESS — TypeScript, 8 Vitest files / 65 tests, 8 Firestore Emulator Rules tests, production build, extension package verification, and artifact upload.
 - Package version remains 0.1.0.
 
 **Next engineering task:** Implement sync opt-in/category consent and a first-claim preview that shows exactly which existing local records will be assigned to the signed-in UID. Keep the sync runner and Firestore artifact writes disabled until live Auth QA and production App Check are approved.
