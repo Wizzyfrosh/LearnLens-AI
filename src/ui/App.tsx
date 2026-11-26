@@ -3,8 +3,8 @@ import type { FormEvent } from "react";
 import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Download, Search, FileText, History, Sun, Moon, CheckCircle2, XCircle, UserRound, LogIn, LogOut, Mail, ShieldCheck, RefreshCw } from "lucide-react";
 import { askLearnLens, generateQuizText, isAudioTranscriptionConfigured, transcribeAudioChunk } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport, serializeSegmentsAsVtt } from "../services/transcript";
-import { deleteLearningSession, deleteLearningNote, getLatestSavedSession, getLatestSessionForVideo, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt, getLocalSyncCandidateCounts, getLocalSyncPreferences, saveLocalSyncPreferences, getLocalSyncClaimCandidates, claimSelectedLocalSyncRecords } from "../services/session-store";
-import type { LearningNote, LearningSession, SyncCandidateCounts, SyncCategoryPreferences, SyncClaimResult, SyncClaimCandidate } from "../services/session-store";
+import { deleteLearningSession, deleteLearningNote, getLatestSavedSession, getLatestSessionForVideo, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt, getLocalSyncCandidateCounts, getLocalSyncPreferences, saveLocalSyncPreferences, getLocalSyncClaimCandidates, claimSelectedLocalSyncRecords, listSyncConflicts, resolveSyncConflict } from "../services/session-store";
+import type { LearningNote, LearningSession, SyncCandidateCounts, SyncCategoryPreferences, SyncClaimResult, SyncClaimCandidate, SyncConflictRecord, SyncConflictResolution, SyncPreparedPayload } from "../services/session-store";
 import { getQuizFeedbackSegments, parseShortAnswerFeedback, scoreObjectiveAnswers, validateQuizResponse } from "../services/quiz";
 import type { QuizAttempt, QuizDefinition } from "../services/quiz";
 import type { InferencePreference, TranscriptSegment, VideoContext } from "../shared/types";
@@ -45,6 +45,40 @@ function escapeHtml(value: string): string {
   const quote = String.fromCharCode(34);
   const apostrophe = String.fromCharCode(39);
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll(quote, "&quot;").replaceAll(apostrophe, "&#39;");
+}
+
+
+function syncConflictEntityLabel(type: SyncConflictRecord["entityType"]): string {
+  return type === "lesson" ? "Lesson metadata"
+    : type === "note" ? "Study note"
+      : type === "quiz" ? "Quiz"
+        : "Quiz attempt";
+}
+
+function describeSyncConflictPayload(payload: SyncPreparedPayload | null): string {
+  if (!payload) return "No content snapshot is available.";
+  if ("content" in payload) {
+    const excerpt = payload.content.slice(0, 650);
+    return payload.title + "\n\n" + excerpt + (payload.content.length > excerpt.length ? "\n\nPreview shortened." : "");
+  }
+  if ("questions" in payload) {
+    return payload.title + "\n" + payload.questions.length + " questions\n\n" +
+      payload.questions.slice(0, 3).map((question, index) => (index + 1) + ". " + question.prompt).join("\n");
+  }
+  if ("results" in payload) {
+    return payload.quizId + "\nScore: " + payload.objectiveScore + "/" + payload.objectiveTotal +
+      "\n" + payload.results.length + " answers";
+  }
+  return payload.title + "\n" + (payload.platform === "youtube" ? "YouTube lesson" : "Manual lesson") +
+    "\n" + (payload.url || "No source link");
+}
+
+function syncConflictReasonLabel(conflict: SyncConflictRecord): string {
+  switch (conflict.conflictCode) {
+    case "revision_conflict": return "The remote record changed after this device last synced.";
+    case "entity_deleted": return "The remote record has been deleted.";
+    case "immutable_entity_exists": return "A record with this ID already exists and cannot be overwritten.";
+  }
 }
 
 export default function App() {
@@ -124,6 +158,11 @@ export default function App() {
   const [syncClaimBusy, setSyncClaimBusy] = useState(false);
   const [syncClaimResult, setSyncClaimResult] = useState<SyncClaimResult | null>(null);
   const [syncClaimCandidates, setSyncClaimCandidates] = useState<SyncClaimCandidate[]>([]);
+  const [syncConflicts, setSyncConflicts] = useState<SyncConflictRecord[]>([]);
+  const [syncConflictsLoading, setSyncConflictsLoading] = useState(false);
+  const [syncConflictBusyId, setSyncConflictBusyId] = useState<string | null>(null);
+  const [syncConflictError, setSyncConflictError] = useState("");
+  const [syncConflictMessage, setSyncConflictMessage] = useState("");
   const activeSessionIdRef = useRef(sessionId);
   const pendingNoteDraftSessionRef = useRef<string | null>(null);
   activeSessionIdRef.current = sessionId;
@@ -136,6 +175,9 @@ export default function App() {
         setSyncClaimReviewOpen(false);
         setSyncClaimResult(null);
         setSyncCandidateCounts(null);
+        setSyncConflicts([]);
+        setSyncConflictError("");
+        setSyncConflictMessage("");
         setSyncCategories({ lessonMetadata: false, notes: false, quizzes: false, attempts: false });
         setAuthReady(true);
         setAuthUnavailableMessage("");
@@ -151,21 +193,30 @@ export default function App() {
     let cancelled = false;
     if (activeTab !== "account" || !authUser?.emailVerified) {
       setSyncCandidateCounts(null);
+      setSyncConflicts([]);
+      setSyncConflictsLoading(false);
       return;
     }
     setSyncPreferencesLoading(true);
+    setSyncConflictsLoading(true);
     setSyncPreferencesError("");
+    setSyncConflictError("");
     Promise.all([
       getLocalSyncCandidateCounts(authUser.uid),
-      getLocalSyncPreferences(authUser.uid)
-    ]).then(([counts, preferences]) => {
+      getLocalSyncPreferences(authUser.uid),
+      listSyncConflicts(authUser.uid, ["open"], 100)
+    ]).then(([counts, preferences, conflicts]) => {
       if (cancelled) return;
       setSyncCandidateCounts(counts);
       setSyncCategories(preferences.categories);
+      setSyncConflicts(conflicts);
     }).catch((cause) => {
       if (!cancelled) setSyncPreferencesError(cause instanceof Error ? cause.message : "Could not load local sync preferences.");
     }).finally(() => {
-      if (!cancelled) setSyncPreferencesLoading(false);
+      if (!cancelled) {
+        setSyncPreferencesLoading(false);
+        setSyncConflictsLoading(false);
+      }
     });
     return () => { cancelled = true; };
   }, [activeTab, authUser?.uid, authUser?.emailVerified]);
@@ -749,6 +800,29 @@ export default function App() {
       setSyncPreferencesError(cause instanceof Error ? cause.message : "Could not claim the selected local records.");
     } finally {
       setSyncClaimBusy(false);
+    }
+  }
+
+  async function resolveLocalSyncConflict(conflictId: string, resolution: SyncConflictResolution) {
+    if (!authUser?.emailVerified || syncConflictBusyId) return;
+    setSyncConflictBusyId(conflictId);
+    setSyncConflictError("");
+    setSyncConflictMessage("");
+    try {
+      const conflict = syncConflicts.find((item) => item.conflictId === conflictId);
+      await resolveSyncConflict(conflictId, authUser.uid, resolution);
+      setSyncConflicts(await listSyncConflicts(authUser.uid, ["open"], 100));
+      setSyncConflictMessage(
+        resolution === "keep_remote"
+          ? conflict?.entityType === "lesson" && (conflict.remoteIsDeleted || conflict.remoteRevision === 0)
+            ? "The remote lesson record is no longer present. Your local lesson and full transcript were preserved on this device without a sync claim."
+            : "The remote version is now the local version on this device. No upload occurred."
+          : "Your current local version has been kept and queued against the latest remote revision. Cloud uploads remain disabled."
+      );
+    } catch (cause) {
+      setSyncConflictError(cause instanceof Error ? cause.message : "Could not resolve this sync conflict.");
+    } finally {
+      setSyncConflictBusyId(null);
     }
   }
 
@@ -1463,6 +1537,92 @@ export default function App() {
                         ))}
                       </div>
                     )}
+                    <section className="sync-conflict-review" aria-labelledby="sync-conflict-heading">
+                      <div className="sync-conflict-heading">
+                        <div><ShieldCheck size={15} /><strong id="sync-conflict-heading">Conflict review</strong></div>
+                        <span>{syncConflicts.length} OPEN</span>
+                      </div>
+                      <p className="sync-conflict-intro">Review records that changed on another version of LearnLens. The local preview shows the latest state where available; a newer local snapshot is retained in conflict history if you keep the remote version. Choosing a version updates this device only; cloud sync remains off.</p>
+                      {syncConflictsLoading ? (
+                        <div className="account-sync-loading"><LoaderCircle className="spin" size={14} /> Checking for conflicts…</div>
+                      ) : syncConflicts.length === 0 ? (
+                        <p className="sync-conflict-empty">No unresolved sync conflicts.</p>
+                      ) : (
+                        <div className="sync-conflict-list">
+                          {syncConflicts.map((conflict) => {
+                            const keepRemoteUnavailable = !conflict.remoteIsDeleted &&
+                              !(conflict.remoteRevision === 0 && conflict.remotePayloadSnapshot === null) &&
+                              conflict.remotePayloadSnapshot === null;
+                            const keepLocalUnavailable = conflict.remoteIsDeleted ||
+                              ((conflict.entityType === "quiz" || conflict.entityType === "attempt") &&
+                                conflict.remoteRevision > 0 && conflict.operation !== "delete");
+                            const isBusy = syncConflictBusyId === conflict.conflictId;
+                            const localPreview = conflict.latestLocalPayloadSnapshot ?? conflict.localPayloadSnapshot;
+                            const localSummary = localPreview
+                              ? describeSyncConflictPayload(localPreview)
+                              : conflict.operation === "delete" ? "This device has a pending deletion." : "No local content snapshot is available.";
+                            const remoteSummary = conflict.remoteIsDeleted
+                              ? "The remote record is deleted."
+                              : conflict.remoteRevision === 0 && !conflict.remotePayloadSnapshot
+                                ? "No remote copy exists."
+                                : describeSyncConflictPayload(conflict.remotePayloadSnapshot);
+                            return (
+                              <article className="sync-conflict-card" key={conflict.conflictId}>
+                                <div className="sync-conflict-card-heading">
+                                  <div><strong>{syncConflictEntityLabel(conflict.entityType)}</strong><small>{conflict.entityId} · Lesson {conflict.lessonId}</small></div>
+                                  <span>REVISION {conflict.baseRevision} → {conflict.remoteRevision}</span>
+                                </div>
+                                <p className="sync-conflict-reason">{syncConflictReasonLabel(conflict)}</p>
+                                <div className="sync-conflict-compare">
+                                  <div className="sync-conflict-version">
+                                    <strong>{conflict.latestLocalPayloadSnapshot ? "Latest local snapshot" : "Original local snapshot"}</strong>
+                                    <pre>{localSummary}</pre>
+                                  </div>
+                                  <div className="sync-conflict-version">
+                                    <strong>Remote version</strong>
+                                    <pre>{remoteSummary}</pre>
+                                  </div>
+                                </div>
+                                {keepLocalUnavailable && (
+                                  <p className="sync-conflict-caution">
+                                    {conflict.remoteIsDeleted
+                                      ? "Keeping local would resurrect a deleted remote record, so this choice is blocked."
+                                      : "This quiz or attempt already exists remotely and is immutable. Keeping local under the same ID would overwrite it."}
+                                  </p>
+                                )}
+                                {keepRemoteUnavailable && <p className="sync-conflict-caution">The remote content snapshot is missing, so it cannot safely replace the local record.</p>}
+                                <div className="sync-conflict-actions">
+                                  <button
+                                    className="secondary-button"
+                                    type="button"
+                                    onClick={() => void resolveLocalSyncConflict(conflict.conflictId, "keep_remote")}
+                                    disabled={Boolean(syncConflictBusyId) || keepRemoteUnavailable}
+                                  >
+                                    {isBusy ? <LoaderCircle className="spin" size={13} /> : <CheckCircle2 size={13} />}
+                                    {conflict.remoteIsDeleted
+                                      ? "Accept remote deletion"
+                                      : conflict.remoteRevision === 0 && !conflict.remotePayloadSnapshot
+                                        ? "Accept missing remote"
+                                        : "Keep remote"}
+                                  </button>
+                                  <button
+                                    className="primary-button"
+                                    type="button"
+                                    onClick={() => void resolveLocalSyncConflict(conflict.conflictId, "keep_local")}
+                                    disabled={Boolean(syncConflictBusyId) || keepLocalUnavailable}
+                                  >
+                                    {isBusy ? <LoaderCircle className="spin" size={13} /> : <RefreshCw size={13} />}
+                                    Keep local
+                                  </button>
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {syncConflictError && <p className="error-box" role="alert">{syncConflictError}</p>}
+                      {syncConflictMessage && <p className="account-message" role="status">{syncConflictMessage}</p>}
+                    </section>
                   </>
                 ) : null}
                 {syncPreferencesError && <p className="error-box" role="alert">{syncPreferencesError}</p>}

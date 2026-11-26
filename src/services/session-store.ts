@@ -461,7 +461,7 @@ export interface SyncOutboxRecord {
   lastErrorCode?: string;
 }
 
-export type SyncRequestStatus = "prepared" | "in_flight" | "retryable" | "acknowledged" | "superseded" | "conflicted";
+export type SyncRequestStatus = "prepared" | "in_flight" | "retryable" | "acknowledged" | "superseded" | "conflicted" | "resolved";
 
 export interface SyncRequestRecord {
   requestId: string;
@@ -513,9 +513,13 @@ export interface SyncConflictRecord {
   remoteRevision: number;
   conflictCode: SyncConflictCode;
   localPayloadSnapshot: SyncPreparedPayload | null;
+  /** Current local state captured at resolution, which may be newer than the sent request. */
+  latestLocalPayloadSnapshot?: SyncPreparedPayload | null;
   remotePayloadSnapshot: SyncPreparedPayload | null;
   remoteIsDeleted: boolean;
   status: SyncConflictStatus;
+  resolution?: "keep_remote" | "keep_local";
+  resolvedAtMs?: number;
   createdAtMs: number;
   updatedAtMs: number;
 }
@@ -1110,7 +1114,8 @@ export async function createSyncRequestSnapshot(
         if (
           sameRequest.status === "acknowledged" ||
           sameRequest.status === "superseded" ||
-          sameRequest.status === "conflicted"
+          sameRequest.status === "conflicted" ||
+          sameRequest.status === "resolved"
         ) {
           result = { request: sameRequest, blockedReason: "request_terminal" };
           return;
@@ -1323,6 +1328,314 @@ export async function listSyncConflicts(
  * but preparation is blocked until a dedicated resolution flow rebases or
  * discards it. Replaying the same conflict response is idempotent.
  */
+export type SyncConflictResolution = "keep_remote" | "keep_local";
+
+function conflictLocalStore(entityType: SyncEntityType): string {
+  switch (entityType) {
+    case "lesson": return SESSION_STORE;
+    case "note": return NOTE_STORE;
+    case "quiz": return QUIZ_STORE;
+    case "attempt": return QUIZ_ATTEMPT_STORE;
+  }
+}
+
+function toLocalEntityFromRemote(
+  conflict: SyncConflictRecord,
+  payload: SyncPreparedPayload,
+  existing: LearningSession | LearningNote | QuizDefinition | QuizAttempt | undefined
+): LearningSession | LearningNote | QuizDefinition | QuizAttempt {
+  const now = Date.now();
+  switch (conflict.entityType) {
+    case "lesson": {
+      const dto = payload as LessonMetadataDto;
+      const previous = existing as LearningSession | undefined;
+      return {
+        id: conflict.entityId,
+        videoId: dto.videoId,
+        title: dto.title,
+        url: dto.url,
+        platform: dto.platform,
+        // Full transcripts deliberately remain device-local. Keeping the remote
+        // metadata must not erase a transcript that exists only on this device.
+        transcriptText: previous?.transcriptText ?? "",
+        transcriptFormat: previous?.transcriptFormat ?? "plain-text",
+        transcriptSource: previous?.transcriptSource ?? "Synced lesson metadata",
+        updatedAt: now
+      };
+    }
+    case "note": {
+      const dto = payload as NoteSyncDto;
+      const previous = existing as LearningNote | undefined;
+      return {
+        id: conflict.entityId,
+        sessionId: conflict.lessonId,
+        videoId: previous?.videoId ?? conflict.lessonId,
+        title: dto.title,
+        content: dto.content,
+        createdAt: dto.createdAtMs,
+        updatedAt: dto.updatedAtMs
+      };
+    }
+    case "quiz": {
+      const dto = payload as QuizSyncDto;
+      return {
+        id: conflict.entityId,
+        sessionId: conflict.lessonId,
+        title: dto.title,
+        scope: dto.scope,
+        scopeLabel: dto.scopeLabel,
+        ...(dto.rangeStartSeconds !== undefined ? { rangeStartSeconds: dto.rangeStartSeconds } : {}),
+        ...(dto.rangeEndSeconds !== undefined ? { rangeEndSeconds: dto.rangeEndSeconds } : {}),
+        createdAt: dto.createdAtMs,
+        questions: dto.questions.map((question) => ({ ...question, options: [...question.options] }))
+      };
+    }
+    case "attempt": {
+      const dto = payload as AttemptSyncDto;
+      return {
+        id: conflict.entityId,
+        quizId: dto.quizId,
+        sessionId: conflict.lessonId,
+        createdAt: dto.createdAtMs,
+        results: dto.results.map((result) => ({ ...result })),
+        objectiveScore: dto.objectiveScore,
+        objectiveTotal: dto.objectiveTotal,
+        topicsToReview: [...dto.topicsToReview]
+      };
+    }
+  }
+}
+
+/**
+ * Resolves one conflict and its blocked outbox operation in a single IndexedDB
+ * transaction. This is local-only reconciliation; it never contacts Firestore.
+ */
+export async function resolveSyncConflict(
+  conflictId: string,
+  ownerUid: string,
+  resolution: SyncConflictResolution
+): Promise<SyncConflictRecord> {
+  validateSyncIdentity(ownerUid, "account ID");
+  if (resolution !== "keep_remote" && resolution !== "keep_local") {
+    throw new Error("Choose whether to keep the local or remote version.");
+  }
+
+  const database = await openDatabase();
+  return new Promise<SyncConflictRecord>((resolve, reject) => {
+    const transaction = database.transaction(
+      [SYNC_CONFLICT_STORE, SYNC_REQUEST_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE,
+        SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE],
+      "readwrite"
+    );
+    const conflicts = transaction.objectStore(SYNC_CONFLICT_STORE);
+    const requests = transaction.objectStore(SYNC_REQUEST_STORE);
+    const metadataStore = transaction.objectStore(SYNC_METADATA_STORE);
+    const outbox = transaction.objectStore(SYNC_OUTBOX_STORE);
+    let result: SyncConflictRecord | null = null;
+    const conflictRequest = conflicts.get(conflictId);
+
+    conflictRequest.onsuccess = () => {
+      const conflict = conflictRequest.result as SyncConflictRecord | undefined;
+      if (!conflict || conflict.ownerUid !== ownerUid) {
+        transaction.abort();
+        return;
+      }
+      if (conflict.status === "resolved") {
+        if (conflict.resolution !== resolution) {
+          transaction.abort();
+          return;
+        }
+        result = conflict;
+        return;
+      }
+      const requestRead = requests.get(conflict.requestId);
+      const metadataRead = metadataStore.get(conflict.entityKey);
+      const outboxRead = outbox.get(conflict.entityKey);
+      const localStore = transaction.objectStore(conflictLocalStore(conflict.entityType));
+      const localRead = localStore.get(conflict.entityId);
+      let requestRecord: SyncRequestRecord | undefined;
+      let metadata: SyncMetadataRecord | undefined;
+      let pending: SyncOutboxRecord | undefined;
+      let localEntity: LearningSession | LearningNote | QuizDefinition | QuizAttempt | undefined;
+      let completed = 0;
+      const finishRead = () => {
+        completed += 1;
+        if (completed !== 4) return;
+        if (
+          !requestRecord ||
+          requestRecord.ownerUid !== ownerUid ||
+          requestRecord.status !== "conflicted" ||
+          requestRecord.entityKey !== conflict.entityKey ||
+          requestRecord.requestId !== conflict.requestId ||
+          requestRecord.baseRevision !== conflict.baseRevision ||
+          !metadata ||
+          metadata.ownerUid !== ownerUid ||
+          metadata.entityKey !== conflict.entityKey ||
+          metadata.remoteRevision !== conflict.baseRevision ||
+          !pending ||
+          pending.ownerUid !== ownerUid ||
+          pending.entityKey !== conflict.entityKey
+        ) {
+          transaction.abort();
+          return;
+        }
+
+        const now = Date.now();
+        let latestLocalPayloadSnapshot: SyncPreparedPayload | null = null;
+        if (localEntity) {
+          try {
+            if (conflict.entityType === "lesson") latestLocalPayloadSnapshot = toLessonMetadataDto(localEntity as LearningSession);
+            else if (conflict.entityType === "note") latestLocalPayloadSnapshot = toNoteSyncDto(localEntity as LearningNote);
+            else if (conflict.entityType === "quiz") latestLocalPayloadSnapshot = toQuizSyncDto(localEntity as QuizDefinition);
+            else latestLocalPayloadSnapshot = toAttemptSyncDto(localEntity as QuizAttempt);
+          } catch {
+            // Keep the original immutable request snapshot even when a newer
+            // local record is not eligible for export because of validation/size.
+          }
+        }
+        if (resolution === "keep_remote") {
+          const remoteIsMissing = conflict.remoteIsDeleted ||
+            (conflict.remoteRevision === 0 && conflict.remotePayloadSnapshot === null);
+          if (!remoteIsMissing && !conflict.remotePayloadSnapshot) {
+            transaction.abort();
+            return;
+          }
+          if (remoteIsMissing) {
+            // Lesson payloads intentionally exclude full transcripts. Accepting
+            // a remote lesson deletion must therefore keep the local lesson and
+            // its transcript as a local-only record rather than deleting it.
+            if (conflict.entityType !== "lesson") localStore.delete(conflict.entityId);
+            metadataStore.delete(conflict.entityKey);
+          } else {
+            let remoteEntity: LearningSession | LearningNote | QuizDefinition | QuizAttempt;
+            try {
+              const payload = conflict.remotePayloadSnapshot as SyncPreparedPayload;
+              validateSyncServerRequest({
+                protocolVersion: 1,
+                requestId: conflict.requestId,
+                deviceId: requestRecord.deviceId,
+                entityType: conflict.entityType,
+                lessonId: conflict.lessonId,
+                entityId: conflict.entityId,
+                operation: "upsert",
+                baseRevision: conflict.remoteRevision,
+                payloadSchemaVersion: 1,
+                payload
+              });
+              remoteEntity = toLocalEntityFromRemote(conflict, payload, localEntity);
+            } catch {
+              transaction.abort();
+              return;
+            }
+            localStore.put(remoteEntity);
+            metadataStore.put({
+              ...metadata,
+              remoteRevision: conflict.remoteRevision,
+              lastSyncedAtMs: now
+            });
+          }
+          outbox.delete(conflict.entityKey);
+        } else {
+          if (conflict.remoteIsDeleted) {
+            transaction.abort();
+            return;
+          }
+          if (
+            pending.operation !== "delete" &&
+            localEntity &&
+            (conflict.entityType === "quiz" || conflict.entityType === "attempt") &&
+            conflict.remoteRevision > 0
+          ) {
+            // Quiz and attempt IDs are immutable after creation. Replacing a
+            // remote artifact under the same ID would violate the server contract.
+            transaction.abort();
+            return;
+          }
+          if (pending.operation === "delete" && localEntity) {
+            // A later local save means the learner's current intent is an upsert,
+            // not the stale delete operation retained in the outbox.
+            try {
+              if (conflict.entityType === "lesson") toLessonMetadataDto(localEntity as LearningSession);
+              else if (conflict.entityType === "note") toNoteSyncDto(localEntity as LearningNote);
+              else if (conflict.entityType === "quiz") toQuizSyncDto(localEntity as QuizDefinition);
+              else toAttemptSyncDto(localEntity as QuizAttempt);
+              pending = { ...pending, operation: "upsert" };
+            } catch {
+              transaction.abort();
+              return;
+            }
+          }
+          if (pending.operation === "upsert" && !localEntity) {
+            transaction.abort();
+            return;
+          }
+          if (pending.operation === "upsert" &&
+            (conflict.entityType === "quiz" || conflict.entityType === "attempt") &&
+            conflict.remoteRevision > 0
+          ) {
+            transaction.abort();
+            return;
+          }
+          if (pending.operation === "delete" && conflict.remoteRevision === 0) {
+            // Neither side has ever created a remote record, so retaining a
+            // delete intent would create an invalid revision-zero tombstone.
+            outbox.delete(conflict.entityKey);
+            metadataStore.delete(conflict.entityKey);
+          } else {
+            metadataStore.put({
+              ...metadata,
+              remoteRevision: conflict.remoteRevision,
+              lastSyncedAtMs: now
+            });
+            const nextOperationId = crypto.randomUUID();
+            const nextOutbox: SyncOutboxRecord = {
+              ...pending,
+              operationId: nextOperationId,
+              baseRevision: conflict.remoteRevision,
+              queuedAtMs: now,
+              retryCount: 0
+            };
+            delete nextOutbox.lastErrorCode;
+            outbox.put(nextOutbox);
+          }
+        }
+
+        const resolvedConflict: SyncConflictRecord = {
+          ...conflict,
+          latestLocalPayloadSnapshot,
+          status: "resolved",
+          resolution,
+          resolvedAtMs: now,
+          updatedAtMs: now
+        };
+        conflicts.put(resolvedConflict);
+        requests.put({
+          ...requestRecord,
+          status: "resolved",
+          updatedAtMs: now
+        } satisfies SyncRequestRecord);
+        result = resolvedConflict;
+      };
+      requestRead.onsuccess = () => { requestRecord = requestRead.result as SyncRequestRecord | undefined; finishRead(); };
+      metadataRead.onsuccess = () => { metadata = metadataRead.result as SyncMetadataRecord | undefined; finishRead(); };
+      outboxRead.onsuccess = () => { pending = outboxRead.result as SyncOutboxRecord | undefined; finishRead(); };
+      localRead.onsuccess = () => {
+        localEntity = localRead.result as LearningSession | LearningNote | QuizDefinition | QuizAttempt | undefined;
+        finishRead();
+      };
+    };
+
+    transaction.oncomplete = () => {
+      if (result) resolve(result);
+      else reject(new Error("Sync conflict resolution did not complete."));
+    };
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not resolve the sync conflict."));
+    transaction.onabort = () => reject(transaction.error ?? new Error(
+      "This conflict can no longer be resolved with that choice. Refresh the conflict review and try again."
+    ));
+  }).finally(() => database.close());
+}
+
 export async function markSyncRequestConflicted(
   requestId: string,
   ownerUid: string,
@@ -1663,7 +1976,7 @@ export async function pruneSyncRequestHistory(ownerUid: string, keepLatestTermin
     let removed = 0;
     request.onsuccess = () => {
       const terminal = (request.result as SyncRequestRecord[])
-        .filter((entry) => entry.status === "acknowledged" || entry.status === "superseded")
+        .filter((entry) => entry.status === "acknowledged" || entry.status === "superseded" || entry.status === "resolved")
         .sort((a, b) => b.updatedAtMs - a.updatedAtMs);
       for (const entry of terminal.slice(keep)) {
         store.delete(entry.requestId);

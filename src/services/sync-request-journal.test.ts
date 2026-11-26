@@ -3,9 +3,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   acknowledgeSyncRequest,
   claimSyncEntity,
+  getSyncMetadata,
   deleteLearningNote,
   getSyncConflict,
   getSyncRequest,
+  listLearningNotes,
+  listLearningSessions,
   listSyncConflicts,
   listSyncOutbox,
   listSyncRequests,
@@ -14,8 +17,11 @@ import {
   pruneSyncRequestHistory,
   markSyncRequestInFlight,
   queueSyncOperation,
+  resolveSyncConflict,
   saveLearningNote,
-  saveLocalSyncPreferences
+  saveLearningSession,
+  saveLocalSyncPreferences,
+  saveQuiz
 } from "./session-store";
 import { prepareSyncRequests } from "./sync-engine";
 import { dispatchSyncRequest, getSyncTransportReadiness } from "./sync-transport";
@@ -307,6 +313,249 @@ describe("durable sync request journal", () => {
     expect(await pruneSyncRequestHistory("user-a", 0)).toBe(0);
     expect((await getSyncRequest(request.requestId))?.status).toBe("conflicted");
     expect(await listSyncConflicts("user-a")).toHaveLength(1);
+  });
+
+  it("keeps the remote note atomically and marks the request and conflict resolved", async () => {
+    const { entityKey, note } = await createQueuedNote("keep-remote-note", "Local content");
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    const remotePayload = {
+      title: "Remote title",
+      content: "Remote content",
+      createdAtMs: note.createdAt,
+      updatedAtMs: 900
+    };
+    await markSyncRequestConflicted(
+      request.requestId, "user-a", 4, "revision_conflict", remotePayload
+    );
+
+    const resolved = await resolveSyncConflict(request.requestId, "user-a", "keep_remote");
+    expect(resolved).toMatchObject({
+      status: "resolved",
+      resolution: "keep_remote",
+      remoteRevision: 4
+    });
+    expect((await getSyncRequest(request.requestId))?.status).toBe("resolved");
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+    expect(await getSyncMetadata(entityKey)).toMatchObject({
+      ownerUid: "user-a",
+      remoteRevision: 4
+    });
+    const notes = await listLearningNotes("journal-lesson");
+    expect(notes.find((item) => item.id === note.id)).toMatchObject({
+      title: "Remote title",
+      content: "Remote content",
+      createdAt: note.createdAt,
+      updatedAt: 900
+    });
+    expect(await resolveSyncConflict(request.requestId, "user-a", "keep_remote")).toEqual(resolved);
+  });
+
+  it("retains a newer local edit in conflict history when the learner keeps remote", async () => {
+    const { note } = await createQueuedNote("remote-with-new-local-edit", "Original in-flight body");
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    await saveLearningNote({ ...note, title: "Newer local title", content: "Newer local body", updatedAt: 400 });
+    await markSyncRequestConflicted(
+      request.requestId,
+      "user-a",
+      2,
+      "revision_conflict",
+      { title: "Remote title", content: "Remote body", createdAtMs: note.createdAt, updatedAtMs: 300 }
+    );
+
+    const resolved = await resolveSyncConflict(request.requestId, "user-a", "keep_remote");
+    expect(resolved.latestLocalPayloadSnapshot).toMatchObject({
+      title: "Newer local title",
+      content: "Newer local body"
+    });
+    expect((await listLearningNotes("journal-lesson")).find((item) => item.id === note.id)).toMatchObject({
+      title: "Remote title",
+      content: "Remote body"
+    });
+  });
+
+  it("keeps the latest local note as a new operation based on the remote revision", async () => {
+    const { note, entityKey } = await createQueuedNote("keep-local-note", "Original local content");
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    await saveLearningNote({ ...note, content: "Latest local content", updatedAt: 300 });
+    await markSyncRequestConflicted(
+      request.requestId,
+      "user-a",
+      7,
+      "revision_conflict",
+      { title: "Remote title", content: "Remote content", createdAtMs: 1, updatedAtMs: 200 }
+    );
+
+    const resolved = await resolveSyncConflict(request.requestId, "user-a", "keep_local");
+    expect(resolved).toMatchObject({ status: "resolved", resolution: "keep_local" });
+    expect((await getSyncRequest(request.requestId))?.status).toBe("resolved");
+    const [pending] = await listSyncOutbox("user-a");
+    expect(pending).toMatchObject({
+      entityKey,
+      operation: "upsert",
+      baseRevision: 7
+    });
+    expect(pending.operationId).not.toBe(request.operationId);
+    expect(await getSyncMetadata(entityKey)).toMatchObject({ remoteRevision: 7 });
+    const next = await prepareSyncRequests("user-a", 10);
+    expect(next.requests).toHaveLength(1);
+    expect(next.requests[0]).toMatchObject({
+      baseRevision: 7,
+      payloadSnapshot: { content: "Latest local content" }
+    });
+  });
+
+  it("keeps a local deletion by rebasing its tombstone onto the active remote revision", async () => {
+    const { note, entityKey } = await createQueuedNote("keep-local-delete", "Local content");
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    await deleteLearningNote(note.id);
+    await markSyncRequestConflicted(
+      request.requestId,
+      "user-a",
+      6,
+      "revision_conflict",
+      { title: note.title, content: note.content, createdAtMs: note.createdAt, updatedAtMs: note.updatedAt }
+    );
+
+    await resolveSyncConflict(request.requestId, "user-a", "keep_local");
+    const [pending] = await listSyncOutbox("user-a");
+    expect(pending).toMatchObject({
+      entityKey,
+      operation: "delete",
+      baseRevision: 6
+    });
+    expect(pending.operationId).not.toBe(request.operationId);
+    expect(await getSyncMetadata(entityKey)).toMatchObject({ remoteRevision: 6 });
+  });
+
+  it("clears a never-created remote entity when keeping a local deletion at revision zero", async () => {
+    const { note, entityKey } = await createQueuedNote("keep-local-delete-zero", "Local content");
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    await deleteLearningNote(note.id);
+    await markSyncRequestConflicted(
+      request.requestId, "user-a", 0, "revision_conflict", null
+    );
+
+    await resolveSyncConflict(request.requestId, "user-a", "keep_local");
+    expect(await getSyncMetadata(entityKey)).toBeNull();
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+    expect((await getSyncRequest(request.requestId))?.status).toBe("resolved");
+  });
+
+  it("keeps a remote tombstone by removing the local record and its pending operation", async () => {
+    const { note, entityKey } = await createQueuedNote("remote-delete-note", "Local content");
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    await deleteLearningNote(note.id);
+    await markSyncRequestConflicted(
+      request.requestId, "user-a", 5, "entity_deleted", null, true
+    );
+
+    await resolveSyncConflict(request.requestId, "user-a", "keep_remote");
+    expect(await listLearningNotes("journal-lesson")).toEqual([]);
+    expect(await getSyncMetadata(entityKey)).toBeNull();
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+    expect((await getSyncRequest(request.requestId))?.status).toBe("resolved");
+  });
+
+  it("preserves the local-only lesson transcript when accepting a remote lesson deletion", async () => {
+    const session = {
+      id: "lesson-with-transcript",
+      videoId: "lesson-with-transcript",
+      title: "Local lesson",
+      url: "https://www.youtube.com/watch?v=lesson-with-transcript",
+      platform: "youtube" as const,
+      transcriptText: "This full transcript must remain on this device.",
+      transcriptFormat: "plain-text" as const,
+      transcriptSource: "visible captions",
+      updatedAt: 100
+    };
+    await saveLearningSession(session);
+    const entityKey = "lesson:lesson-with-transcript:lesson-with-transcript";
+    await claimSyncEntity({
+      entityKey,
+      entityType: "lesson",
+      lessonId: session.id,
+      entityId: session.id,
+      ownerUid: "user-a",
+      syncCategory: "lessonMetadata"
+    });
+    await queueSyncOperation(entityKey, "user-a", "upsert");
+    await saveLocalSyncPreferences("user-a", {
+      lessonMetadata: true, notes: false, quizzes: false, attempts: false
+    });
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    await markSyncRequestConflicted(
+      request.requestId, "user-a", 3, "entity_deleted", null, true
+    );
+
+    await resolveSyncConflict(request.requestId, "user-a", "keep_remote");
+    expect(await listLearningSessions()).toMatchObject([{
+      id: session.id,
+      transcriptText: session.transcriptText
+    }]);
+    expect(await getSyncMetadata(entityKey)).toBeNull();
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+  });
+
+  it("does not allow a local edit to resurrect a remote tombstone", async () => {
+    const { note } = await createQueuedNote("no-resurrection-note", "Local content");
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    await markSyncRequestConflicted(
+      request.requestId, "user-a", 5, "entity_deleted", null, true
+    );
+    await expect(resolveSyncConflict(request.requestId, "user-a", "keep_local")).rejects.toThrow();
+    expect((await getSyncRequest(request.requestId))?.status).toBe("conflicted");
+    expect((await listLearningNotes("journal-lesson"))[0]).toEqual(note);
+  });
+
+  it("keeps an immutable quiz from being overwritten under the same remote ID", async () => {
+    const quiz = {
+      id: "immutable-local-quiz",
+      sessionId: "journal-lesson",
+      title: "Local quiz",
+      scope: "whole_lesson" as const,
+      scopeLabel: "Whole lesson",
+      createdAt: 100,
+      questions: [
+        { id: "q1", type: "multiple_choice" as const, prompt: "Q1", options: ["A", "B", "C"], correctAnswer: "A", explanation: "A", topic: "T", evidence: "Evidence one" },
+        { id: "q2", type: "true_false" as const, prompt: "Q2", options: ["True", "False"], correctAnswer: "True", explanation: "True", topic: "T", evidence: "Evidence two" },
+        { id: "q3", type: "short_answer" as const, prompt: "Q3", options: [], correctAnswer: "Three", explanation: "Three", topic: "T", evidence: "Evidence three" }
+      ]
+    };
+    await saveQuiz(quiz);
+    const entityKey = "quiz:journal-lesson:immutable-local-quiz";
+    await claimSyncEntity({
+      entityKey, entityType: "quiz", lessonId: "journal-lesson",
+      entityId: quiz.id, ownerUid: "user-a", syncCategory: "quizzes"
+    });
+    await queueSyncOperation(entityKey, "user-a", "upsert");
+    await saveLocalSyncPreferences("user-a", {
+      lessonMetadata: false, notes: false, quizzes: true, attempts: false
+    });
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    await markSyncRequestConflicted(
+      request.requestId,
+      "user-a",
+      3,
+      "immutable_entity_exists",
+      {
+        title: "Remote quiz",
+        scope: "whole_lesson",
+        scopeLabel: "Whole lesson",
+        createdAtMs: 100,
+        questions: quiz.questions
+      }
+    );
+    await expect(resolveSyncConflict(request.requestId, "user-a", "keep_local")).rejects.toThrow();
+    expect((await getSyncRequest(request.requestId))?.status).toBe("conflicted");
   });
 
   it("fails closed because cloud writes remain disabled pending production Auth and App Check", async () => {

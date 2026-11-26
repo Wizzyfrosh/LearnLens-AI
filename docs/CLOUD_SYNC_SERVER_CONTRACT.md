@@ -137,7 +137,7 @@ The Firestore Admin SDK bypasses Firestore Security Rules. The endpoint must not
 - Complete live Firebase Auth QA: signup, verification, forced ID-token refresh, sign-in, sign-out, account switching, and unverified-token denial in the installed Chrome extension.
 - Prove a production App Check provider with the actual published extension identity. The current debug provider is not production attestation.
 - Implement the Admin SDK endpoint and emulator/integration tests for concurrent transactions, receipt replay, idempotency-key collision, conflicts, and account isolation.
-- Build the conflict-review UI and explicit resolution transactions on top of the local v10 conflict journal. The request is marked terminal "conflicted", its immutable local payload and remote revision/reason are persisted in IndexedDB, and its outbox intent is retained but blocked from automatic preparation. The response adapter must call markSyncRequestConflicted, never acknowledgeSyncRequest, for a conflict response. A conflict can coincidentally have remoteRevision = baseRevision + 1. Learner resolution must deliberately keep the remote version or rebase the current local version as a new operation; never auto-resolve using timestamps.
+- Add conflict-review history for already-resolved items and explicit copy/export recovery for a newer local snapshot retained when the learner chooses the remote version. The account screen now compares local/remote DTO previews and exposes local-only "Keep remote" and "Keep local" actions. Resolution updates IndexedDB atomically: keep-local rebases the current local entity or deletion onto the remote revision with a fresh operation ID; keep-remote applies the allow-listed remote DTO or accepts the remote deletion and clears the blocked outbox operation. The request is marked terminal "resolved"; conflict snapshots are retained. A remote lesson deletion removes its sync claim but deliberately keeps the lesson/transcript local-only because transcript data is excluded from the sync DTO. Local edits made after the original request are captured in latestLocalPayloadSnapshot before keep-remote overwrites the visible local DTO.
 - Resolve category dependencies before enabling attempt sync. An attempt references quizId, but category controls currently let a learner enable attempts while quizzes are disabled. The endpoint/UI must either require quiz sync for attempt sync or deliberately support attempts without the referenced quiz.
 - Decide how child artifacts should be presented on a second device when notes/quizzes/attempts are enabled but lessonMetadata is disabled. Their Firestore paths are nested under a lesson ID, but no lesson metadata would be pulled.
 - Implement pull cursors and merge logic that cannot overwrite pending local edits or resurrect tombstones.
@@ -147,7 +147,8 @@ The Firestore Admin SDK bypasses Firestore Security Rules. The endpoint must not
 
 Implemented and unit-tested in this phase:
 - local IndexedDB v10 conflict store with account-scoped lookup/list APIs;
-- terminal conflicted request state and immutable local/remote DTO snapshots;
+- terminal conflicted/resolved request states, local/remote DTO snapshots, and latest-local preservation on resolution;
+- account-screen conflict comparison and local-only keep-remote / keep-local resolution;
 - duplicate conflict-response idempotency and blocked retries, including newer local edits behind an unresolved conflict;
 - strict request-envelope validation and exact top-level field allow-list;
 - per-entity nested DTO validation and server-side byte limits;
@@ -160,7 +161,7 @@ Implemented and unit-tested in this phase:
 - immutable quiz/attempt creation semantics.
 
 Not implemented:
-- conflict-review UI and explicit keep-local / keep-remote resolution transactions;
+- resolved-conflict history and export/copy actions for retained local conflict snapshots;
 - Firebase callable/HTTPS function;
 - Firebase Admin SDK transaction adapter;
 - server-side Auth/App Check verification and deployment;
