@@ -431,3 +431,98 @@ body:has(.shell.theme-light) { background: #f4f5f7; color: #202938; }
 @media (prefers-reduced-motion: reduce) {
   .shell *, .shell *::before, .shell *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+
+/* Notes workspace: readable study documents with visible local-save feedback. */
+.note-workspace-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 12px}
+.note-workspace-toolbar p{margin:0;color:#aab7c9;font-size:10px;line-height:1.5}
+.note-workspace-toolbar .secondary-button{flex-shrink:0}
+.note-editor{display:grid;gap:7px;padding:15px}
+.note-editor-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:3px}
+.note-editor-heading>strong{font-size:12px;color:#edf2fa}
+.note-save-status{font-size:9px;color:#8e9bb0}
+.note-save-status.saving{color:#e4c85b}
+.note-save-status.saved{color:#70c8a5}
+.note-save-status.error{color:#f18b84}
+.note-editor textarea{min-height:180px;line-height:1.7;resize:vertical}
+.note-editor-footer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:3px}
+.note-editor-footer small{font-size:9px;color:#8f9db1;line-height:1.45}
+.note-editor-footer .note-save{display:inline-flex;align-items:center;gap:6px;flex-shrink:0}
+.saved-note{padding:14px}
+.saved-note.active{border-color:#718bc4;box-shadow:0 0 0 2px #718bc426}
+.saved-note-heading{align-items:center}
+.saved-note-heading small{font-size:9px;color:#91a0b5;white-space:nowrap}
+.saved-note>p{font-size:11px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
+.note-export-controls{display:grid;gap:10px;margin-top:18px;padding-top:15px;border-top:1px solid #344255}
+.note-export-controls>div:first-child{display:grid;gap:3px}
+.note-export-controls>div:first-child strong{font-size:11px;color:#edf2fa}
+.note-export-controls>div:first-child small{font-size:9px;color:#93a1b5}
+.note-export-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}
+.note-export-row select{min-width:0;width:100%;margin:0}
+.note-export-row .export-button{margin:0;white-space:nowrap;justify-content:center}
+
+/* Quiz review states: color is paired with clear labels and answer explanations. */
+.quiz-question.is-correct{border-color:#398b6a}
+.quiz-question.is-incorrect{border-color:#b85a59}
+.quiz-question.is-advisory{border-color:#667997}
+.quiz-options label{justify-content:flex-start;align-items:center;min-height:40px}
+.quiz-options label span{flex:1}
+.quiz-options label.selected-option{border-color:#8ba0cf;background:#25364d}
+.quiz-options label.correct-option{border-color:#42a879;background:#18392f;color:#d9f6e8}
+.quiz-options label.correct-option svg{color:#65d29a;flex-shrink:0}
+.quiz-options label.incorrect-option{border-color:#ce6b67;background:#472a30;color:#ffe4e1}
+.quiz-options label.incorrect-option svg{color:#ff8a84;flex-shrink:0}
+.quiz-feedback-panel{display:grid;gap:7px;margin-top:12px;padding:11px;border:1px solid;border-radius:9px;font-size:10px;line-height:1.6}
+.quiz-feedback-panel.success{border-color:#398b6a;background:#18392f;color:#d9f6e8}
+.quiz-feedback-panel.error{border-color:#b85a59;background:#472a30;color:#ffe4e1}
+.quiz-feedback-panel.advisory{border-color:#667997;background:#263346;color:#d9e4f4}
+.quiz-feedback-heading{display:flex;align-items:center;gap:7px}
+.quiz-feedback-heading svg{flex-shrink:0}
+.quiz-feedback-panel.success .quiz-feedback-heading{color:#7be0aa}
+.quiz-feedback-panel.error .quiz-feedback-heading{color:#ff9993}
+.quiz-feedback-panel.advisory .quiz-feedback-heading{color:#b8c9e5}
+.quiz-feedback-panel p{margin:0;white-space:pre-wrap}
+.quiz-feedback-panel p strong{font-weight:700;color:inherit}
+.quiz-result{gap:8px}
+.quiz-result strong{line-height:1.5}
+.quiz-attempt-history article{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px}
+.quiz-attempt-history article>div{display:grid;gap:4px;min-width:0}
+.quiz-attempt-history article small{overflow-wrap:anywhere}
+.quiz-attempt-history article .secondary-button{white-space:nowrap;flex-shrink:0}
+
+.theme-light .note-workspace-toolbar p,
+.theme-light .note-editor-footer small,
+.theme-light .note-save-status,
+.theme-light .note-export-controls>div:first-child small,
+.theme-light .saved-note-heading small{color:#738096}
+.theme-light .note-editor-heading>strong,
+.theme-light .note-export-controls>div:first-child strong{color:#202938}
+.theme-light .note-save-status.saving{color:#977710}
+.theme-light .note-save-status.saved{color:#23845d}
+.theme-light .note-save-status.error{color:#b33e36}
+.theme-light .saved-note.active{border-color:#c4a83f;box-shadow:0 0 0 2px #dfc95d35}
+.theme-light .note-export-controls{border-color:#e4e8ef}
+.theme-light .quiz-options label.selected-option{border-color:#8299d6;background:#f2f5fc}
+.theme-light .quiz-options label.correct-option{border-color:#79c69e;background:#effaf3;color:#236244}
+.theme-light .quiz-options label.correct-option svg{color:#21865a}
+.theme-light .quiz-options label.incorrect-option{border-color:#e6a09a;background:#fff0ef;color:#9e3430}
+.theme-light .quiz-options label.incorrect-option svg{color:#c13e38}
+.theme-light .quiz-feedback-panel.success{border-color:#a9d9bd;background:#effaf3;color:#285f43}
+.theme-light .quiz-feedback-panel.error{border-color:#edc0bc;background:#fff0ef;color:#963c36}
+.theme-light .quiz-feedback-panel.advisory{border-color:#d2dce9;background:#f3f6fb;color:#53627b}
+.theme-light .quiz-feedback-panel.success .quiz-feedback-heading{color:#21865a}
+.theme-light .quiz-feedback-panel.error .quiz-feedback-heading{color:#bd3f39}
+.theme-light .quiz-feedback-panel.advisory .quiz-feedback-heading{color:#536c94}
+.theme-light .quiz-question.is-correct{border-color:#8cc5a4}
+.theme-light .quiz-question.is-incorrect{border-color:#e5aaa5}
+.theme-light .quiz-question.is-advisory{border-color:#c8d3e2}
+.theme-light .note-editor-heading>strong{color:#202938}
+
+@media(max-width:420px){
+  .note-workspace-toolbar{align-items:flex-start}
+  .note-export-row{grid-template-columns:1fr}
+  .note-export-row .export-button{width:100%;justify-content:center}
+  .note-editor-footer{align-items:flex-start;flex-direction:column}
+  .quiz-attempt-history article{grid-template-columns:1fr}
+  .quiz-attempt-history article .secondary-button{justify-content:center}
+}
