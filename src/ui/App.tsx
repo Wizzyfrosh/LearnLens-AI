@@ -1033,6 +1033,15 @@ export default function App() {
           </section>
         )}
 
+        {activeTab !== "lesson" && activeTab !== "tutor" && activeTab !== "history" && !savedSession && (
+          <div className="workspace-empty">
+            <BookOpen size={22} />
+            <strong>Save a lesson to use this workspace</strong>
+            <p>Capture YouTube captions or import a transcript in the Lesson tab. Notes, bookmarks and quizzes will then be available here.</p>
+            <button className="secondary-button" type="button" onClick={() => setActiveTab("lesson")}>Go to Lesson</button>
+          </div>
+        )}
+
         {savedSession && sessionId && activeTab === "quiz" && (
           <section className="quiz-studio">
             <div className="section-heading">
