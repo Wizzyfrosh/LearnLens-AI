@@ -23,6 +23,17 @@ const captureStatusLabel: Record<CaptionCaptureStatus, string> = {
   error: "Capture unavailable"
 };
 
+function getLessonTimestampUrl(sourceUrl: string, seconds: number): string | null {
+  if (!sourceUrl || !Number.isFinite(seconds) || seconds < 0) return null;
+  try {
+    const url = new URL(sourceUrl);
+    url.searchParams.set("t", String(Math.floor(seconds)));
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 function formatLessonTime(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const remaining = Math.floor(seconds % 60);
@@ -694,7 +705,7 @@ export default function App() {
               <>
                 <div className="transcript-preview">
                   <strong>Preview</strong>
-                  {segments.slice(0, 3).map((segment) => <p key={segment.id}>{segment.text}</p>)}
+                  {segments.slice(0, 3).map((segment) => <p key={segment.id}>{segment.hasTimestamp && <span>[{formatLessonTime(segment.startSeconds)}] </span>}{segment.text}{segment.hasTimestamp && savedSession && <button className="inline-bookmark" type="button" onClick={() => void addBookmark(segment)} aria-label={`Bookmark at ${formatLessonTime(segment.startSeconds)}`}><Bookmark size={12} /></button>}</p>)}
                   {segmentCount > 3 && <small>And {segmentCount - 3} more segments</small>}
                 </div>
                 <div className="session-actions">
@@ -744,7 +755,7 @@ export default function App() {
             <div className="saved-note-list">
               {filteredNotes.length ? filteredNotes.map((note) => (
                 <article className="saved-note" key={note.id}>
-                  <div className="saved-note-heading"><strong>{note.title}</strong>{note.timestampSeconds !== null && <span>{formatLessonTime(note.timestampSeconds)}</span>}</div>
+                  <div className="saved-note-heading"><strong>{note.title}</strong>{note.timestampSeconds !== null && (getLessonTimestampUrl(video.url, note.timestampSeconds) ? <a href={getLessonTimestampUrl(video.url, note.timestampSeconds) ?? undefined} target="_blank" rel="noreferrer">{formatLessonTime(note.timestampSeconds)}</a> : <span>{formatLessonTime(note.timestampSeconds)}</span>)}</div>
                   <p>{note.content}</p>
                   <div className="session-actions">
                     <button className="secondary-button" type="button" onClick={() => { setEditingNoteId(note.id); setNoteTitle(note.title); setNoteContent(note.content); setNoteTimestamp(note.timestampSeconds === null ? "" : String(note.timestampSeconds)); }}>Edit</button>
@@ -757,7 +768,7 @@ export default function App() {
               <strong>Bookmarks</strong>
               {bookmarks.length ? bookmarks.map((item) => (
                 <div className="bookmark-row" key={item.id}>
-                  <span><Bookmark size={13} /> {formatLessonTime(item.timestampSeconds)}</span>
+                  {getLessonTimestampUrl(video.url, item.timestampSeconds) ? <a className="bookmark-time" href={getLessonTimestampUrl(video.url, item.timestampSeconds) ?? undefined} target="_blank" rel="noreferrer"><Bookmark size={13} /> {formatLessonTime(item.timestampSeconds)}</a> : <span><Bookmark size={13} /> {formatLessonTime(item.timestampSeconds)}</span>}
                   <p>{item.label}</p>
                   <button className="icon-button" type="button" aria-label="Delete bookmark" onClick={() => void removeBookmark(item.id)}><Trash2 size={13} /></button>
                 </div>
