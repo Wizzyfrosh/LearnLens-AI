@@ -718,7 +718,10 @@ export default function App() {
       setNoteSaveStatus("idle");
     };
     if (hasContent && noteSaveStatus !== "saved") {
-      void persistCurrentNote().finally(finish);
+      void persistCurrentNote().then(finish).catch((cause: unknown) => {
+        setNoteSaveStatus("error");
+        setArtifactMessage(cause instanceof Error ? cause.message : "Could not save this note before starting a new one.");
+      });
     } else {
       finish();
     }
@@ -741,15 +744,20 @@ export default function App() {
     }
   }
 
-  function exportNotes() {
-    if (!notes.length) {
-      setArtifactMessage("There are no saved notes to export yet.");
-      return;
-    }
-    const title = video.title || "LearnLens study notes";
-    const source = video.url || "Saved lesson on this device";
-    const baseName = "learnlens-notes-" + (sessionId || "lesson");
-    const orderedNotes = [...notes].sort((a, b) => a.createdAt - b.createdAt);
+  async function exportNotes() {
+    try {
+      const currentNote = noteTitle.trim() && noteContent.trim() ? await persistCurrentNote() : null;
+      const exportCollection = currentNote
+        ? [currentNote, ...notes.filter((note) => note.id !== currentNote.id)]
+        : notes;
+      if (!exportCollection.length) {
+        setArtifactMessage("There are no saved notes to export yet.");
+        return;
+      }
+      const title = video.title || "LearnLens study notes";
+      const source = video.url || "Saved lesson on this device";
+      const baseName = "learnlens-notes-" + (sessionId || "lesson");
+      const orderedNotes = [...exportCollection].sort((a, b) => a.createdAt - b.createdAt);
     const textBody = [
       title,
       "Source: " + source,
