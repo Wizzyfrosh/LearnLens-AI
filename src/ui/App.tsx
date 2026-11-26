@@ -1165,13 +1165,28 @@ export default function App() {
           </section>
         )}
 
-        {activeTab !== "lesson" && activeTab !== "tutor" && activeTab !== "history" && !savedSession && (
+        {activeTab !== "lesson" && activeTab !== "tutor" && activeTab !== "history" && activeTab !== "quiz" && !savedSession && (
           <div className="workspace-empty">
             <BookOpen size={22} />
             <strong>Save a lesson to use this workspace</strong>
             <p>Capture YouTube captions or import a transcript in the Lesson tab. Notes, bookmarks and quizzes will then be available here.</p>
             <button className="secondary-button" type="button" onClick={() => setActiveTab("lesson")}>Go to Lesson</button>
           </div>
+        )}
+
+        {activeTab === "quiz" && !savedSession && (
+          <section className="quiz-studio quiz-empty-state">
+            <div className="section-heading">
+              <div><BrainCircuit size={17} /><h2>Quiz studio</h2></div>
+            </div>
+            <p className="quiz-intro">Save a lesson transcript before creating a quiz. This keeps each quiz and its attempts linked to the correct lesson on this device.</p>
+            <div className="workspace-empty">
+              <BookOpen size={22} />
+              <strong>No saved lesson yet</strong>
+              <p>Start caption capture or import a transcript in the Lesson tab, then choose Save lesson locally.</p>
+              <button className="secondary-button" type="button" onClick={() => setActiveTab("lesson")}>Go to Lesson</button>
+            </div>
+          </section>
         )}
 
         {savedSession && sessionId && activeTab === "quiz" && (
