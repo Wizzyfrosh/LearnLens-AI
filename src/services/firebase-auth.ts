@@ -1,6 +1,7 @@
 import {
   createUserWithEmailAndPassword,
   getAuth,
+  getIdToken,
   onAuthStateChanged,
   reload,
   sendEmailVerification,
@@ -55,6 +56,9 @@ export async function resendVerificationEmail(user: AuthUser): Promise<void> {
 
 export async function refreshAuthUser(user: AuthUser): Promise<AuthUser> {
   await reload(user);
+  // Firestore Rules inspect the ID token's email_verified claim, not the
+  // mutable user object. Force a refresh after the verification link is used.
+  await getIdToken(user, true);
   return getFirebaseAuth().currentUser ?? user;
 }
 
