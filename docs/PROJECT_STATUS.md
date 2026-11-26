@@ -468,3 +468,33 @@ Current state:
 - Combined desktop Chrome runtime QA remains open. No claim of runtime verification is made.
 - Do not start Phase 6 until the user tests the combined build and any runtime defects are fixed.
 - Phase 3 audio transcription remains deferred and is not part of this build's acceptance.
+
+
+## 27. UI restructuring and AI/App Check troubleshooting — 2026-11-26
+
+User-reported runtime defects:
+- AI note drafting entered its loading state but did not produce a draft.
+- Quiz generation failed with Firebase AI Logic 401: App Check token invalid.
+- The side panel displayed all learning workflows in one long, cluttered layout and was too narrow for quiz reading.
+
+Code changes committed:
+- `b6f25dc`, `ae3fcb1`, `d40e429`, `b23757a`, `fe68f5e`, `f88735f` — reorganized the workspace into Lesson, Notes, Bookmarks, Quiz, Tutor and History tabs; added explicit empty states; refreshed the UI with a darker slate palette, clearer contrast, and responsive navigation.
+- `dc170b6`, `8f492ca`, `406968e`, `d19287a`, `59a7dfb` — added a full-viewport quiz overlay injected into the active YouTube page. The extension side panel remains separate and available. The overlay uses the same extension-origin app and IndexedDB-backed lesson data.
+- `23cb784`, `306646a` — map invalid App Check responses to an actionable message that explains how to register the current debug token. No App Check enforcement or token validation was bypassed.
+
+App Check diagnosis:
+- The 401 originates from Firebase rejecting the debug token; both AI note drafting and cloud quiz generation share the Firebase AI adapter.
+- A newly extracted/loaded unpacked extension can have a different Chrome extension ID/origin and therefore a different locally generated debug token. The exact token from the currently loaded extension must be registered for the correct Firebase web app under App Check → Manage debug tokens.
+- Do not commit or share debug tokens. This remains a user-side Firebase Console registration step; the new code does not claim to fix token allowlisting automatically.
+
+CI verification:
+- Successful run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45847510971
+- Verified commit: `f88735ff77081bb32be4bf420f4058dfc3fe3c94`.
+- Dependency install, TypeScript typecheck, unit tests, production build, extension package verification, and artifact upload passed.
+- Artifact: `learnlens-chrome-extension`, ID `15131298507`, 125,562 bytes, expires 2026-12-26.
+
+Still required:
+- Load this exact artifact in desktop Chrome and test tab navigation, Notes/Bookmarks/Quiz/Tutor/History content isolation, and the full-page quiz overlay.
+- Register the current extension's App Check debug token, then verify cloud tutor, AI note drafting, quiz generation, and short-answer feedback in the real browser.
+- The build is CI-verified only. No browser runtime success is claimed.
+- Phase 4/5 runtime acceptance remains open; Phase 6 remains blocked. Audio transcription remains deferred.
