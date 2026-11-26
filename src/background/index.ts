@@ -5,6 +5,9 @@ let activeContext: VideoContext | null = null;
 let contextSyncVersion = 0;
 let publishQueue: Promise<void> = Promise.resolve();
 let captionCaptureTabId: number | null = null;
+const captionStateReady = chrome.storage.session.get("captionCaptureTabId").then((stored) => {
+  captionCaptureTabId = typeof stored.captionCaptureTabId === "number" ? stored.captionCaptureTabId : null;
+}).catch(() => undefined);
 let audioCaptureTabId: number | null = null;
 let audioCaptureVideoId = "";
 const audioStateReady = chrome.storage.session.get(["audioCaptureTabId", "audioCaptureVideoId"]).then((stored) => {
@@ -64,6 +67,7 @@ async function syncActiveTabContext(tabId: number): Promise<void> {
 }
 
 async function stopCaptionCapture(tabId: number, message: string): Promise<void> {
+  await captionStateReady;
   try {
     await chrome.tabs.sendMessage(tabId, { type: "LEARNLENS_CONTENT_STOP_CAPTION_CAPTURE" } satisfies ExtensionMessage);
   } catch {
@@ -71,11 +75,13 @@ async function stopCaptionCapture(tabId: number, message: string): Promise<void>
   }
   if (captionCaptureTabId === tabId) {
     captionCaptureTabId = null;
+    await chrome.storage.session.remove("captionCaptureTabId").catch(() => undefined);
     broadcast({ type: "LEARNLENS_CAPTURE_STATUS", payload: { status: "idle", message } });
   }
 }
 
 async function startCaptionCapture(tabId: number): Promise<void> {
+  await captionStateReady;
   const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   if (activeTab?.id !== tabId) {
     broadcast({ type: "LEARNLENS_CAPTURE_STATUS", payload: { status: "error", message: "Switch to the lesson tab before starting capture." } });
@@ -93,6 +99,10 @@ async function startCaptionCapture(tabId: number): Promise<void> {
   }
 
   captionCaptureTabId = tabId;
+  // Service workers are routinely suspended by Chrome. Persist capture ownership
+  // before contacting the content script so caption messages are still accepted
+  // after the worker is restarted between caption updates.
+  await chrome.storage.session.set({ captionCaptureTabId });
   try {
     await chrome.tabs.sendMessage(tabId, { type: "LEARNLENS_CONTENT_START_CAPTION_CAPTURE" } satisfies ExtensionMessage);
   } catch {
@@ -106,6 +116,7 @@ async function startCaptionCapture(tabId: number): Promise<void> {
       await chrome.tabs.sendMessage(tabId, { type: "LEARNLENS_CONTENT_START_CAPTION_CAPTURE" } satisfies ExtensionMessage);
     } catch {
       captionCaptureTabId = null;
+      await chrome.storage.session.remove("captionCaptureTabId").catch(() => undefined);
       broadcast({ type: "LEARNLENS_CAPTURE_STATUS", payload: { status: "error", message: "LearnLens could not attach its YouTube caption reader. Reload the lesson tab and retry." } });
     }
   }
@@ -227,9 +238,11 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
   }
 
   if (message.type === "LEARNLENS_CAPTURE_STATUS" || message.type === "LEARNLENS_CAPTION_SEGMENT") {
-    const senderTabId = sender.tab?.id;
-    if (senderTabId === undefined || senderTabId !== captionCaptureTabId) return;
-    broadcast(message);
+    void captionStateReady.then(() => {
+      const senderTabId = sender.tab?.id;
+      if (senderTabId === undefined || senderTabId !== captionCaptureTabId) return;
+      broadcast(message);
+    });
     return;
   }
 
@@ -289,10 +302,12 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   void audioStateReady.then(() => {
     if (audioCaptureTabId === tabId) void stopAudioCapture(tabId, "Audio transcription stopped because the lesson tab was closed.");
   });
-  if (captionCaptureTabId === tabId) {
+  void captionStateReady.then(async () => {
+    if (captionCaptureTabId !== tabId) return;
     captionCaptureTabId = null;
+    await chrome.storage.session.remove("captionCaptureTabId").catch(() => undefined);
     broadcast({ type: "LEARNLENS_CAPTURE_STATUS", payload: { status: "idle", message: "Capture stopped because the lesson tab was closed." } });
-  }
+  });
 });
 
 chrome.windows.onFocusChanged.addListener((windowId) => {
