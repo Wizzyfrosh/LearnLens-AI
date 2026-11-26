@@ -10,15 +10,15 @@
 
 ## 1. Latest verified build
 
-- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45897242224
-- **Code commit:** `70029037ca678209c70014c09f5066d87942a05a`
+- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45897615738
+- **Code commit:** `2c031df4d0d95c7c8903d41eee44d17f2acf004c`
 - **Result:** SUCCESS.
 - **Passed:** TypeScript typecheck, 7 Vitest files / 50 unit tests, 8 Firestore Emulator Rules tests, production build, Chrome extension package verification, and artifact upload.
-- **Artifact:** `learnlens-chrome-extension` (artifact ID `15153848454`).
-- **Artifact SHA-256:** `c507b3b02523693e7848d453acd9dc37580abc5c354d2518a1b43ed237d56879`.
-- **Artifact size:** 153,293 bytes.
+- **Artifact:** `learnlens-chrome-extension` (artifact ID `15153849016`).
+- **Artifact SHA-256:** `8eb4e7a44eb79f51cc41736c8900d8e295d0dd155290a0c0e7439f977f6b7182`.
+- **Artifact size:** 153,304 bytes.
 - **Package/manifest version:** 0.1.0.
-- **Note:** docs-only commits followed the code commit; no executable source changed after this successful build.
+- **Note:** the remaining commits on main after this code commit are documentation-only; no executable source changed after this successful build.
 
 ## 2. Phase 4 — Study notes and local persistence
 
