@@ -610,3 +610,39 @@ body:has(.shell.theme-light) { background: #f4f5f7; color: #202938; }
   .account-actions{display:grid;grid-template-columns:1fr}
   .account-actions .secondary-button{justify-content:center}
 }
+
+
+.account-sync-card{gap:13px}
+.account-sync-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.account-sync-heading>div{display:flex;align-items:center;gap:8px;color:#dce8fb}
+.account-sync-heading>div svg{color:#9fbcf0}
+.account-sync-heading strong{font-size:11px}
+.account-sync-heading>span{font-size:8px;font-weight:800;letter-spacing:.08em;color:#e6c46b;border:1px solid #756237;border-radius:20px;padding:4px 7px}
+.account-sync-description{margin:0;color:#9eacc0;font-size:10px;line-height:1.55}
+.account-sync-options{display:grid;gap:7px}
+.account-sync-option{display:flex;align-items:flex-start;gap:9px;padding:10px;border:1px solid #344255;border-radius:9px;background:#172230;cursor:pointer}
+.account-sync-option input{width:15px;height:15px;flex:none;margin:1px 0 0;accent-color:#8eafea}
+.account-sync-option>span{display:grid;gap:4px}
+.account-sync-option strong{font-size:10px;color:#e0e8f4}
+.account-sync-option small{font-size:9px;color:#91a0b5;line-height:1.45}
+.account-sync-preview{display:grid;gap:7px;padding:11px;border:1px solid #344255;border-radius:9px;background:#131e2b}
+.account-sync-preview>strong{font-size:10px;color:#dce5f2;margin-bottom:2px}
+.account-sync-preview-row{display:grid;grid-template-columns:1fr auto;gap:3px 8px;align-items:center}
+.account-sync-preview-row>span{font-size:10px;color:#b7c4d5}
+.account-sync-preview-row>strong{font-size:10px;color:#dce9ff;font-variant-numeric:tabular-nums}
+.account-sync-preview-row>small{grid-column:1/-1;font-size:8px;color:#8292a8}
+.account-sync-loading{display:flex;align-items:center;gap:8px;color:#9eacc0;font-size:10px}
+.theme-light .account-sync-heading>div{color:#344158}
+.theme-light .account-sync-heading>div svg{color:#4168c6}
+.theme-light .account-sync-heading>span{color:#7a6115;border-color:#ead99b;background:#fff9e8}
+.theme-light .account-sync-description{color:#718096}
+.theme-light .account-sync-option{background:#f8f9fc;border-color:#e4e8ef}
+.theme-light .account-sync-option input{accent-color:#4168c6}
+.theme-light .account-sync-option strong{color:#344158}
+.theme-light .account-sync-option small{color:#718096}
+.theme-light .account-sync-preview{background:#f7f8fb;border-color:#e4e8ef}
+.theme-light .account-sync-preview>strong{color:#344158}
+.theme-light .account-sync-preview-row>span{color:#536178}
+.theme-light .account-sync-preview-row>strong{color:#34569e}
+.theme-light .account-sync-preview-row>small{color:#8792a3}
+.theme-light .account-sync-loading{color:#718096}
