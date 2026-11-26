@@ -10,13 +10,15 @@
 
 ## 1. Latest verified build
 
-- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45881850569
-- **Commit:** `d971b2e8e73b80a2a2b38caf1c9609e741e68fa5`
+- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45897242224
+- **Code commit:** `70029037ca678209c70014c09f5066d87942a05a`
 - **Result:** SUCCESS.
-- **Passed:** dependency install, TypeScript typecheck, all unit tests, production build, Chrome extension package verification, and artifact upload.
-- **Artifact:** `learnlens-chrome-extension` (artifact ID `15148465175`).
-- **SHA-256:** `5cff4863580918bfe41e2aaa4e305221aed04d890d8f05baa59945b759112ee1`.
-- **Package version:** 0.1.0.
+- **Passed:** TypeScript typecheck, 7 Vitest files / 50 unit tests, 8 Firestore Emulator Rules tests, production build, Chrome extension package verification, and artifact upload.
+- **Artifact:** `learnlens-chrome-extension` (artifact ID `15153848454`).
+- **Artifact SHA-256:** `c507b3b02523693e7848d453acd9dc37580abc5c354d2518a1b43ed237d56879`.
+- **Artifact size:** 153,293 bytes.
+- **Package/manifest version:** 0.1.0.
+- **Note:** docs-only commits followed the code commit; no executable source changed after this successful build.
 
 ## 2. Phase 4 — Study notes and local persistence
 
@@ -83,7 +85,7 @@
 ## 5. Other roadmap boundaries
 
 - Audio transcription/App Check runtime behavior must not be described as verified unless tested separately.
-- TikTok/Facebook adapters, cloud sync, Firebase Auth/Firestore sync, and Android companion remain future work.
+- TikTok/Facebook adapters, the cloud sync engine, and Android companion remain future work. Firebase Auth and the initial deny-by-default Firestore Rules are implemented, but live Auth QA and the production App Check gate remain open.
 - Keep the extension version at 0.1.0 unless the user explicitly requests a version change.
 - Never commit `.env.local`, API keys, App Check secrets, or private learner data.
 
@@ -92,9 +94,10 @@
 **Current state:** Planning and security design only. No cloud-sync implementation has started.
 
 **Repository findings**
-- Firebase AI Logic and App Check development wiring exist in the current app.
-- The existing App Check provider explicitly uses a debug token. That is suitable only for controlled development/testing, not production sync protection.
-- Firebase Auth, Firestore security rules, and Firebase project configuration files were not found at the repository paths inspected.
+- Firebase AI Logic and development App Check wiring exist; a shared Firebase app module and Firebase email/password Auth service are now implemented.
+- The existing App Check provider still explicitly uses a debug token. That is suitable only for controlled development/testing, not production sync protection.
+- `firestore.rules` and `firebase.json` now configure deny-by-default rules and the Firestore Emulator. No `.firebaserc` has been bound to a live project and no live rules deployment has occurred.
+- Email/Password must still be enabled in Firebase Console for the exact project referenced by the extension build secrets.
 - The current IndexedDB workflow remains the source of truth for local learning data.
 
 **Non-negotiable design constraints**
