@@ -178,6 +178,85 @@ describe("local learning artifact storage", () => {
     expect(await listQuizAttempts("v3-lesson")).toEqual([]);
   });
 
+  it("migrates real version-4 data without losing notes or quiz history", async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local", 4);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        const sessions = database.createObjectStore("learningSessions", { keyPath: "id" });
+        sessions.createIndex("videoId", "videoId", { unique: false });
+        sessions.createIndex("updatedAt", "updatedAt", { unique: false });
+        sessions.createIndex("platform", "platform", { unique: false });
+        const notes = database.createObjectStore("learningNotes", { keyPath: "id" });
+        notes.createIndex("sessionId", "sessionId", { unique: false });
+        notes.createIndex("videoId", "videoId", { unique: false });
+        notes.createIndex("updatedAt", "updatedAt", { unique: false });
+        const bookmarks = database.createObjectStore("learningBookmarks", { keyPath: "id" });
+        bookmarks.createIndex("sessionId", "sessionId", { unique: false });
+        bookmarks.createIndex("videoId", "videoId", { unique: false });
+        bookmarks.createIndex("timestampSeconds", "timestampSeconds", { unique: false });
+        const quizzes = database.createObjectStore("learningQuizzes", { keyPath: "id" });
+        quizzes.createIndex("sessionId", "sessionId", { unique: false });
+        quizzes.createIndex("createdAt", "createdAt", { unique: false });
+        const attempts = database.createObjectStore("quizAttempts", { keyPath: "id" });
+        attempts.createIndex("sessionId", "sessionId", { unique: false });
+        attempts.createIndex("quizId", "quizId", { unique: false });
+        attempts.createIndex("createdAt", "createdAt", { unique: false });
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(
+          ["learningSessions", "learningNotes", "learningBookmarks", "learningQuizzes", "quizAttempts"],
+          "readwrite"
+        );
+        transaction.objectStore("learningSessions").put({
+          id: "v4-lesson", videoId: "v4-lesson", title: "Existing v4 lesson",
+          url: "https://www.youtube.com/watch?v=v4-lesson", platform: "youtube",
+          transcriptText: "Existing transcript", transcriptFormat: "plain-text",
+          transcriptSource: "YouTube live captions", updatedAt: 30
+        });
+        transaction.objectStore("learningNotes").put({
+          id: "v4-note", sessionId: "v4-lesson", videoId: "v4-lesson",
+          title: "Existing v4 note", content: "Keep this note after upgrade.",
+          timestampSeconds: 42, createdAt: 20, updatedAt: 25
+        });
+        transaction.objectStore("learningBookmarks").put({
+          id: "v4-bookmark", sessionId: "v4-lesson", videoId: "v4-lesson",
+          label: "Retired bookmark", timestampSeconds: 42, createdAt: 20
+        });
+        transaction.objectStore("learningQuizzes").put({
+          id: "v4-quiz", sessionId: "v4-lesson", title: "Existing quiz",
+          scope: "whole_lesson", scopeLabel: "Whole lesson", createdAt: 21, questions: []
+        });
+        transaction.objectStore("quizAttempts").put({
+          id: "v4-attempt", quizId: "v4-quiz", sessionId: "v4-lesson",
+          createdAt: 22, results: [], objectiveScore: 2, objectiveTotal: 3,
+          topicsToReview: ["Photosynthesis"]
+        });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    expect(await getLatestSessionForVideo("v4-lesson")).toMatchObject({ title: "Existing v4 lesson" });
+    expect(await listLearningNotes("v4-lesson")).toMatchObject([{ id: "v4-note", content: "Keep this note after upgrade." }]);
+    expect((await listLearningNotes("v4-lesson"))[0]).not.toHaveProperty("timestampSeconds");
+    expect(await listQuizzes("v4-lesson")).toMatchObject([{ id: "v4-quiz", title: "Existing quiz" }]);
+    expect(await listQuizAttempts("v4-lesson")).toMatchObject([{ id: "v4-attempt", objectiveScore: 2 }]);
+    const storeNames = await new Promise<string[]>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local");
+      request.onsuccess = () => {
+        const database = request.result;
+        const names = Array.from(database.objectStoreNames);
+        database.close();
+        resolve(names);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    expect(storeNames).not.toContain("learningBookmarks");
+  });
+
   it("upgrades an existing version-2 database without losing sessions", async () => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open("learnlens-local", 2);
