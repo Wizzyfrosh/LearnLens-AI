@@ -13,6 +13,7 @@ Read these files before contributing or handing this project to another AI codin
 - [Implementation Plan](./docs/IMPLEMENTATION_PLAN.md) — phased engineering roadmap and definition of done.
 - [Project Status](./docs/PROJECT_STATUS.md) — current checkpoint, completed work, blockers, and exact next task. **Read this first when resuming work.**
 - [Cloud Sync Data Model](./docs/CLOUD_SYNC_DATA_MODEL.md) — Phase 6 data contracts, account isolation, conflict/tombstone policy, and security threat model.
+- [Phase 6B Auth Setup](./docs/PHASE6B_AUTH_SETUP.md) — enable Email/Password, verify account flows in Chrome, and run Firestore Rules emulator tests.
 
 ## Current milestone: Chrome extension foundation
 
@@ -28,6 +29,8 @@ This repository contains the first extension scaffold:
 - Firebase AI Logic hybrid tutor adapter
 - Explicit on-device-only, cloud-only, and prefer-on-device modes
 - Inference source shown with each answer
+- Optional Firebase email/password account sign-in through the Manifest V3 `firebase/auth/web-extension` entry point
+- Deny-by-default Firestore rules with emulator tests for per-user sync-settings access
 
 ## Requirements
 
@@ -67,11 +70,11 @@ For hybrid inference, Firebase AI Logic must be enabled in the Firebase console 
 
 ## Planned next steps
 
-1. Verify same-tab YouTube SPA navigation and active lesson metadata in Chrome.
-2. Verify Start learning → rendered captions → live transcript → IndexedDB auto-save → Ask tutor.
-3. Verify explicit-consent tab-audio capture, AudioWorklet playback continuity, WAV chunking, Firebase App Check, and audio transcription in real Chrome.
-4. Add notes, timestamp bookmarks, and quiz generation after transcript capture is reliable.
-5. Add sign-in and optional learning-artifact sync after the core workflow is stable.
+1. Enable Firebase Email/Password for the configured project and complete the desktop Chrome account-flow checklist in `docs/PHASE6B_AUTH_SETUP.md`.
+2. Resolve and verify a production-compatible App Check strategy for the installed Chrome extension.
+3. Add the IndexedDB v6 sync metadata/outbox migration and tested allow-listed cloud DTO mappers.
+4. Implement explicit opt-in sync for notes, quizzes, attempts, and minimal lesson metadata only; keep transcripts and raw audio local by default.
+5. Add conflict review, tombstone propagation, export/delete workflows, and multi-device QA.
 
 
 ### GitHub Actions Firebase configuration
