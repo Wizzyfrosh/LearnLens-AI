@@ -132,6 +132,10 @@ export default function App() {
     try {
       unsubscribe = observeAuthState((user) => {
         setAuthUser(user);
+        setSyncClaimReviewOpen(false);
+        setSyncClaimResult(null);
+        setSyncCandidateCounts(null);
+        setSyncCategories({ lessonMetadata: false, notes: false, quizzes: false, attempts: false });
         setAuthReady(true);
         setAuthUnavailableMessage("");
       });
