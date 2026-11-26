@@ -93,7 +93,8 @@ Implementation tasks:
 - [x] Emit transcript segments with source `audio-transcription`; no lesson timestamps are claimed for audio-only output.
 - [x] Persist transcript text locally; process raw audio chunks in memory and do not store or sync audio files.
 - [ ] Runtime-test pause/resume, seek, buffering, muted tab, no-speech chunks, duplicate/out-of-order chunks, request timeout, network failure, quota errors, App Check rejection, and user cancellation.
-- [x] Add unit tests for WAV encoding, PCM format, sample-rate validation, and chunk-size bounds.\n- [ ] Add integration tests for chunk ordering, duplicate suppression, stop cleanup, consent gating, and transcript normalization.
+- [x] Add unit tests for WAV encoding, PCM format, sample-rate validation, and chunk-size bounds.
+- [ ] Add integration tests for chunk ordering, duplicate suppression, stop cleanup, consent gating, and transcript normalization.
 
 Exit: on a Chrome version/configuration with verified App Check and Firebase audio model access, a learner can explicitly consent, start audio transcription, see incremental transcript text, continue hearing the lesson, stop capture, and ask the tutor grounded questions. If cloud transcription is not configured or consent is absent, visible-caption capture remains the default and audio is never uploaded.
 ### Phase 4 — Local learning sessions and study notes
