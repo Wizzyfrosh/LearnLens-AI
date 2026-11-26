@@ -397,8 +397,8 @@ Phase 5 implementation added:
 
 Verification status:
 - Existing Phase 4 CI run 45725960100 verified the prior notes/bookmarks implementation.
-- New Phase 4 history and Phase 5 work is awaiting a successful CI run on the latest commit. The latest code checkpoint before this documentation update was `7d331bab27f2bd83c1cb511ee9f57843bfa12401`; later commits add documentation and final small refinements.
-- Do not claim Phase 4/5 CI success until the latest workflow passes typecheck, unit tests, production build, extension package verification, and artifact upload.
+- Successful CI: run 45768177952 at code commit `0bde403bbdc74959d775c2c38218fd3806a3f774`. Dependency installation, TypeScript typecheck, unit tests, production build, Chrome extension package verification, and artifact upload all passed.
+- Phase 4/5 code verification passed in run 45768177952. The subsequent workflow-only commit extends artifact retention to 30 days and triggers a fresh package run.
 - No Chrome runtime tests have been run for the new Phase 4 history or Phase 5 quiz workflow. Both phases must be tested together when the user has PC access.
 
 Next:
@@ -419,3 +419,15 @@ Next:
 - CI success confirms code quality gates and package generation only. No desktop Chrome runtime QA has been performed for the combined Phase 4/5 build.
 - Phase 4 feature implementation and Phase 5 feature implementation are complete in code; both remain open for combined Chrome runtime verification.
 - Audio transcription remains deferred under Phase 3. Do not start Phase 6 until the user completes combined Phase 4/5 runtime testing and resulting defects are fixed.
+
+
+## 24. Phase 4/5 CI verification — 2026-11-26
+
+- Successful workflow: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45768177952
+- Code commit: `0bde403bbdc74959d775c2c38218fd3806a3f774`.
+- Passed: dependency installation, TypeScript typecheck, all unit tests, production build, Chrome extension package verification, and artifact upload.
+- Artifact from that run: `learnlens-chrome-extension`, ID `15093041428`, 122,790 bytes. Its original 14-day expiry was 2026-12-10.
+- Updated `.github/workflows/ci.yml` to retain future artifacts for 30 days, because the user is temporarily away from their PC. A fresh workflow run will publish the same verified code with the extended artifact retention.
+- Phase 4 implementation and CI checks are complete; desktop Chrome runtime QA remains open.
+- Phase 5 implementation and CI checks are complete; desktop Chrome runtime QA remains open.
+- Neither phase is declared fully complete until the combined browser tests pass. Audio transcription remains deferred.
