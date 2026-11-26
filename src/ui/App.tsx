@@ -1174,8 +1174,6 @@ export default function App() {
         {progress !== null && <p className="helper-text">Preparing on-device model: {Math.round(progress * 100)}%</p>}
         {error && <div className="error-box"><CircleHelp size={15} />{error}</div>}
         {answer && <article className="answer-card"><div className="answer-meta">LEARNLENS RESPONSE <span>{source === "ON_DEVICE" ? "ON DEVICE" : source === "IN_CLOUD" ? "CLOUD" : "SOURCE UNKNOWN"}</span></div><p>{answer}</p></article>}
-      </section>
-
       </section>}
 
       <footer>Captured captions and saved lessons stay in this browser. Audio transcription sends lesson audio to Firebase only after separate learner consent and App Check configuration.</footer>
