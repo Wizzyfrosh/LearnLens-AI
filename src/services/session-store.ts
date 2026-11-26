@@ -25,7 +25,7 @@ export interface LearningNote {
 }
 
 const DATABASE_NAME = "learnlens-local";
-const DATABASE_VERSION = 6;
+const DATABASE_VERSION = 7;
 const SESSION_STORE = "learningSessions";
 const NOTE_STORE = "learningNotes";
 const QUIZ_STORE = "learningQuizzes";
@@ -33,6 +33,7 @@ const QUIZ_ATTEMPT_STORE = "quizAttempts";
 const SYNC_METADATA_STORE = "syncMetadata";
 const SYNC_OUTBOX_STORE = "syncOutbox";
 const SYNC_DEVICE_STORE = "syncDevice";
+const SYNC_PREFERENCES_STORE = "syncPreferences";
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -111,6 +112,9 @@ function openDatabase(): Promise<IDBDatabase> {
       }
       if (!database.objectStoreNames.contains(SYNC_DEVICE_STORE)) {
         database.createObjectStore(SYNC_DEVICE_STORE, { keyPath: "key" });
+      }
+      if (!database.objectStoreNames.contains(SYNC_PREFERENCES_STORE)) {
+        database.createObjectStore(SYNC_PREFERENCES_STORE, { keyPath: "ownerUid" });
       }
     };
     request.onsuccess = () => {
@@ -660,5 +664,123 @@ export async function getOrCreateSyncDeviceId(): Promise<string> {
     transaction.oncomplete = () => resolve(deviceId);
     transaction.onerror = () => reject(transaction.error ?? new Error("Could not initialize the local sync device ID."));
     transaction.onabort = () => reject(transaction.error ?? new Error("Could not initialize the local sync device ID."));
+  }).finally(() => database.close());
+}
+
+
+export interface SyncCategoryPreferences {
+  lessonMetadata: boolean;
+  notes: boolean;
+  quizzes: boolean;
+  attempts: boolean;
+}
+
+export interface LocalSyncPreferences {
+  ownerUid: string;
+  categories: SyncCategoryPreferences;
+  updatedAtMs: number;
+}
+
+export interface SyncCandidateCategoryCounts {
+  total: number;
+  unclaimed: number;
+  ownedByCurrentAccount: number;
+  ownedByOtherAccount: number;
+}
+
+export type SyncCandidateCounts = Record<SyncCategory, SyncCandidateCategoryCounts>;
+
+const EMPTY_SYNC_CATEGORIES: SyncCategoryPreferences = {
+  lessonMetadata: false,
+  notes: false,
+  quizzes: false,
+  attempts: false
+};
+
+export async function getLocalSyncPreferences(ownerUid: string): Promise<LocalSyncPreferences> {
+  validateSyncIdentity(ownerUid, "account ID");
+  return runTransaction<LocalSyncPreferences>(SYNC_PREFERENCES_STORE, "readonly", (store, resolve) => {
+    const request = store.get(ownerUid);
+    request.onsuccess = () => {
+      const saved = request.result as LocalSyncPreferences | undefined;
+      resolve(saved ?? { ownerUid, categories: { ...EMPTY_SYNC_CATEGORIES }, updatedAtMs: 0 });
+    };
+  });
+}
+
+export async function saveLocalSyncPreferences(
+  ownerUid: string,
+  categories: SyncCategoryPreferences
+): Promise<LocalSyncPreferences> {
+  validateSyncIdentity(ownerUid, "account ID");
+  for (const value of Object.values(categories)) {
+    if (typeof value !== "boolean") throw new Error("Invalid local sync category preference.");
+  }
+  const preferences: LocalSyncPreferences = {
+    ownerUid,
+    categories: {
+      lessonMetadata: categories.lessonMetadata,
+      notes: categories.notes,
+      quizzes: categories.quizzes,
+      attempts: categories.attempts
+    },
+    updatedAtMs: Date.now()
+  };
+  return runTransaction<LocalSyncPreferences>(SYNC_PREFERENCES_STORE, "readwrite", (store, resolve) => {
+    store.put(preferences);
+    resolve(preferences);
+  });
+}
+
+/** Counts local records without reading or returning transcript contents. */
+export async function getLocalSyncCandidateCounts(ownerUid: string): Promise<SyncCandidateCounts> {
+  validateSyncIdentity(ownerUid, "account ID");
+  const database = await openDatabase();
+  return new Promise<SyncCandidateCounts>((resolve, reject) => {
+    const transaction = database.transaction(
+      [SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE],
+      "readonly"
+    );
+    const requests = [
+      transaction.objectStore(SESSION_STORE).getAll(),
+      transaction.objectStore(NOTE_STORE).getAll(),
+      transaction.objectStore(QUIZ_STORE).getAll(),
+      transaction.objectStore(QUIZ_ATTEMPT_STORE).getAll(),
+      transaction.objectStore(SYNC_METADATA_STORE).getAll()
+    ];
+    const results: unknown[][] = [[], [], [], [], []];
+    let completed = 0;
+    for (let index = 0; index < requests.length; index += 1) {
+      requests[index].onsuccess = () => {
+        results[index] = requests[index].result as unknown[];
+        completed += 1;
+        if (completed !== requests.length) return;
+        const metadata = new Map((results[4] as SyncMetadataRecord[]).map((entry) => [entry.entityKey, entry]));
+        const count = (category: SyncCategory, entities: Array<{ id: string; sessionId?: string }>) => {
+          let unclaimed = 0;
+          let ownedByCurrentAccount = 0;
+          let ownedByOtherAccount = 0;
+          for (const entity of entities) {
+            const lessonId = entity.sessionId ?? entity.id;
+            const entityType: SyncEntityType = category === "lessonMetadata" ? "lesson"
+              : category === "notes" ? "note" : category === "quizzes" ? "quiz" : "attempt";
+            const entityKey = syncEntityKey(entityType, lessonId, entity.id);
+            const claim = metadata.get(entityKey);
+            if (!claim) unclaimed += 1;
+            else if (claim.ownerUid === ownerUid) ownedByCurrentAccount += 1;
+            else ownedByOtherAccount += 1;
+          }
+          return { total: entities.length, unclaimed, ownedByCurrentAccount, ownedByOtherAccount };
+        };
+        resolve({
+          lessonMetadata: count("lessonMetadata", (results[0] as LearningSession[]).map((item) => ({ id: item.id }))),
+          notes: count("notes", (results[1] as LearningNote[]).map((item) => ({ id: item.id, sessionId: item.sessionId }))),
+          quizzes: count("quizzes", (results[2] as QuizDefinition[]).map((item) => ({ id: item.id, sessionId: item.sessionId }))),
+          attempts: count("attempts", (results[3] as QuizAttempt[]).map((item) => ({ id: item.id, sessionId: item.sessionId })))
+        });
+      };
+    }
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not count local sync candidates."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Counting local sync candidates was cancelled."));
   }).finally(() => database.close());
 }
