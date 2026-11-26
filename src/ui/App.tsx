@@ -42,6 +42,12 @@ function formatLessonTime(seconds: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(remaining).padStart(2, "0")}`;
 }
 
+function escapeHtml(value: string): string {
+  const quote = String.fromCharCode(34);
+  const apostrophe = String.fromCharCode(39);
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll(quote, "&quot;").replaceAll(apostrophe, "&#39;");
+}
+
 export default function App() {
   const overlayMode = new URLSearchParams(window.location.search).get("overlay") === "1";
   const [activeTab, setActiveTab] = useState<"lesson" | "notes" | "bookmarks" | "quiz" | "tutor" | "history">(new URLSearchParams(window.location.search).get("workspace") === "quiz" ? "quiz" : "lesson");
@@ -709,29 +715,76 @@ export default function App() {
     }
   }
 
-  function exportNotes() {
-    const lines = [
-      `# ${video.title || "LearnLens lesson notes"}`,
-      "",
-      `Source: ${video.url || "Imported lesson"}`,
-      "",
-      ...notes.flatMap((note) => [
-        `## ${note.title}`,
-        note.timestampSeconds === null ? "" : `Timestamp: ${formatLessonTime(note.timestampSeconds)}`,
-        "",
-        note.content,
-        ""
-      ]),
-      "## Bookmarks",
-      ...bookmarks.map((item) => `- [${formatLessonTime(item.timestampSeconds)}] ${item.label}`)
-    ];
-    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
+  function exportBookmarks() {
+    if (!bookmarks.length) {
+      setArtifactMessage("There are no bookmarks to export yet.");
+      return;
+    }
+
+    const title = video.title || "LearnLens lesson bookmarks";
+    const source = video.url || "Imported lesson";
+    const baseName = "learnlens-bookmarks-" + (sessionId || "lesson");
+    const rows = bookmarks.map((item) => ({
+      time: formatLessonTime(item.timestampSeconds),
+      seconds: String(item.timestampSeconds),
+      label: item.label,
+      url: getLessonTimestampUrl(video.url, item.timestampSeconds) ?? ""
+    }));
+    const textBody = [title, "Source: " + source, "", "BOOKMARKS", ...rows.map((item) => "[" + item.time + "] " + item.label)].join("\n");
+
+    if (bookmarkExportFormat === "pdf") {
+      const popup = window.open("", "_blank", "width=900,height=700");
+      if (!popup) {
+        setArtifactMessage("The PDF print window was blocked. Allow pop-ups for this extension and try again.");
+        return;
+      }
+      const htmlRows = rows.map((item) => "<tr><td>" + escapeHtml(item.time) + "</td><td>" + escapeHtml(item.label) + "</td></tr>").join("");
+      const html = "<!doctype html><html><head><meta charset=\"utf-8\"><title>" + escapeHtml(title) + " - Bookmarks</title>" +
+        "<style>body{font:14px Arial,sans-serif;color:#202633;margin:36px}h1{font-size:24px;margin:0 0 8px}p{color:#667085;font-size:12px;overflow-wrap:anywhere}.rule{height:3px;background:#f2d34f;margin:22px 0}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{text-align:left;padding:11px;border-bottom:1px solid #d9dee8;vertical-align:top}th{background:#f4f5f7;font-size:11px;text-transform:uppercase;letter-spacing:.06em}td:first-child{width:90px;font-variant-numeric:tabular-nums;color:#735f13}@media print{body{margin:18mm}.rule{-webkit-print-color-adjust:exact;print-color-adjust:exact}tr{break-inside:avoid}}</style></head><body>" +
+        "<h1>" + escapeHtml(title) + "</h1><p>Source: " + escapeHtml(source) + "</p><div class=\"rule\"></div><h2>Saved bookmarks</h2><table><thead><tr><th>Timestamp</th><th>Bookmark</th></tr></thead><tbody>" + htmlRows + "</tbody></table></body></html>";
+      popup.document.open();
+      popup.document.write(html);
+      popup.document.close();
+      popup.opener = null;
+      popup.focus();
+      popup.setTimeout(() => popup.print(), 350);
+      setArtifactMessage("PDF print view opened. Choose Save as PDF in the print destination to create the PDF file.");
+      return;
+    }
+
+    let blob: Blob;
+    let extension: string;
+    if (bookmarkExportFormat === "doc") {
+      const htmlRows = rows.map((item) => "<tr><td>" + escapeHtml(item.time) + "</td><td>" + escapeHtml(item.label) + "</td></tr>").join("");
+      const html = "<!doctype html><html xmlns:o=\"urn:schemas-microsoft-com:office:office\" xmlns:w=\"urn:schemas-microsoft-com:office:word\"><head><meta charset=\"utf-8\"><title>" + escapeHtml(title) + "</title></head><body>" +
+        "<h1>" + escapeHtml(title) + "</h1><p>Source: " + escapeHtml(source) + "</p><h2>Saved bookmarks</h2><table border=\"1\" cellspacing=\"0\" cellpadding=\"7\"><tr><th>Timestamp</th><th>Bookmark</th></tr>" + htmlRows + "</table></body></html>";
+      blob = new Blob(["\ufeff", html], { type: "application/msword;charset=utf-8" });
+      extension = "doc";
+    } else if (bookmarkExportFormat === "csv") {
+      const quote = String.fromCharCode(34);
+      const csvCell = (value: string) => quote + value.replaceAll(quote, quote + quote) + quote;
+      const csv = [["Timestamp", "Seconds", "Bookmark", "Video URL"], ...rows.map((item) => [item.time, item.seconds, item.label, item.url])].map((row) => row.map(csvCell).join(",")).join("\r\n");
+      blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
+      extension = "csv";
+    } else if (bookmarkExportFormat === "md") {
+      const markdown = "# " + title + "\n\nSource: " + source + "\n\n## Bookmarks\n\n" + rows.map((item) => "- [" + item.time + "] " + item.label.replaceAll("|", "\\|").replaceAll("\n", " ")).join("\n");
+      blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+      extension = "md";
+    } else {
+      blob = new Blob([textBody], { type: "text/plain;charset=utf-8" });
+      extension = "txt";
+    }
+
+    const objectUrl = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `learnlens-notes-${sessionId || "lesson"}.md`;
+    anchor.href = objectUrl;
+    anchor.download = baseName + "." + extension;
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
     anchor.click();
-    URL.revokeObjectURL(url);
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    setArtifactMessage("Bookmarks exported as " + extension.toUpperCase() + ".");
   }
 
   async function openFullScreenQuiz() {
@@ -1080,7 +1133,19 @@ export default function App() {
                 </div>
               )) : <p className="empty-artifact">No timestamp bookmarks yet. Use the bookmark control beside a timed caption in the Lesson tab.</p>}
             </div>}
-            {activeTab === "bookmarks" && <button className="secondary-button export-button" type="button" onClick={exportNotes} disabled={!notes.length && !bookmarks.length}><Download size={14} /> Export notes as Markdown</button>}
+            {activeTab === "bookmarks" && <div className="bookmark-export-controls">
+              <label className="field-label" htmlFor="bookmark-export-format">Export format</label>
+              <div className="bookmark-export-row">
+                <select id="bookmark-export-format" className="export-format" value={bookmarkExportFormat} onChange={(event) => setBookmarkExportFormat(event.target.value as typeof bookmarkExportFormat)}>
+                  <option value="pdf">PDF (Print / Save as PDF)</option>
+                  <option value="doc">Word document (.doc)</option>
+                  <option value="txt">Plain text (.txt)</option>
+                  <option value="md">Markdown (.md)</option>
+                  <option value="csv">Spreadsheet / CSV (.csv)</option>
+                </select>
+                <button className="secondary-button export-button" type="button" onClick={exportBookmarks} disabled={!bookmarks.length}><Download size={14} /> Export bookmarks</button>
+              </div>
+            </div>}
             {artifactMessage && <p className={artifactMessage.toLowerCase().includes("could not") || artifactMessage.toLowerCase().includes("error") || artifactMessage.toLowerCase().includes("invalid") ? "error-box" : "helper-text"} role="status">{artifactMessage}</p>}
           </section>
         )}
