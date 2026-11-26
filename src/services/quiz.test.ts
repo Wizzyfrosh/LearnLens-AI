@@ -54,6 +54,11 @@ describe("lesson quiz validation and scoring", () => {
     expect(validateQuizResponse("```json\n" + JSON.stringify(payload) + "\n```", segments)).toHaveLength(3);
   });
 
+  it("matches timestamped evidence despite timestamp labels and punctuation differences", () => {
+    const timestamped = structuredClone(payload);
+    timestamped.questions[1].evidence = "[00:05] Chlorophyll absorbs light energy!";
+    expect(validateQuizResponse(JSON.stringify(timestamped), segments)).toHaveLength(3);
+  });
   it("rejects malformed JSON and unsupported question types", () => {
     expect(() => validateQuizResponse("{not json}", segments)).toThrow(/malformed/i);
     const invalid = structuredClone(payload);
