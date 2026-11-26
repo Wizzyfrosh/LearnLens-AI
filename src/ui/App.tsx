@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Bookmark, Download, Search, FileText } from "lucide-react";
+import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Bookmark, Download, Search, FileText, History } from "lucide-react";
 import { askLearnLens, isAudioTranscriptionConfigured, transcribeAudioChunk } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport, serializeSegmentsAsVtt } from "../services/transcript";
-import { deleteLearningSession, deleteLearningNote, deleteLearningBookmark, getLatestManualSession, getLatestSessionForVideo, listLearningBookmarks, listLearningNotes, saveLearningBookmark, saveLearningNote, saveLearningSession } from "../services/session-store";
-import type { LearningBookmark, LearningNote } from "../services/session-store";
+import { deleteLearningSession, deleteLearningNote, deleteLearningBookmark, getLatestManualSession, getLatestSessionForVideo, listLearningBookmarks, listLearningNotes, listLearningSessions, saveLearningBookmark, saveLearningNote, saveLearningSession } from "../services/session-store";
+import type { LearningBookmark, LearningNote, LearningSession } from "../services/session-store";
 import type { InferencePreference, TranscriptSegment, VideoContext } from "../shared/types";
 import type { AudioCaptureStatus, CaptionCaptureStatus, ExtensionMessage } from "../shared/messages";
 
@@ -56,6 +56,7 @@ export default function App() {
   const pendingAudioChunksRef = useRef(0);
   const [sessionId, setSessionId] = useState("");
   const [savedSession, setSavedSession] = useState(false);
+  const [savedSessions, setSavedSessions] = useState<LearningSession[]>([]);
   const [storageNotice, setStorageNotice] = useState("");
   const [notes, setNotes] = useState<LearningNote[]>([]);
   const [bookmarks, setBookmarks] = useState<LearningBookmark[]>([]);
@@ -243,6 +244,16 @@ export default function App() {
   const isLiveTranscript = capturedSegments.length > 0;
 
   useEffect(() => {
+    let cancelled = false;
+    void listLearningSessions().then((items) => {
+      if (!cancelled) setSavedSessions(items);
+    }).catch(() => {
+      if (!cancelled) setStorageNotice("Could not load saved lesson history from this device.");
+    });
+    return () => { cancelled = true; };
+  }, [savedSession]);
+
+  useEffect(() => {
     if (!sessionId || !savedSession) {
       setNotes([]);
       setBookmarks([]);
@@ -287,6 +298,30 @@ export default function App() {
     }, 1400);
     return () => window.clearTimeout(timer);
   }, [capturedSegments, isLiveTranscript, video.videoId, video.title, video.url]);
+
+  async function restoreSavedSession(session: LearningSession) {
+    try {
+      if (session.transcriptSource === "YouTube live captions" || session.transcriptSource === "Audio transcription") {
+        const parsed = parseTranscriptImport(session.transcriptText);
+        const sourceType = session.transcriptSource === "Audio transcription" ? "audio-transcription" : "visible-captions";
+        setCapturedSegments(parsed.segments.map((segment) => ({ ...segment, source: sourceType })));
+        setRawTranscript("");
+      } else {
+        setCapturedSegments([]);
+        setRawTranscript(session.transcriptText);
+      }
+      setTranscriptSource(session.transcriptSource);
+      setSessionId(session.id);
+      setSavedSession(true);
+      setVideo(session.platform === "youtube" ? { videoId: session.videoId, title: session.title, url: session.url, platform: "youtube" } : { ...emptyContext, title: session.title || "Imported lesson", url: session.url });
+      setStorageNotice("Restored the selected lesson from this device.");
+      setError("");
+      setAnswer("");
+      setSource("");
+    } catch {
+      setStorageNotice("This saved lesson could not be restored.");
+    }
+  }
 
   async function startLearning() {
     try {
