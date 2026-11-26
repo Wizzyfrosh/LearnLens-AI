@@ -46,7 +46,7 @@ After the latest CI artifact is downloaded and loaded into the existing unpacked
 
 1. Create a test account with an email address you control.
 2. Confirm Firebase sends the verification email.
-3. Open the link, return to the extension, and click **Check verification**.
+3. Open the link, return to the extension, and click **Check verification**. LearnLens reloads the Firebase user and forces an ID-token refresh so Firestore Rules receive the updated `email_verified` claim.
 4. Sign out and sign back in.
 5. Use **Forgot password?** and confirm the reset email arrives.
 6. Close and reopen the side panel; confirm the signed-in session is restored.
