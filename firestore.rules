@@ -1,0 +1,48 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedInAs(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function verifiedAs(uid) {
+      return signedInAs(uid) && request.auth.token.email_verified == true;
+    }
+
+    function validSyncSettings(data) {
+      return data is map
+        && data.keys().hasAll(['schemaVersion', 'enabled', 'categories', 'updatedAt'])
+        && data.keys().hasOnly(['schemaVersion', 'enabled', 'categories', 'updatedAt'])
+        && data.schemaVersion == 1
+        && data.enabled is bool
+        && data.categories is map
+        && data.categories.keys().hasAll(['lessonMetadata', 'notes', 'quizzes', 'attempts'])
+        && data.categories.keys().hasOnly(['lessonMetadata', 'notes', 'quizzes', 'attempts'])
+        && data.categories.lessonMetadata is bool
+        && data.categories.notes is bool
+        && data.categories.quizzes is bool
+        && data.categories.attempts is bool
+        && data.updatedAt == request.time;
+    }
+
+    match /users/{uid}/settings/{settingId} {
+      allow get: if settingId == 'sync' && signedInAs(uid);
+      allow list: if false;
+      allow create: if settingId == 'sync'
+        && verifiedAs(uid)
+        && validSyncSettings(request.resource.data);
+      allow update: if settingId == 'sync'
+        && verifiedAs(uid)
+        && validSyncSettings(request.resource.data)
+        && request.resource.data.schemaVersion == resource.data.schemaVersion;
+      allow delete: if false;
+    }
+
+    // The artifact paths are intentionally closed until the sync engine,
+    // schema validators, and tombstone protocol are implemented and reviewed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
