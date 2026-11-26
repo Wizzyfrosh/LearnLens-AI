@@ -4,9 +4,9 @@
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
 **Extension version:** 0.1.0  
-**Current checkpoint:** Phase 4 and Phase 5 fixes have been extended with per-note navigation/export and stronger 10-question quiz grounding; final desktop Chrome smoke testing remains.
+**Current checkpoint:** Phase 4 and Phase 5 are complete. The user confirmed all desktop Chrome runtime tests passed. Next: plan Phase 6 optional cloud sync.
 
-> A passing CI pipeline is not the same as browser runtime verification. Do not mark these phases signed off until the updated extension has been tested in Chrome.
+> CI and desktop Chrome runtime verification have both passed for the Phase 4 and Phase 5 scope described below.
 
 ## 1. Latest verified build
 
@@ -37,11 +37,11 @@
 - IndexedDB tests cover note persistence/CRUD, latest-session restore, schema upgrades, and cascade deletion.
 - Version-3 and version-4 migration tests cover retention of lesson data; the version-4 case also checks preservation of quizzes and attempts while removing the bookmark store.
 
-**Still requires desktop Chrome**
-- Confirm migration works against the installed v4 database.
-- Generate notes, reload the extension, restore the lesson, and reopen the notes.
-- Edit a note and confirm autosave; create another note; delete a note.
-- Test PDF, DOC, TXT, Markdown, and CSV exports.
+**Desktop Chrome verification — passed**
+- Confirmed migration works against the installed v4 database.
+- Confirmed generated notes persist across reload and lesson restore.
+- Confirmed note editing/autosave, creation, navigation, and deletion.
+- Confirmed the five export formats work and export only the selected note.
 
 ## 3. Phase 5 — Quiz system and learning loop
 
@@ -61,24 +61,24 @@
 - The user confirmed quiz generation worked after that fix.
 - Automated grading, history, and migration tests are included in the latest passing CI run.
 
-**Still requires desktop Chrome**
-- Submit a quiz with at least one wrong answer and one correct answer.
-- Confirm the selected wrong answer is red and the correct option has a green check.
-- Confirm feedback explains why the answer is wrong/right.
-- Open Quiz history, review an older attempt, and verify the original answers and explanations are restored.
+**Desktop Chrome verification — passed**
+- Confirmed quiz grading and answer feedback behavior.
+- Confirmed correct/incorrect answer visual states.
+- Confirmed answer explanations display correctly.
+- Confirmed saved quiz attempts can be reopened with their original answers and feedback.
 
-## 4. Final Phase 4–5 acceptance checklist
+## 4. Phase 4–5 final acceptance — complete
 
-- [ ] Update/load the latest 0.1.0 extension package in desktop Chrome while retaining the existing extension identity where possible.
-- [ ] Confirm old saved lesson notes survive the v4 → v5 migration and no timestamp fields appear in notes.
-- [ ] Confirm generated and manually edited notes survive reload and can be reopened.
-- [ ] Confirm all five note export choices work.
-- [ ] Confirm there is no separate bookmark tab or bookmark control.
-- [ ] Confirm objective quiz grading colors, correct-answer indicators, and explanations.
-- [ ] Confirm Quiz history reopens a prior attempt with its stored answers and feedback.
-- [ ] Confirm existing lesson capture and tutor behavior still work after the update.
+- [x] Update/load the latest 0.1.0 extension package in desktop Chrome while retaining the existing extension identity where possible.
+- [x] Confirm old saved lesson notes survive the v4 → v5 migration and no timestamp fields appear in notes.
+- [x] Confirm generated and manually edited notes survive reload and can be reopened.
+- [x] Confirm all five note export choices work.
+- [x] Confirm there is no separate bookmark tab or bookmark control.
+- [x] Confirm objective quiz grading colors, correct-answer indicators, and explanations.
+- [x] Confirm Quiz history reopens a prior attempt with its stored answers and feedback.
+- [x] Confirm existing lesson capture and tutor behavior still work after the update.
 
-**Sign-off rule:** Phase 4 and Phase 5 can be marked complete after all applicable checks above pass in desktop Chrome. Until then, automated implementation and CI are green, but runtime sign-off remains open.
+**Sign-off:** The user confirmed all applicable Phase 4 and Phase 5 checks passed in desktop Chrome. Both phases are complete.
 
 ## 5. Other roadmap boundaries
 
@@ -89,7 +89,7 @@
 
 ## 6. Next exact task
 
-Run the Phase 4–5 desktop Chrome smoke test using the latest CI artifact, report results feature by feature, fix any failures, and only then move the roadmap forward.
+Begin Phase 6 planning: design opt-in cloud sync with Firebase Auth, Firestore per-user security rules, App Check, explicit sync controls, conflict handling, and export/delete workflows. Preserve local-first behavior; transcripts remain local by default.
 
 
 ## 2026-11-26 follow-up — notes navigation and 10-question quiz reliability
@@ -98,4 +98,12 @@ Run the Phase 4–5 desktop Chrome smoke test using the latest CI artifact, repo
 - Regression coverage: added a valid 10-question quiz response test.
 - Latest CI: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45886269511 — SUCCESS for TypeScript, unit tests, production build, Chrome package verification, and artifact upload.
 - Extension version remains 0.1.0.
-- Browser runtime still required: select between two notes and export only one; then generate a 10-question quiz and confirm it completes with transcript-grounded answers. Do not claim these two behaviors have been user-tested until the user confirms.
+- User confirmed the updated note navigation/selected-note export and live 10-question quiz tests passed in desktop Chrome. Phase 4 and Phase 5 are signed off.
+
+
+## 2026-11-26 — Phase 4–5 runtime sign-off
+- User reported that all testing is complete and all tested behaviors worked.
+- Phase 4: local lesson persistence, notes CRUD/autosave/navigation, selected-note export, and the tested migration/restore workflow are signed off.
+- Phase 5: quiz generation (including 10 questions), transcript-grounded answer validation, grading visuals/feedback, and saved-attempt review are signed off.
+- Latest code remains at extension version 0.1.0. No version bump was requested.
+- Next phase is Phase 6 — Optional Cloud Sync. Cloud sync must remain opt-in; local-only lesson storage remains the default and transcripts must not sync by default.
