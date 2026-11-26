@@ -93,7 +93,7 @@ export function toLessonMetadataDto(session: LearningSession): LessonMetadataDto
 export function toNoteSyncDto(note: LearningNote): NoteSyncDto {
   const dto: NoteSyncDto = {
     title: assertText(note.title, "note title", 500),
-    content: assertText(note.content, "note content", MAX_NOTE_BYTES),
+    content: assertText(note.content, "note content", MAX_NOTE_BYTES * 2),
     createdAtMs: assertTimestamp(note.createdAt, "note creation"),
     updatedAtMs: assertTimestamp(note.updatedAt, "note update")
   };
