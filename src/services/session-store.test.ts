@@ -132,6 +132,55 @@ describe("local learning artifact storage", () => {
     expect(await listQuizAttempts("quiz-lesson")).toEqual([]);
   });
 
+  it("upgrades a version-3 database and preserves existing notes and bookmarks", async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local", 3);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        const sessions = database.createObjectStore("learningSessions", { keyPath: "id" });
+        sessions.createIndex("videoId", "videoId", { unique: false });
+        sessions.createIndex("updatedAt", "updatedAt", { unique: false });
+        sessions.createIndex("platform", "platform", { unique: false });
+        const notes = database.createObjectStore("learningNotes", { keyPath: "id" });
+        notes.createIndex("sessionId", "sessionId", { unique: false });
+        notes.createIndex("videoId", "videoId", { unique: false });
+        notes.createIndex("updatedAt", "updatedAt", { unique: false });
+        const bookmarks = database.createObjectStore("learningBookmarks", { keyPath: "id" });
+        bookmarks.createIndex("sessionId", "sessionId", { unique: false });
+        bookmarks.createIndex("videoId", "videoId", { unique: false });
+        bookmarks.createIndex("timestampSeconds", "timestampSeconds", { unique: false });
+      };
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction(["learningSessions", "learningNotes", "learningBookmarks"], "readwrite");
+        transaction.objectStore("learningSessions").put({
+          id: "v3-lesson", videoId: "v3-lesson", title: "Existing lesson",
+          url: "https://www.youtube.com/watch?v=v3-lesson", platform: "youtube",
+          transcriptText: "Existing transcript", transcriptFormat: "plain-text",
+          transcriptSource: "YouTube live captions", updatedAt: 10
+        });
+        transaction.objectStore("learningNotes").put({
+          id: "v3-note", sessionId: "v3-lesson", videoId: "v3-lesson",
+          title: "Existing note", content: "Keep this note", timestampSeconds: 12,
+          createdAt: 10, updatedAt: 10
+        });
+        transaction.objectStore("learningBookmarks").put({
+          id: "v3-bookmark", sessionId: "v3-lesson", videoId: "v3-lesson",
+          label: "Keep this bookmark", timestampSeconds: 12, createdAt: 10
+        });
+        transaction.oncomplete = () => { database.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    expect(await getLatestSessionForVideo("v3-lesson")).toMatchObject({ title: "Existing lesson" });
+    expect(await listLearningNotes("v3-lesson")).toMatchObject([{ id: "v3-note", content: "Keep this note" }]);
+    expect(await listLearningBookmarks("v3-lesson")).toMatchObject([{ id: "v3-bookmark", label: "Keep this bookmark" }]);
+    expect(await listQuizzes("v3-lesson")).toEqual([]);
+    expect(await listQuizAttempts("v3-lesson")).toEqual([]);
+  });
+
   it("upgrades an existing version-2 database without losing sessions", async () => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open("learnlens-local", 2);
