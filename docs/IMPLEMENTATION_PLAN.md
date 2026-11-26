@@ -316,7 +316,8 @@ Next exit criteria:
 - Added allow-listed DTO mappers for minimal lesson metadata, notes, quiz definitions, and quiz attempts.
 - Added Account-tab category choices and local record-count/ownership preview for verified accounts. Saving choices persists them on-device only; no claims or uploads occur. Full transcript text, transcript format/source, raw audio, and unknown local fields are not projected.
 - Lesson URLs are canonicalized to YouTube watch URLs; unsafe/non-YouTube URLs are omitted. Oversized DTOs and invalid timestamps are rejected rather than truncated.
-- Added regression tests for v5→v6 preservation, account ownership, outbox coalescing/acknowledgement, stale acknowledgements, unsynced deletion, device ID persistence, DTO allow-lists, URL sanitization, timestamps, and payload size limits.
+- Added regression tests for legacy→v7 preservation, account ownership, outbox coalescing/acknowledgement, stale acknowledgements, unsynced deletion, device ID persistence, DTO allow-lists, URL sanitization, timestamps, payload size limits, local category preferences, and safe candidate counts.
+- CI run 45899842079 passed TypeScript, 67 unit tests, 8 Firestore Emulator Rules tests, production build, extension package verification, and artifact upload. Extension version remains 0.1.0.
 
 **Remaining work**
 - No account-claim preview, sync consent UI, account-switch orchestration, background sync runner, Firestore artifact writes, pull cursor, conflict resolver, or tombstone propagation is enabled. The first-claim preview must explicitly queue selected existing records.
