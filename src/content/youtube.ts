@@ -121,12 +121,10 @@ function scheduleCaptionRead(): void {
 }
 
 function attachCaptionObserver(): boolean {
-  // Observe the stable player root, not just the current caption container.
-  // YouTube can create or replace its caption container after CC is enabled.
-  const observationRoot = document.querySelector("#movie_player")
-    ?? document.querySelector(".html5-video-player")
-    ?? document.documentElement
-    ?? document;
+  // Observe the document root rather than #movie_player. YouTube can replace
+  // the entire player subtree during SPA navigation, which would detach an
+  // observer attached to the old player node.
+  const observationRoot: Node = document.documentElement ?? document;
   if (!observationRoot) return false;
 
   captionObserver?.disconnect();
