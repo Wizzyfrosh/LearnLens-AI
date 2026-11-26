@@ -103,7 +103,7 @@ export function validateQuizResponse(text: string, segments: TranscriptSegment[]
     if (ids.has(id)) throw new Error("Quiz question IDs must be unique.");
     ids.add(id);
 
-    const type = item.type;
+    const type = item.type as QuizQuestionType;
     if (type !== "multiple_choice" && type !== "true_false" && type !== "short_answer") {
       throw new Error(`Quiz question ${index + 1} has an unsupported type.`);
     }
