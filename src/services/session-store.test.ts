@@ -1,17 +1,14 @@
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  deleteLearningBookmark,
   deleteQuiz,
   deleteLearningSession,
   deleteLearningNote,
   getLatestSessionForVideo,
-  listLearningBookmarks,
   listLearningSessions,
   listQuizzes,
   listQuizAttempts,
   listLearningNotes,
-  saveLearningBookmark,
   saveLearningNote,
   saveLearningSession,
   saveQuiz,
@@ -33,7 +30,7 @@ describe("local learning artifact storage", () => {
     await deleteDatabase();
   });
 
-  it("creates the current schema and persists notes and bookmarks by session", async () => {
+  it("creates the current schema and persists notes by session", async () => {
     await saveLearningSession({
       id: "video-1", videoId: "video-1", title: "Biology lesson",
       url: "https://www.youtube.com/watch?v=video-1", platform: "youtube",
@@ -43,16 +40,27 @@ describe("local learning artifact storage", () => {
     await saveLearningNote({
       id: "note-1", sessionId: "video-1", videoId: "video-1",
       title: "ATP production", content: "Mitochondria generate ATP through cellular respiration.",
-      timestampSeconds: 42, createdAt: 11, updatedAt: 12
+      createdAt: 11, updatedAt: 12
     });
-    await saveLearningBookmark({
-      id: "bookmark-1", sessionId: "video-1", videoId: "video-1",
-      label: "Cellular respiration explanation", timestampSeconds: 42, createdAt: 13
-    });
-
     expect(await getLatestSessionForVideo("video-1")).toMatchObject({ title: "Biology lesson" });
-    expect(await listLearningNotes("video-1")).toMatchObject([{ id: "note-1", timestampSeconds: 42 }]);
-    expect(await listLearningBookmarks("video-1")).toMatchObject([{ id: "bookmark-1", timestampSeconds: 42 }]);
+    expect(await listLearningNotes("video-1")).toMatchObject([{ id: "note-1", content: "Mitochondria generate ATP through cellular respiration." }]);
+  });
+
+
+  it("restores the most recently saved lesson even when it is a YouTube session", async () => {
+    await saveLearningSession({
+      id: "older-manual", videoId: "", title: "Imported lesson",
+      url: "", platform: "manual", transcriptText: "Older transcript",
+      transcriptFormat: "plain-text", transcriptSource: "Pasted transcript", updatedAt: 10
+    });
+    await saveLearningSession({
+      id: "newer-youtube", videoId: "youtube-lesson", title: "Latest YouTube lesson",
+      url: "https://www.youtube.com/watch?v=youtube-lesson", platform: "youtube",
+      transcriptText: "Latest transcript", transcriptFormat: "plain-text",
+      transcriptSource: "YouTube live captions", updatedAt: 20
+    });
+    const { getLatestSavedSession } = await import("./session-store");
+    expect(await getLatestSavedSession()).toMatchObject({ id: "newer-youtube", title: "Latest YouTube lesson" });
   });
 
   it("lists saved sessions newest first", async () => {
@@ -81,18 +89,7 @@ describe("local learning artifact storage", () => {
     expect(await listLearningNotes("video-2")).toEqual([]);
   });
 
-  it("deletes bookmarks and rejects invalid timestamps", async () => {
-    const base = {
-      id: "bookmark-2", sessionId: "video-3", videoId: "video-3",
-      label: "Key moment", timestampSeconds: 0, createdAt: 1
-    };
-    await saveLearningBookmark(base);
-    await expect(saveLearningBookmark({ ...base, id: "bad", timestampSeconds: -1 })).rejects.toThrow(/valid non-negative/i);
-    await deleteLearningBookmark("bookmark-2");
-    expect(await listLearningBookmarks("video-3")).toEqual([]);
-  });
-
-  it("removes a session and its associated notes and bookmarks atomically", async () => {
+  it("removes a session and its associated notes atomically", async () => {
     await saveLearningSession({
       id: "remove-me", videoId: "remove-me", title: "Temporary lesson",
       url: "https://www.youtube.com/watch?v=remove-me", platform: "youtube",
@@ -104,15 +101,9 @@ describe("local learning artifact storage", () => {
       title: "Temporary note", content: "Delete with parent session.",
       timestampSeconds: null, createdAt: 1, updatedAt: 1
     });
-    await saveLearningBookmark({
-      id: "remove-bookmark", sessionId: "remove-me", videoId: "remove-me",
-      label: "Temporary bookmark", timestampSeconds: 3, createdAt: 1
-    });
-
     await deleteLearningSession("remove-me");
     expect(await getLatestSessionForVideo("remove-me")).toBeNull();
     expect(await listLearningNotes("remove-me")).toEqual([]);
-    expect(await listLearningBookmarks("remove-me")).toEqual([]);
   });
 
   it("persists quizzes and attempts by lesson and deletes them with the session", async () => {
@@ -132,7 +123,7 @@ describe("local learning artifact storage", () => {
     expect(await listQuizAttempts("quiz-lesson")).toEqual([]);
   });
 
-  it("upgrades a version-3 database and preserves existing notes and bookmarks", async () => {
+  it("upgrades a version-3 database, preserves notes, and retires timestamp bookmarks", async () => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open("learnlens-local", 3);
       request.onupgradeneeded = () => {
@@ -176,7 +167,13 @@ describe("local learning artifact storage", () => {
 
     expect(await getLatestSessionForVideo("v3-lesson")).toMatchObject({ title: "Existing lesson" });
     expect(await listLearningNotes("v3-lesson")).toMatchObject([{ id: "v3-note", content: "Keep this note" }]);
-    expect(await listLearningBookmarks("v3-lesson")).toMatchObject([{ id: "v3-bookmark", label: "Keep this bookmark" }]);
+    expect((await listLearningNotes("v3-lesson"))[0]).not.toHaveProperty("timestampSeconds");
+    const upgraded = await new Promise<DOMStringList>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local");
+      request.onsuccess = () => { const database = request.result; const names = database.objectStoreNames; database.close(); resolve(names); };
+      request.onerror = () => reject(request.error);
+    });
+    expect(Array.from(upgraded)).not.toContain("learningBookmarks");
     expect(await listQuizzes("v3-lesson")).toEqual([]);
     expect(await listQuizAttempts("v3-lesson")).toEqual([]);
   });
@@ -211,6 +208,6 @@ describe("local learning artifact storage", () => {
       request.onsuccess = () => { resolve(request.result.version); request.result.close(); };
       request.onerror = () => reject(request.error);
     });
-    expect(version).toBe(4);
+    expect(version).toBe(5);
   });
 });
