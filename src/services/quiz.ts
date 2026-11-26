@@ -171,3 +171,29 @@ export function scoreObjectiveAnswers(
   });
   return { results, score, total, topicsToReview: [...weakTopics] };
 }
+
+export function parseShortAnswerFeedback(
+  text: string,
+  expectedQuestionIds: string[]
+): Record<string, string> {
+  let parsed: unknown;
+  try {
+    const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    parsed = JSON.parse(cleaned) as unknown;
+  } catch {
+    throw new Error("The AI returned invalid short-answer feedback.");
+  }
+  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as { feedback?: unknown }).feedback)) {
+    throw new Error("The AI feedback response is missing its feedback list.");
+  }
+  const expected = new Set(expectedQuestionIds);
+  const result: Record<string, string> = {};
+  for (const item of (parsed as { feedback: unknown[] }).feedback) {
+    if (!item || typeof item !== "object") continue;
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.questionId !== "string" || !expected.has(entry.questionId)) continue;
+    if (typeof entry.feedback !== "string" || !entry.feedback.trim() || entry.feedback.length > 1200) continue;
+    result[entry.questionId] = entry.feedback.trim();
+  }
+  return result;
+}
