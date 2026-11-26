@@ -15,7 +15,10 @@
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://firebasevertexai.googleapis.com/*",
-    "https://firebaseappcheck.googleapis.com/*"
+    "https://firebaseappcheck.googleapis.com/*",
+    "https://identitytoolkit.googleapis.com/*",
+    "https://securetoken.googleapis.com/*",
+    "https://www.googleapis.com/*"
   ],
   "background": {
     "service_worker": "assets/background.js",
