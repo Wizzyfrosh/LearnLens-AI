@@ -563,12 +563,12 @@ describe("local learning artifact storage", () => {
 
     const nothingSelected = await claimSelectedLocalSyncRecords("user-a", {
       lessonMetadata: false, notes: false, quizzes: false, attempts: false
-    });
+    }, []);
     expect(nothingSelected.totalQueued).toBe(0);
 
     const result = await claimSelectedLocalSyncRecords("user-a", {
       lessonMetadata: false, notes: true, quizzes: false, attempts: false
-    }, ["note:claim-lesson-a:claim-note-a"]);
+    }, ["note:claim-lesson-a:claim-note-a", "note:claim-lesson-b:claim-note-b"]);
     expect(result.claimed.notes).toBe(1);
     expect(result.skippedOtherAccount.notes).toBe(1);
     expect(result.totalQueued).toBe(1);
