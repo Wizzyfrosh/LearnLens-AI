@@ -448,30 +448,26 @@ function queueSyncOperationInTransaction(
   metadataRequest.onsuccess = () => {
     const metadata = metadataRequest.result as SyncMetadataRecord | undefined;
     if (!metadata) return; // Local-only records are never queued implicitly.
-    const pendingRequest = outboxStore.get(entityKey);
-    pendingRequest.onsuccess = () => {
-      const pending = pendingRequest.result as SyncOutboxRecord | undefined;
-      if (operation === "delete" && metadata.remoteRevision === 0) {
-        outboxStore.delete(entityKey);
-        metadataStore.delete(entityKey);
-        return;
-      }
-      // A new local mutation must invalidate any in-flight acknowledgement for an
-      // older payload. Retries keep this ID; a subsequent edit gets a fresh one.
-      outboxStore.put({
-        entityKey,
-        operationId: crypto.randomUUID(),
-        ownerUid: metadata.ownerUid,
-        entityType: metadata.entityType,
-        lessonId: metadata.lessonId,
-        entityId: metadata.entityId,
-        operation,
-        baseRevision: metadata.remoteRevision,
-        payloadSchemaVersion: 1,
-        queuedAtMs: Date.now(),
-        retryCount: 0
-      } satisfies SyncOutboxRecord);
-    };
+    if (operation === "delete" && metadata.remoteRevision === 0) {
+      outboxStore.delete(entityKey);
+      metadataStore.delete(entityKey);
+      return;
+    }
+    // A new local mutation must invalidate any in-flight acknowledgement for an
+    // older payload. Retries keep this ID; a subsequent edit gets a fresh one.
+    outboxStore.put({
+      entityKey,
+      operationId: crypto.randomUUID(),
+      ownerUid: metadata.ownerUid,
+      entityType: metadata.entityType,
+      lessonId: metadata.lessonId,
+      entityId: metadata.entityId,
+      operation,
+      baseRevision: metadata.remoteRevision,
+      payloadSchemaVersion: 1,
+      queuedAtMs: Date.now(),
+      retryCount: 0
+    } satisfies SyncOutboxRecord);
   };
 }
 
