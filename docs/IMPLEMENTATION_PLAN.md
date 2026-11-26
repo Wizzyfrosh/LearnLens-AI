@@ -22,8 +22,8 @@ Do not add learning artifacts until transcript ingestion and AI grounding are re
 | Transcript engine | Parsing, visible-caption capture, validation, provenance, context | Parser and live caption ingestion implemented; current CI/Chrome QA pending |
 | AI engine | Firebase AI Logic, mode policy, prompt, source metadata | Adapter and SDK source mapping implemented; CI green on earlier commit |
 | UI | Side panel and tutor interaction | Initial import/preview/tutor UI |
-| Storage | IndexedDB local learning sessions, notes, and bookmarks; optional Firestore sync | Version 3 schema with notes/bookmarks and integration tests added; CI and Chrome QA pending |
-| Learning engine | Notes, bookmarks, quizzes, revision | Not implemented |
+| Storage | IndexedDB local sessions, timestamp-free notes, quizzes, and attempts; optional Firestore sync | Version 5 schema; migration and persistence tests pass; Chrome QA pending |
+| Learning engine | Study notes, quiz generation, grading, attempt review, and topic revision | Implemented in code; automated tests pass; Chrome QA pending |
 | Firebase setup | App Check, Remote Config, Auth, Firestore rules | Not configured/verified |
 
 ## 3. Phased roadmap
@@ -96,34 +96,39 @@ Implementation tasks:
 - [x] Add unit tests for WAV encoding, PCM format, sample-rate validation, and chunk-size bounds.\n- [ ] Add integration tests for chunk ordering, duplicate suppression, stop cleanup, consent gating, and transcript normalization.
 
 Exit: on a Chrome version/configuration with verified App Check and Firebase audio model access, a learner can explicitly consent, start audio transcription, see incremental transcript text, continue hearing the lesson, stop capture, and ask the tutor grounded questions. If cloud transcription is not configured or consent is absent, visible-caption capture remains the default and audio is never uploaded.
-### Phase 4 — Local learning sessions, notes, and bookmarks
-- [x] Define versioned IndexedDB schema and indexes for lesson sessions, notes, and bookmarks.
-- [x] Persist transcript sessions locally; transcripts are not uploaded to cloud storage.
-- [x] Restore the latest matching lesson and provide a saved-lesson history with manual restore.
-- [x] Remove a saved lesson and cascade-delete its notes, bookmarks, quizzes, and quiz attempts.
-- [x] Create/edit/delete/search notes.
-- [x] AI note drafts remain editable and require explicit learner save.
-- [x] Link notes/bookmarks only to real transcript timestamps.
-- [x] Export notes and bookmarks as Markdown.
-- [x] Add IndexedDB integration tests for schema migration, persistence, CRUD, ordering, and cascade deletion.
-- [ ] Verify Phase 4 behavior in desktop Chrome: migration, reload persistence, restore, notes, bookmarks, and export.
-- [ ] PDF export is deferred: Markdown is implemented; PDF will be added only if a reliable print layout can be delivered without adding a disproportionate dependency.
+### Phase 4 — Local learning sessions and study notes
+- [x] Define the versioned IndexedDB schema for lesson sessions, notes, quizzes, and quiz attempts.
+- [x] Persist live lesson transcripts locally and restore the latest saved lesson when no matching active video is open.
+- [x] Provide saved-lesson history and manual restore.
+- [x] Cascade-delete a removed lesson's notes, quizzes, and quiz attempts.
+- [x] Create, edit, delete, and search timestamp-free study notes.
+- [x] Autosave note edits locally; AI-generated study notes are saved as note records automatically.
+- [x] Generate natural, structured study notes without transcript timestamp/cue labels.
+- [x] Export saved notes as PDF (print dialog / Save as PDF), Word-compatible DOC, TXT, Markdown, and CSV.
+- [x] Upgrade IndexedDB from schema v4 to v5, retaining notes and quiz history while removing note timestamp fields and the retired bookmark object store.
+- [x] Add migration tests for v3 and v4 databases, including preservation of v4 notes, quizzes, and attempts.
+- [ ] Verify the new notes experience in desktop Chrome: schema migration, extension reload, lesson restore, generated-note persistence, editing/autosave, deletion, and all export formats.
 
-Exit: Phase 4 code and CI verification are complete; runtime verification remains open until desktop Chrome testing.
+**Decision:** Timestamp bookmarks were removed because the learner wants one saved-notes workflow. The v5 migration deletes the legacy bookmark store; existing notes and quiz history are retained.
+
+Exit: Phase 4 implementation and automated checks pass. Final sign-off still requires the desktop Chrome persistence/export smoke test.
 
 ### Phase 5 — Quiz and learning loop
 - [x] Define validated quiz/question and attempt schemas.
 - [x] Generate multiple-choice, true/false, and short-answer questions.
-- [x] Support whole lesson, topic-focused generation, and timestamped selected ranges.
-- [x] Validate model JSON, answer options, unique IDs, and exact transcript evidence before saving.
-- [x] Score objective questions and explain correct answers.
-- [x] Label open-ended AI feedback as advisory and exclude it from objective scoring.
-- [x] Track quiz attempts and topics to revisit locally.
-- [x] Persist quizzes and attempts in IndexedDB and cascade-delete them with the parent lesson.
-- [x] Add unit tests for malformed model output, unsupported question types, invalid evidence/options, transcript-unsupported correct answers, objective scoring, and feedback validation.
-- [ ] Verify quiz generation, inference source, scoring, short-answer feedback, history, and weak-topic tracking in desktop Chrome.
+- [x] Support whole-lesson, topic-focused, and timestamp-range quizzes.
+- [x] Validate AI JSON, answer options, unique IDs, transcript evidence, and correct answers.
+- [x] Normalize timestamp labels in transcript evidence validation; timestamped evidence regression test passes.
+- [x] Score objective questions and store answer-level feedback and short-answer advisory feedback.
+- [x] Show the correct option with a green check and a wrong selected option in red after submission.
+- [x] Show whether each answer is correct, the correct answer when needed, and an explanation.
+- [x] Persist quiz definitions and attempts locally.
+- [x] Add quiz-history review so previous attempts reopen with their original answers and feedback.
+- [x] Track topics to revisit and keep open-ended AI feedback separate from objective scoring.
+- [x] Add unit tests for invalid AI output, unsupported evidence/options, objective scoring, feedback validation, and IndexedDB quiz/attempt persistence.
+- [ ] Verify updated answer-state visuals and saved-attempt review in desktop Chrome.
 
-Exit: learner can generate and complete a transcript-grounded quiz, review explanations and advisory feedback, and revisit attempt history and topics to revisit. Runtime verification remains open.
+Exit: Phase 5 implementation and automated checks pass. Final sign-off still requires checking the updated grading UI and reopening a saved attempt in desktop Chrome.
 
 
 ### Phase 6 — Optional cloud sync
@@ -221,3 +226,12 @@ Next exit criteria:
 2. Chrome runtime confirms same-tab SPA video changes refresh title and video ID without tab switching.
 3. Chrome runtime confirms visible captions are captured, displayed, persisted, restored, and usable by tutor.
 4. Capture stops cleanly on user request, tab switch, and lesson change.
+
+
+## 10. Session update — 2026-11-26 (notes and quiz review)
+- Commits: b14c7ab (IndexedDB v5 and bookmark-store retirement), 3141566 (notes-only storage tests), edc1696 (notes autosave, restore, exports, quiz review UI), f76a6ab (notes/quiz visual states), cedaf44 (test fixture correction), baca2a0 (v4 migration test), d971b2e (PDF export user-gesture handling).
+- Phase 4 changes: remove separate timestamp bookmarks, migrate legacy notes to remove timestamp fields, preserve v4 notes/quizzes/attempts, auto-save AI-generated and edited notes, restore latest saved lesson on a non-YouTube tab, and export notes in PDF/Word-compatible DOC/TXT/Markdown/CSV.
+- Phase 5 changes: clear red/green objective grading states, explanatory feedback, and review controls for saved attempts.
+- CI: run 45881850569 passed TypeScript typecheck, unit tests, production build, Chrome package verification, and artifact upload on commit d971b2e8e73b80a2a2b38caf1c9609e741e68fa5.
+- Artifact: learnlens-chrome-extension, artifact ID 15148465175. Manifest/package version remains 0.1.0.
+- Runtime: the user previously confirmed lesson capture/notes and quiz generation worked, but the newly changed persistence, export, grading visuals, and attempt-review UI still require one desktop Chrome smoke test. Do not mark Phase 4/5 signed off until that test passes.
