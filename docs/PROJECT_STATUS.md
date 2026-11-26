@@ -4,7 +4,7 @@
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
 **Extension version:** 0.1.0  
-**Current checkpoint:** Phases 4 and 5 are complete. Phase 6A data/security design is complete. Phase 6B Auth UI and deny-by-default Firestore rules are implemented and CI-tested; live Firebase Console setup and desktop Chrome Auth verification remain.
+**Current checkpoint:** Phases 4 and 5 are complete. Phase 6A design and Phase 6B Auth/Rules code are implemented. Phase 6C IndexedDB v6 sync metadata/outbox primitives and allow-listed DTO mappers are implemented; live Firebase Auth QA, atomic mutation/outbox integration, opt-in UI, and production App Check remain open.
 
 > CI and desktop Chrome runtime verification have both passed for the Phase 4 and Phase 5 scope described below.
 
@@ -183,3 +183,28 @@
 - Resolve the production App Check strategy before any production sync release.
 
 See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and manual QA checklist.
+
+
+## 2026-11-26 — Phase 6C local sync foundation
+
+**Implemented**
+- IndexedDB schema v6 adds `syncMetadata`, `syncOutbox`, and `syncDevice`; existing v5 learning data is preserved and not automatically claimed or queued.
+- Added account-bound entity claiming and guards that prevent one account from reassigning another account's local entity.
+- Added coalesced outbox operations, stable retry operation IDs, base revisions, retry metadata, acknowledgement checks, and cancellation of never-uploaded upserts on local deletion.
+- Added an installation-scoped device ID.
+- Added allow-listed DTO mappers for lesson metadata, notes, quizzes, and quiz attempts. Full transcript/audio and unrecognized local fields are excluded.
+- Added size and timestamp validation plus YouTube URL canonicalization/sanitization.
+- Added IndexedDB migration/outbox and DTO privacy regression tests.
+
+**Not yet wired / no live cloud writes**
+- Ordinary local saves and cascade deletes do not yet enqueue outbox operations in the same IndexedDB transaction. The current sync APIs are primitives, not a functioning sync engine.
+- No sync opt-in/first-claim UI, account-switch orchestration, Firestore artifact writes, pull cursor, conflict resolver, or tombstone propagation exists yet.
+- Live Firebase Email/Password configuration and desktop Chrome Auth flow remain unverified by the user.
+- Production-compatible App Check remains a hard release gate. Do not enable or deploy learning-artifact sync.
+
+**CI**
+- Latest run for this slice: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45898931300
+- The run is being used to verify the final Phase 6C code commit; update this section with its final result before declaring this slice complete.
+- Package version remains 0.1.0.
+
+**Next engineering task:** Integrate the outbox into local save and delete transactions, including the session-delete and quiz-delete cascades, while preserving the rule that transcript-only autosaves never enqueue lesson metadata. Keep the sync runner disabled.
