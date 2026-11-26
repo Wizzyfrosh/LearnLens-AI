@@ -186,7 +186,7 @@ Reject any document that exceeds the sync boundary's conservative size budget (i
 
 ## 5. Local sync metadata and outbox design
 
-IndexedDB schema version **6** now adds:
+IndexedDB schema version **7** now includes:
 
 ### `syncMetadata` store
 
@@ -197,7 +197,7 @@ Keyed by `entityKey` (entity type + lesson ID + entity ID), with:
 - `syncCategory`: lesson metadata, notes, quizzes, or attempts.
 - `lastKnownDeletedAt`: optional tombstone state.
 
-A separate `syncDevice` store persists one random device ID for this extension installation. Never use the device ID as proof of identity.
+A separate `syncDevice` store persists one random device ID for this extension installation. `syncPreferences` stores the learner's per-UID category choices locally on this device only; it is not a Firestore document and does not activate sync. Never use the device ID as proof of identity.
 
 ### `syncOutbox` store
 
@@ -322,10 +322,11 @@ App Check is an app-attestation/abuse-control layer; it does not replace authent
 ## 11. Implementation sequence after this design
 
 **Completed in the Phase 6C foundation slice**
-1. IndexedDB v6 migration creates `syncMetadata`, `syncOutbox`, and `syncDevice` without modifying existing v5 learning records.
+1. IndexedDB v7 migration creates `syncMetadata`, `syncOutbox`, `syncDevice`, and local-only `syncPreferences` without modifying existing learning records.
 2. Explicit lesson metadata, note, quiz, and attempt DTO mappers construct allow-listed payloads. Transcript/audio/token fields are never copied from local session objects.
 3. Unit tests cover migration preservation, per-account ownership, outbox coalescing, stale acknowledgements, unsynced-delete cancellation, stable device identity, DTO privacy, URL sanitization, and payload size bounds.
 4. Firestore Emulator configuration and deny-by-default Rules remain in place from Phase 6B.
+5. Account UI now lets a verified user choose categories for possible future sync and preview local record counts/ownership. These preferences are saved only in IndexedDB; no record is claimed or uploaded by saving them.
 
 **Still required**
 5. Add explicit sync opt-in, category consent, first-claim preview, and account-switch handling. Existing local CRUD operations now update the outbox atomically for already-claimed records.
