@@ -1117,6 +1117,11 @@ export async function createSyncRequestSnapshot(
         result = { request: null, blockedReason: "category_not_enabled" };
         return;
       }
+      for (const request of relatedRequests) {
+        if (request.requestId !== operationId && request.status === "prepared") {
+          requests.put({ ...request, status: "superseded", updatedAtMs: Date.now() });
+        }
+      }
       if (relatedRequests.some((request) =>
         request.ownerUid === ownerUid &&
         request.requestId !== operationId &&

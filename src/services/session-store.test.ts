@@ -156,7 +156,7 @@ describe("local learning artifact storage", () => {
       request.onsuccess = () => { const db = request.result; const result = Array.from(db.objectStoreNames); db.close(); resolve(result); };
       request.onerror = () => reject(request.error);
     });
-    expect(names).toEqual(expect.arrayContaining(["syncMetadata", "syncOutbox", "syncDevice", "syncPreferences"]));
+    expect(names).toEqual(expect.arrayContaining(["syncMetadata", "syncOutbox", "syncDevice", "syncPreferences", "syncRequests"]));
     expect(await listSyncOutbox("user-a")).toEqual([]);
   });
 
@@ -629,7 +629,7 @@ describe("local learning artifact storage", () => {
       request.onsuccess = () => { resolve(request.result.version); request.result.close(); };
       request.onerror = () => reject(request.error);
     });
-    expect(version).toBe(8);
+    expect(version).toBe(9);
   });
 
   it("requires explicit category selection, claims eligible records atomically, and isolates other accounts", async () => {
