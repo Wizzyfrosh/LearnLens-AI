@@ -511,6 +511,7 @@ User runtime findings:
 
 Code changes:
 - Note drafting now queues the requested draft while caption or audio capture is active. When capture is stopped, LearnLens waits briefly for the final caption/autosave updates and generates the draft from the complete captured transcript. The UI shows that the request is queued; the learner must stop capture to trigger generation. The queued request is cancelled if the active lesson changes.
+- Caption capture now flushes the currently rendered YouTube caption immediately before disconnecting its observer, so a final debounced caption is not discarded when the learner stops capture.
 - Quiz generation now displays progress and errors directly beside the Generate quiz controls. It retries once when a generated response fails local schema/transcript-evidence validation, with the validation reason added to the repair prompt. App Check, model, and network errors remain visible and are not retried blindly.
 - Increased quiz generation output budget to reduce incomplete JSON. Prompt now explicitly asks for a single question of each supported type when a three-question quiz is requested and asks for correct answers to be grounded in transcript wording.
 - Added an explicit Quiz empty state when there is no saved lesson, with a route back to Lesson.
