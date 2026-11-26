@@ -291,6 +291,7 @@ export default function App() {
       }).then(() => {
         setSessionId(video.videoId);
         setSavedSession(true);
+        void listLearningSessions().then(setSavedSessions).catch(() => undefined);
         setStorageNotice("Lesson transcript is being saved automatically on this device.");
       }).catch(() => {
         setStorageNotice("Live captions are available in this session, but automatic local saving failed.");
@@ -493,6 +494,7 @@ export default function App() {
       });
       setSessionId(id);
       setSavedSession(true);
+      setSavedSessions(await listLearningSessions());
       setStorageNotice("Lesson saved locally on this device.");
     } catch (cause) {
       setStorageNotice(cause instanceof Error ? cause.message : "Could not save this lesson locally.");
@@ -637,6 +639,9 @@ export default function App() {
     try {
       await deleteLearningSession(sessionId);
       setSavedSession(false);
+      setSavedSessions(await listLearningSessions());
+      setNotes([]);
+      setBookmarks([]);
       setStorageNotice("Saved lesson removed from this device. The current transcript remains open.");
     } catch (cause) {
       setStorageNotice(cause instanceof Error ? cause.message : "Could not remove the saved lesson.");
@@ -657,6 +662,23 @@ export default function App() {
         <p>{video.videoId ? "YouTube video detected" : "Open a YouTube lesson to start learning."}</p>
         {video.url && <a href={video.url} target="_blank" rel="noreferrer">Open source video</a>}
       </section>
+
+      {savedSessions.length > 0 && (
+        <details className="saved-history">
+          <summary><History size={15} /> Saved lessons <span>{savedSessions.length}</span></summary>
+          <div className="saved-history-list">
+            {savedSessions.map((session) => (
+              <article className="saved-history-item" key={session.id}>
+                <div>
+                  <strong>{session.title || "Untitled lesson"}</strong>
+                  <small>{session.platform === "youtube" ? "YouTube" : "Imported transcript"} · {new Date(session.updatedAt).toLocaleString()}</small>
+                </div>
+                <button className="secondary-button" type="button" onClick={() => void restoreSavedSession(session)}>{session.id === sessionId && savedSession ? "Current" : "Restore"}</button>
+              </article>
+            ))}
+          </div>
+        </details>
+      )}
 
       <section className="section-block">
         <div className="section-heading">
