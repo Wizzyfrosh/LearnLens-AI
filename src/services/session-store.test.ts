@@ -117,6 +117,82 @@ describe("local learning artifact storage", () => {
     expect(await listSyncOutbox("user-a")).toEqual([]);
   });
 
+  it("queues claimed note saves atomically but leaves unclaimed local notes alone", async () => {
+    const note = {
+      id: "sync-note", sessionId: "sync-lesson", videoId: "sync-lesson",
+      title: "Local first", content: "Only the opted-in copy is queued.",
+      createdAt: 1, updatedAt: 2
+    };
+    await saveLearningNote(note);
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+    await claimSyncEntity({
+      entityKey: "note:sync-lesson:sync-note", entityType: "note",
+      lessonId: "sync-lesson", entityId: "sync-note", ownerUid: "user-a",
+      syncCategory: "notes"
+    });
+    await saveLearningNote({ ...note, content: "Updated content", updatedAt: 3 });
+    const queued = await listSyncOutbox("user-a");
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      entityKey: "note:sync-lesson:sync-note", operation: "upsert",
+      ownerUid: "user-a", baseRevision: 0
+    });
+    expect(queued[0]).not.toHaveProperty("content");
+  });
+
+  it("does not enqueue transcript-only lesson autosaves but queues metadata changes", async () => {
+    const session = {
+      id: "sync-video-123", videoId: "sync-video-123", title: "Lesson title",
+      url: "https://www.youtube.com/watch?v=sync-video-123", platform: "youtube" as const,
+      transcriptText: "First transcript", transcriptFormat: "plain-text" as const,
+      transcriptSource: "captions", updatedAt: 1
+    };
+    await saveLearningSession(session);
+    await claimSyncEntity({
+      entityKey: "lesson:sync-video-123:sync-video-123", entityType: "lesson",
+      lessonId: "sync-video-123", entityId: "sync-video-123", ownerUid: "user-a",
+      syncCategory: "lessonMetadata"
+    });
+    await saveLearningSession({ ...session, transcriptText: "Transcript expanded", updatedAt: 2 });
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+    await saveLearningSession({ ...session, title: "Corrected lesson title", transcriptText: "Transcript expanded", updatedAt: 3 });
+    expect(await listSyncOutbox("user-a")).toMatchObject([{ operation: "upsert", entityKey: "lesson:sync-video-123:sync-video-123" }]);
+  });
+
+  it("queues tombstones for claimed artifacts during lesson cascade deletion", async () => {
+    const sessionId = "cascade-lesson";
+    await saveLearningSession({
+      id: sessionId, videoId: sessionId, title: "Cascade lesson",
+      url: "https://www.youtube.com/watch?v=cascade-lesson", platform: "youtube",
+      transcriptText: "Private transcript", transcriptFormat: "plain-text",
+      transcriptSource: "captions", updatedAt: 1
+    });
+    const note = { id: "cascade-note", sessionId, videoId: sessionId, title: "Note", content: "Note body", createdAt: 1, updatedAt: 1 };
+    const quiz = { id: "cascade-quiz", sessionId, title: "Quiz", scope: "whole_lesson" as const, scopeLabel: "Whole lesson", createdAt: 1, questions: [] };
+    const attempt = { id: "cascade-attempt", quizId: quiz.id, sessionId, createdAt: 1, results: [], objectiveScore: 0, objectiveTotal: 0, topicsToReview: [] };
+    await saveLearningNote(note);
+    await saveQuiz(quiz);
+    await saveQuizAttempt(attempt);
+    const claims = [
+      { entityKey: `lesson:${sessionId}:${sessionId}`, entityType: "lesson" as const, lessonId: sessionId, entityId: sessionId, syncCategory: "lessonMetadata" as const },
+      { entityKey: `note:${sessionId}:${note.id}`, entityType: "note" as const, lessonId: sessionId, entityId: note.id, syncCategory: "notes" as const },
+      { entityKey: `quiz:${sessionId}:${quiz.id}`, entityType: "quiz" as const, lessonId: sessionId, entityId: quiz.id, syncCategory: "quizzes" as const },
+      { entityKey: `attempt:${sessionId}:${attempt.id}`, entityType: "attempt" as const, lessonId: sessionId, entityId: attempt.id, syncCategory: "attempts" as const }
+    ];
+    for (const claim of claims) await claimSyncEntity({ ...claim, ownerUid: "user-a" });
+    for (const claim of claims) await acknowledgeSyncOperation(
+      claim.entityKey, "user-a",
+      (await queueSyncOperation(claim.entityKey, "user-a", "upsert"))!.operationId, 1
+    );
+    await deleteLearningSession(sessionId);
+    const queued = await listSyncOutbox("user-a");
+    expect(queued).toHaveLength(4);
+    expect(queued.every((entry) => entry.operation === "delete" && entry.baseRevision === 1)).toBe(true);
+    expect(await listLearningNotes(sessionId)).toEqual([]);
+    expect(await listQuizzes(sessionId)).toEqual([]);
+    expect(await listQuizAttempts(sessionId)).toEqual([]);
+  });
+
   it("rejects sync metadata with a mismatched entity key or category", async () => {
     await expect(claimSyncEntity({
       entityKey: "note:lesson-1:other-note", entityType: "note",
