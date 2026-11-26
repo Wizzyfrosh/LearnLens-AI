@@ -17,6 +17,7 @@ let lastCaptionAt = -Infinity;
 let captionSequence = 0;
 let captureVideoId = "";
 let hasCapturedCaption = false;
+let quizOverlayHost: HTMLDivElement | null = null;
 
 function send(message: ExtensionMessage): void {
   void chrome.runtime.sendMessage(message).catch(() => undefined);
@@ -173,6 +174,28 @@ function stopCaptionCapture(message = "Lesson capture stopped."): void {
 chrome.runtime.onMessage.addListener((message: ExtensionMessage) => {
   if (message.type === "LEARNLENS_CONTENT_START_CAPTION_CAPTURE") startCaptionCapture();
   if (message.type === "LEARNLENS_CONTENT_STOP_CAPTION_CAPTURE") stopCaptionCapture();
+  if (message.type === "LEARNLENS_OPEN_QUIZ_OVERLAY") {
+    if (!quizOverlayHost) {
+      quizOverlayHost = document.createElement("div");
+      quizOverlayHost.id = "learnlens-quiz-overlay-host";
+      Object.assign(quizOverlayHost.style, {
+        position: "fixed", inset: "0", width: "100vw", height: "100vh",
+        zIndex: "2147483647", background: "#111821", margin: "0", padding: "0"
+      });
+      const frame = document.createElement("iframe");
+      frame.title = "LearnLens full-screen quiz";
+      frame.src = chrome.runtime.getURL("sidepanel.html?workspace=quiz&overlay=1");
+      Object.assign(frame.style, { display: "block", width: "100%", height: "100%", border: "0", background: "#111821" });
+      quizOverlayHost.appendChild(frame);
+      document.documentElement.appendChild(quizOverlayHost);
+      window.addEventListener("message", (event: MessageEvent) => {
+        if (event.source === frame.contentWindow && event.data?.type === "LEARNLENS_CLOSE_OVERLAY") {
+          quizOverlayHost?.remove();
+          quizOverlayHost = null;
+        }
+      });
+    }
+  }
 });
 
 document.addEventListener("yt-navigate-finish", scheduleContextRefresh);
