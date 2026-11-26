@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Bookmark, Download, Search, FileText, History } from "lucide-react";
+import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Bookmark, Download, Search, FileText, History, Sun, Moon } from "lucide-react";
 import { askLearnLens, generateQuizText, isAudioTranscriptionConfigured, transcribeAudioChunk } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport, serializeSegmentsAsVtt } from "../services/transcript";
 import { deleteLearningSession, deleteLearningNote, deleteLearningBookmark, getLatestManualSession, getLatestSessionForVideo, listLearningBookmarks, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningBookmark, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt } from "../services/session-store";
@@ -45,6 +45,10 @@ function formatLessonTime(seconds: number): string {
 export default function App() {
   const overlayMode = new URLSearchParams(window.location.search).get("overlay") === "1";
   const [activeTab, setActiveTab] = useState<"lesson" | "notes" | "bookmarks" | "quiz" | "tutor" | "history">(new URLSearchParams(window.location.search).get("workspace") === "quiz" ? "quiz" : "lesson");
+  const [theme, setTheme] = useState<"dark" | "light">(() => {
+    try { return window.localStorage.getItem("learnlens-theme") === "light" ? "light" : "dark"; }
+    catch { return "dark"; }
+  });
   const [video, setVideo] = useState<VideoContext>(emptyContext);
   const [rawTranscript, setRawTranscript] = useState("");
   const [transcriptSource, setTranscriptSource] = useState("Pasted transcript");
@@ -71,6 +75,7 @@ export default function App() {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [artifactMessage, setArtifactMessage] = useState("");
   const [draftingNote, setDraftingNote] = useState(false);
+  const [noteDraftQueued, setNoteDraftQueued] = useState(false);
   const [savedQuizzes, setSavedQuizzes] = useState<QuizDefinition[]>([]);
   const [quizAttempts, setQuizAttempts] = useState<QuizAttempt[]>([]);
   const [quizScope, setQuizScope] = useState<"whole_lesson" | "topic" | "time_range">("whole_lesson");
@@ -78,6 +83,7 @@ export default function App() {
   const [quizStart, setQuizStart] = useState("0");
   const [quizEnd, setQuizEnd] = useState("");
   const [quizQuestionCount, setQuizQuestionCount] = useState(5);
+  const [bookmarkExportFormat, setBookmarkExportFormat] = useState<"pdf" | "doc" | "txt" | "md" | "csv">("pdf");
   const [quizGenerating, setQuizGenerating] = useState(false);
   const [activeQuiz, setActiveQuiz] = useState<QuizDefinition | null>(null);
   const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
@@ -91,6 +97,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<number | null>(null);
   const activeSessionIdRef = useRef(sessionId);
+  const pendingNoteDraftSessionRef = useRef<string | null>(null);
   activeSessionIdRef.current = sessionId;
 
   useEffect(() => {
@@ -110,6 +117,8 @@ export default function App() {
       setError("");
 
       if (changedVideo && !initial) {
+        pendingNoteDraftSessionRef.current = null;
+        setNoteDraftQueued(false);
         setRawTranscript("");
         setCapturedSegments([]);
         setTranscriptSource("Pasted transcript");
@@ -267,6 +276,34 @@ export default function App() {
   const isLiveTranscript = capturedSegments.length > 0;
 
   useEffect(() => {
+    try { window.localStorage.setItem("learnlens-theme", theme); }
+    catch { /* Theme preference is optional when storage is unavailable. */ }
+  }, [theme]);
+
+  useEffect(() => {
+    if (!noteDraftQueued) return;
+    if (captureStatus === "capturing" || captureStatus === "waiting_for_captions" || audioCaptureStatus === "capturing") return;
+    const timer = window.setTimeout(() => {
+      const targetSessionId = pendingNoteDraftSessionRef.current;
+      pendingNoteDraftSessionRef.current = null;
+      setNoteDraftQueued(false);
+      if (!targetSessionId || activeSessionIdRef.current !== targetSessionId) {
+        setArtifactMessage("The queued note draft was cancelled because the active lesson changed.");
+        return;
+      }
+      const targetSegments = capturedSegments.length
+        ? capturedSegments
+        : (rawTranscript.trim() ? parseTranscriptImport(rawTranscript).segments : []);
+      if (!targetSegments.length) {
+        setArtifactMessage("Capture finished, but no transcript text was available to draft.");
+        return;
+      }
+      void generateNoteDraftForSegments(targetSessionId, targetSegments);
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [noteDraftQueued, captureStatus, audioCaptureStatus, capturedSegments, rawTranscript, sessionId]);
+
+  useEffect(() => {
     let cancelled = false;
     void listLearningSessions().then((items) => {
       if (!cancelled) setSavedSessions(items);
@@ -381,6 +418,8 @@ export default function App() {
         throw new Error("LearnLens could not identify the active browser tab.");
       }
 
+      pendingNoteDraftSessionRef.current = null;
+      setNoteDraftQueued(false);
       setCapturedSegments([]);
       setRawTranscript("");
       setSavedSession(false);
@@ -544,15 +583,13 @@ export default function App() {
     }
   }
 
-  async function draftNoteWithTutor() {
-    if (!segmentCount) {
+  async function generateNoteDraftForSegments(targetSessionId: string, targetSegments: TranscriptSegment[]) {
+    if (!targetSegments.length) {
       setArtifactMessage("Capture or load lesson transcript text before drafting notes.");
       return;
     }
-    const targetSessionId = sessionId;
-    const targetSegments = segments;
     setDraftingNote(true);
-    setArtifactMessage("Generating a draft from the current lesson transcript. Review it before saving.");
+    setArtifactMessage("Generating study notes from " + targetSegments.length + " transcript segments...");
     try {
       const draft = await askLearnLens(
         "Create clear, concise study notes from this lesson transcript. Use a short descriptive title on the first line, then structured headings and bullet points. Include only information supported by the transcript. Do not invent timestamps or facts. This is an editable draft for learner review.\n\nLesson: " + video.title,
@@ -567,13 +604,28 @@ export default function App() {
       setNoteContent(draft.text);
       setNoteTimestamp("");
       setEditingNoteId(null);
-      setArtifactMessage("AI draft created. Review and edit the content, then choose Save note.");
+      setArtifactMessage("AI draft created from " + targetSegments.length + " transcript segments. Review and edit the content, then choose Save note.");
     } catch (cause) {
-      setArtifactMessage(cause instanceof Error ? cause.message : "Could not generate a note draft.");
+      setArtifactMessage("Note drafting failed: " + (cause instanceof Error ? cause.message : "Could not generate a note draft."));
     } finally {
       setDraftingNote(false);
       setProgress(null);
     }
+  }
+
+  function draftNoteWithTutor() {
+    if (!segmentCount) {
+      setArtifactMessage("Capture or load lesson transcript text before drafting notes.");
+      return;
+    }
+    const targetSessionId = sessionId;
+    if (captureStatus === "capturing" || captureStatus === "waiting_for_captions" || audioCaptureStatus === "capturing") {
+      pendingNoteDraftSessionRef.current = targetSessionId;
+      setNoteDraftQueued(true);
+      setArtifactMessage("Notes are queued. Keep the lesson capture running, then select Stop capture; LearnLens will draft from the complete transcript.");
+      return;
+    }
+    void generateNoteDraftForSegments(targetSessionId, [...segments]);
   }
 
   async function saveNote(event: FormEvent) {
@@ -831,11 +883,11 @@ export default function App() {
   }
 
   return (
-    <main className={overlayMode ? "shell overlay-shell" : "shell"}>
+    <main className={(overlayMode ? "shell overlay-shell" : "shell") + (theme === "light" ? " theme-light" : " theme-dark")}>
       <header className="topbar">
         <div className="brand-mark"><BrainCircuit size={21} /></div>
         <div><strong>LearnLens</strong><span>AI LEARNING COMPANION</span></div>
-        {overlayMode ? <button className="overlay-close" type="button" onClick={() => window.parent.postMessage({ type: "LEARNLENS_CLOSE_OVERLAY" }, "*")} aria-label="Close full-screen quiz">Close <span>×</span></button> : <div className="status-pill"><i /> Workspace</div>}
+        {overlayMode ? <button className="overlay-close" type="button" onClick={() => window.parent.postMessage({ type: "LEARNLENS_CLOSE_OVERLAY" }, "*")} aria-label="Close full-screen quiz">Close <span>×</span></button> : <><div className="status-pill"><i /> Workspace</div><button className="theme-toggle" type="button" onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>{theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}<span>{theme === "dark" ? "Light" : "Dark"}</span></button></>}
       </header>
 
       <section className="video-card">
@@ -981,10 +1033,10 @@ export default function App() {
             </div>
             {activeTab === "notes" && <>
             <div className="note-draft-row">
-              <p>AI drafts are suggestions only. Review and edit before saving.</p>
-              <button className="secondary-button" type="button" onClick={() => void draftNoteWithTutor()} disabled={draftingNote || !segmentCount}>
+              <p>{noteDraftQueued ? "Waiting for capture to stop so the draft includes the complete lesson." : "AI drafts are suggestions only. Review and edit before saving."}</p>
+              <button className="secondary-button" type="button" onClick={draftNoteWithTutor} disabled={draftingNote || noteDraftQueued || !segmentCount}>
                 {draftingNote ? <LoaderCircle className="spin" size={13} /> : <Sparkles size={13} />}
-                {draftingNote ? "Drafting..." : "Draft notes with AI"}
+                {draftingNote ? "Drafting..." : noteDraftQueued ? "Waiting for capture" : "Draft notes with AI"}
               </button>
             </div>
             <form className="note-editor" onSubmit={(event) => void saveNote(event)}>
