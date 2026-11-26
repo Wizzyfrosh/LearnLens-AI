@@ -96,7 +96,7 @@ export function validateQuizResponse(text: string, segments: TranscriptSegment[]
 
   const transcript = normalizeEvidence(segments.map((segment) => segment.text).join(" "));
   const ids = new Set<string>();
-  const questions = rawQuestions.map((raw, index) => {
+  const questions: QuizQuestion[] = rawQuestions.map((raw, index) => {
     if (!raw || typeof raw !== "object") throw new Error(`Quiz question ${index + 1} is not an object.`);
     const item = raw as Record<string, unknown>;
     const id = readString(item.id, "id", 64);
