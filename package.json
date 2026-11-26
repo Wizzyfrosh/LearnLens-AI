@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run src",
     "verify:extension": "node scripts/verify-extension-build.mjs",
     "test:rules": "firebase emulators:exec --only firestore --project demo-learnlens-rules \"node --test tests/firestore.rules.test.mjs\""
   },
