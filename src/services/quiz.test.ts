@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scoreObjectiveAnswers, validateQuizResponse } from "./quiz";
+import { parseShortAnswerFeedback, scoreObjectiveAnswers, validateQuizResponse } from "./quiz";
 import type { TranscriptSegment } from "../shared/types";
 
 const segments: TranscriptSegment[] = [
@@ -50,6 +50,16 @@ describe("lesson quiz validation and scoring", () => {
     expect(result.topicsToReview).toEqual(["Photosynthesis"]);
     expect(result.results[2].correct).toBeNull();
     expect(result.results[2].feedback).toMatch(/AI feedback/i);
+  });
+
+  it("validates short-answer feedback and ignores unknown question IDs", () => {
+    const feedback = parseShortAnswerFeedback(JSON.stringify({ feedback: [
+      { questionId: "q3", feedback: "Partly correct. Explain the process more clearly." },
+      { questionId: "other", feedback: "Ignore this unrelated entry." }
+    ] }), ["q3"]);
+    expect(feedback.q3).toMatch(/Partly correct/);
+    expect(feedback.other).toBeUndefined();
+    expect(() => parseShortAnswerFeedback("not json", ["q3"])).toThrow(/invalid/i);
   });
 
   it("requires between three and ten questions and unique IDs", () => {
