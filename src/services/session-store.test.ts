@@ -99,7 +99,7 @@ describe("local learning artifact storage", () => {
     await saveLearningNote({
       id: "remove-note", sessionId: "remove-me", videoId: "remove-me",
       title: "Temporary note", content: "Delete with parent session.",
-      timestampSeconds: null, createdAt: 1, updatedAt: 1
+      createdAt: 1, updatedAt: 1
     });
     await deleteLearningSession("remove-me");
     expect(await getLatestSessionForVideo("remove-me")).toBeNull();
