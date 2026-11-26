@@ -745,6 +745,11 @@ export default function App() {
   }
 
   async function exportNotes() {
+    const printWindow = noteExportFormat === "pdf" ? window.open("", "_blank", "width=900,height=700") : null;
+    if (noteExportFormat === "pdf" && !printWindow) {
+      setArtifactMessage("The PDF print window was blocked. Allow pop-ups for this extension and try again.");
+      return;
+    }
     try {
       const currentNote = noteTitle.trim() && noteContent.trim() ? await persistCurrentNote() : null;
       const exportCollection = currentNote
@@ -775,11 +780,8 @@ export default function App() {
       escapeHtml(title) + "</h1><p>" + escapeHtml(source) + " · " + escapeHtml(new Date().toLocaleDateString()) + "</p></header>" + htmlSections + "</body></html>";
 
     if (noteExportFormat === "pdf") {
-      const popup = window.open("", "_blank", "width=900,height=700");
-      if (!popup) {
-        setArtifactMessage("The PDF print window was blocked. Allow pop-ups for this extension and try again.");
-        return;
-      }
+      const popup = printWindow;
+      if (!popup) return;
       popup.document.open();
       popup.document.write(htmlDocument);
       popup.document.close();
@@ -822,6 +824,7 @@ export default function App() {
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
     setArtifactMessage("Notes exported as " + extension.toUpperCase() + ".");
     } catch (cause) {
+      if (printWindow && !printWindow.closed) printWindow.close();
       setArtifactMessage(cause instanceof Error ? cause.message : "Could not export the saved notes.");
     }
   }
