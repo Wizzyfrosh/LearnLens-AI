@@ -109,7 +109,7 @@ describe("local learning artifact storage", () => {
       };
       request.onerror = () => reject(request.error);
     });
-    expect(schema.version).toBe(9);
+    expect(schema.version).toBe(10);
     expect(schema.indexes).toContain("ownerUidEntityTypeQueuedAtMs");
     expect(schema.hasRequestStore).toBe(true);
   });
@@ -693,7 +693,7 @@ describe("local learning artifact storage", () => {
       request.onsuccess = () => { resolve(request.result.version); request.result.close(); };
       request.onerror = () => reject(request.error);
     });
-    expect(version).toBe(9);
+    expect(version).toBe(10);
   });
 
   it("requires explicit category selection, claims eligible records atomically, and isolates other accounts", async () => {
