@@ -526,3 +526,31 @@ body:has(.shell.theme-light) { background: #f4f5f7; color: #202938; }
   .quiz-attempt-history article{grid-template-columns:1fr}
   .quiz-attempt-history article .secondary-button{justify-content:center}
 }
+
+
+/* Notes: title navigation on the left, one selected note in the editor. */
+.note-workspace-layout{display:grid;grid-template-columns:minmax(138px,.78fr) minmax(0,1.6fr);gap:12px;align-items:start;margin-top:13px}
+.note-navigation{display:grid;gap:9px;min-width:0}
+.note-navigation .note-search{margin:0}
+.note-navigation-list{display:grid;gap:6px;max-height:560px;overflow-y:auto;padding-right:2px}
+.note-navigation-item,.note-navigation-draft{display:grid;gap:5px;min-width:0;width:100%;padding:10px;text-align:left;border:1px solid #344255;border-radius:9px;background:#1b2634;color:#e8edf5}
+.note-navigation-item{cursor:pointer}
+.note-navigation-item:hover{border-color:#738ab5}
+.note-navigation-item.selected,.note-navigation-draft{border-color:#a58b31;background:#2c2c27;box-shadow:inset 3px 0 #e7cd56}
+.note-navigation-item strong,.note-navigation-draft strong{font-size:10px;line-height:1.45;overflow-wrap:anywhere}
+.note-navigation-item small,.note-navigation-draft small{font-size:8px;line-height:1.4;color:#91a0b5}
+.note-detail{min-width:0;display:grid;gap:10px}
+.note-detail .note-editor{min-width:0}
+.note-detail .note-editor textarea{min-height:260px}
+.note-detail .note-export-controls{margin-top:0}
+.note-delete-button{justify-self:start}
+.note-export-controls>div:first-child small{overflow-wrap:anywhere}
+.theme-light .note-navigation-item,.theme-light .note-navigation-draft{background:#fff;border-color:#e1e6ee;color:#26334a}
+.theme-light .note-navigation-item:hover{border-color:#b6c5df}
+.theme-light .note-navigation-item.selected,.theme-light .note-navigation-draft{border-color:#d6bd54;background:#fff9df;box-shadow:inset 3px 0 #d2b83c}
+.theme-light .note-navigation-item small,.theme-light .note-navigation-draft small{color:#79869a}
+@media(max-width:520px){
+  .note-workspace-layout{grid-template-columns:minmax(0,1fr)}
+  .note-navigation-list{grid-template-columns:repeat(2,minmax(0,1fr));max-height:190px;overflow-y:auto}
+  .note-detail .note-editor textarea{min-height:220px}
+}
