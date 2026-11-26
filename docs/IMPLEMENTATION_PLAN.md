@@ -22,7 +22,7 @@ Do not add learning artifacts until transcript ingestion and AI grounding are re
 | Transcript engine | Parsing, visible-caption capture, validation, provenance, context | Parser and live caption ingestion implemented; current CI/Chrome QA pending |
 | AI engine | Firebase AI Logic, mode policy, prompt, source metadata | Adapter and SDK source mapping implemented; CI green on earlier commit |
 | UI | Side panel and tutor interaction | Initial import/preview/tutor UI |
-| Storage | IndexedDB local learning sessions; optional Firestore sync | Initial local save/restore/delete implemented; Chrome QA and integration tests pending |
+| Storage | IndexedDB local learning sessions, notes, and bookmarks; optional Firestore sync | Version 3 schema with notes/bookmarks and integration tests added; CI and Chrome QA pending |
 | Learning engine | Notes, bookmarks, quizzes, revision | Not implemented |
 | Firebase setup | App Check, Remote Config, Auth, Firestore rules | Not configured/verified |
 
@@ -108,7 +108,7 @@ Exit: on a Chrome version/configuration with verified App Check and Firebase aud
 - [ ] Add Markdown export and PDF if quality/time permits.
 - [ ] Add tests.
 
-Exit: learner can save, edit, revisit, clear, and export notes/bookmarks; sessions survive extension reloads.
+Exit: learner can save, edit, revisit, clear, and export notes/bookmarks; sessions survive extension reloads. Current code implements the first notes/bookmarks workflow, but CI and Chrome runtime verification are still required.
 
 ### Phase 5 — Quiz and learning loop
 - [ ] Define validated quiz/question schema.
