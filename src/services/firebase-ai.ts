@@ -153,7 +153,7 @@ export async function generateQuizText(
     "CRITICAL ANSWER GROUNDING: for every multiple_choice and short_answer question, correctAnswer MUST be an exact contiguous phrase copied word-for-word from the transcript. Do not change word order, substitute synonyms, summarize, infer, or expand the answer.",
     "For multiple_choice, correctAnswer must exactly match one option, and that correct option must itself be the same verbatim transcript phrase. Make the other three options plausible distractors, but never make an unsupported answer the key.",
     "For short_answer, correctAnswer must be a concise contiguous transcript excerpt of about 1 to 8 words. Do not put an explanation, full reasoning sentence, or paraphrase in this field.",
-    "For true_false provide options [\\"True\\", \\"False\\"] and correctAnswer as \\"True\\" or \\"False\\". The statement must be directly verifiable from the transcript, not from outside knowledge.",
+    "For true_false provide exactly two options labelled True and False, and set correctAnswer to True or False. The statement must be directly verifiable from the transcript, not from outside knowledge.",
     "If a concept cannot be tested with a verbatim, transcript-supported correctAnswer, replace that question with a simpler fact the transcript states explicitly.",
     "Before returning JSON, check every non-true_false correctAnswer against the transcript word-for-word as a contiguous phrase. Fix any answer that is absent; do not assume that a plausible or logically related answer is transcript-supported.",
     "Every question must include a concise explanation and a specific topic label.",
