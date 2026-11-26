@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Bookmark, Download, Search, FileText, History } from "lucide-react";
-import { askLearnLens, isAudioTranscriptionConfigured, transcribeAudioChunk } from "../services/firebase-ai";
+import { askLearnLens, generateQuizText, isAudioTranscriptionConfigured, transcribeAudioChunk } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport, serializeSegmentsAsVtt } from "../services/transcript";
-import { deleteLearningSession, deleteLearningNote, deleteLearningBookmark, getLatestManualSession, getLatestSessionForVideo, listLearningBookmarks, listLearningNotes, listLearningSessions, saveLearningBookmark, saveLearningNote, saveLearningSession } from "../services/session-store";
+import { deleteLearningSession, deleteLearningNote, deleteLearningBookmark, getLatestManualSession, getLatestSessionForVideo, listLearningBookmarks, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningBookmark, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt } from "../services/session-store";
 import type { LearningBookmark, LearningNote, LearningSession } from "../services/session-store";
+import { scoreObjectiveAnswers, validateQuizResponse } from "../services/quiz";
+import type { QuizAttempt, QuizDefinition } from "../services/quiz";
 import type { InferencePreference, TranscriptSegment, VideoContext } from "../shared/types";
 import type { AudioCaptureStatus, CaptionCaptureStatus, ExtensionMessage } from "../shared/messages";
 
@@ -67,6 +69,18 @@ export default function App() {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [artifactMessage, setArtifactMessage] = useState("");
   const [draftingNote, setDraftingNote] = useState(false);
+  const [savedQuizzes, setSavedQuizzes] = useState<QuizDefinition[]>([]);
+  const [quizAttempts, setQuizAttempts] = useState<QuizAttempt[]>([]);
+  const [quizScope, setQuizScope] = useState<"whole_lesson" | "topic" | "time_range">("whole_lesson");
+  const [quizTopic, setQuizTopic] = useState("");
+  const [quizStart, setQuizStart] = useState("0");
+  const [quizEnd, setQuizEnd] = useState("");
+  const [quizQuestionCount, setQuizQuestionCount] = useState(5);
+  const [quizGenerating, setQuizGenerating] = useState(false);
+  const [activeQuiz, setActiveQuiz] = useState<QuizDefinition | null>(null);
+  const [quizAnswers, setQuizAnswers] = useState<Record<string, string>>({});
+  const [quizResult, setQuizResult] = useState<QuizAttempt | null>(null);
+  const [quizMessage, setQuizMessage] = useState("");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [source, setSource] = useState("");
@@ -257,13 +271,19 @@ export default function App() {
     if (!sessionId || !savedSession) {
       setNotes([]);
       setBookmarks([]);
+      setSavedQuizzes([]);
+      setQuizAttempts([]);
+      setActiveQuiz(null);
+      setQuizResult(null);
       return;
     }
     let cancelled = false;
-    Promise.all([listLearningNotes(sessionId), listLearningBookmarks(sessionId)]).then(([savedNotes, savedBookmarks]) => {
+    Promise.all([listLearningNotes(sessionId), listLearningBookmarks(sessionId), listQuizzes(sessionId), listQuizAttempts(sessionId)]).then(([savedNotes, savedBookmarks, quizzes, attempts]) => {
       if (!cancelled) {
         setNotes(savedNotes);
         setBookmarks(savedBookmarks);
+        setSavedQuizzes(quizzes);
+        setQuizAttempts(attempts);
       }
     }).catch(() => {
       if (!cancelled) setArtifactMessage("Could not load saved notes and bookmarks from this device.");
