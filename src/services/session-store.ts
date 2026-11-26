@@ -1,5 +1,6 @@
 import type { TranscriptFormat } from "./transcript";
 import type { QuizAttempt, QuizDefinition } from "./quiz";
+import { toLessonMetadataDto } from "./sync-dto";
 
 export interface LearningSession {
   id: string;
@@ -152,10 +153,26 @@ function runTransaction<T>(
   }));
 }
 
-export function saveLearningSession(session: LearningSession): Promise<void> {
-  return runTransaction<void>(SESSION_STORE, "readwrite", (store) => {
-    store.put(session);
-  });
+export async function saveLearningSession(session: LearningSession): Promise<void> {
+  const database = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction([SESSION_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    const sessions = transaction.objectStore(SESSION_STORE);
+    const metadata = transaction.objectStore(SYNC_METADATA_STORE);
+    const outbox = transaction.objectStore(SYNC_OUTBOX_STORE);
+    const request = sessions.get(session.id);
+    request.onsuccess = () => {
+      const previous = request.result as LearningSession | undefined;
+      sessions.put(session);
+      // Transcript-only autosaves must not enqueue a lesson metadata mutation.
+      const changed = !previous
+        || JSON.stringify(toLessonMetadataDto(previous)) !== JSON.stringify(toLessonMetadataDto(session));
+      if (changed) queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("lesson", session.id, session.id), "upsert");
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not save the lesson locally."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Saving the lesson was cancelled."));
+  }).finally(() => database.close());
 }
 
 export function listLearningSessions(): Promise<LearningSession[]> {
@@ -190,13 +207,42 @@ export function getLatestSavedSession(): Promise<LearningSession | null> {
 export async function deleteLearningSession(id: string): Promise<void> {
   const database = await openDatabase();
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction([SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE], "readwrite");
-    transaction.objectStore(SESSION_STORE).delete(id);
-    for (const storeName of [NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE]) {
-      const store = transaction.objectStore(storeName);
-      const request = store.index("sessionId").getAllKeys(id);
-      request.onsuccess = () => {
-        for (const key of request.result) store.delete(key);
+    const transaction = database.transaction(
+      [SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE],
+      "readwrite"
+    );
+    const sessions = transaction.objectStore(SESSION_STORE);
+    const notes = transaction.objectStore(NOTE_STORE);
+    const quizzes = transaction.objectStore(QUIZ_STORE);
+    const attempts = transaction.objectStore(QUIZ_ATTEMPT_STORE);
+    const metadata = transaction.objectStore(SYNC_METADATA_STORE);
+    const outbox = transaction.objectStore(SYNC_OUTBOX_STORE);
+    const childRequests = [
+      notes.index("sessionId").getAll(id),
+      quizzes.index("sessionId").getAll(id),
+      attempts.index("sessionId").getAll(id)
+    ];
+    const results: Array<Array<{ id: string; sessionId: string; quizId?: string }>> = [[], [], []];
+    let completed = 0;
+    for (let index = 0; index < childRequests.length; index += 1) {
+      childRequests[index].onsuccess = () => {
+        results[index] = childRequests[index].result as Array<{ id: string; sessionId: string; quizId?: string }>;
+        completed += 1;
+        if (completed !== childRequests.length) return;
+        queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("lesson", id, id), "delete");
+        for (const note of results[0]) {
+          queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("note", id, note.id), "delete");
+          notes.delete(note.id);
+        }
+        for (const quiz of results[1]) {
+          queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("quiz", id, quiz.id), "delete");
+          quizzes.delete(quiz.id);
+        }
+        for (const attempt of results[2]) {
+          queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("attempt", id, attempt.id), "delete");
+          attempts.delete(attempt.id);
+        }
+        sessions.delete(id);
       };
     }
     transaction.oncomplete = () => resolve();
@@ -205,10 +251,21 @@ export async function deleteLearningSession(id: string): Promise<void> {
   }).finally(() => database.close());
 }
 
-export function saveLearningNote(note: LearningNote): Promise<void> {
-  return runTransaction<void>(NOTE_STORE, "readwrite", (store) => {
-    store.put(note);
-  });
+export async function saveLearningNote(note: LearningNote): Promise<void> {
+  const database = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction([NOTE_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    transaction.objectStore(NOTE_STORE).put(note);
+    queueSyncOperationInTransaction(
+      transaction.objectStore(SYNC_METADATA_STORE),
+      transaction.objectStore(SYNC_OUTBOX_STORE),
+      syncEntityKey("note", note.sessionId, note.id),
+      "upsert"
+    );
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not save the note locally."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Saving the note was cancelled."));
+  }).finally(() => database.close());
 }
 
 export function listLearningNotes(sessionId: string): Promise<LearningNote[]> {
@@ -226,14 +283,43 @@ export function searchLearningNotes(sessionId: string, query: string): Promise<L
     : notes);
 }
 
-export function deleteLearningNote(id: string): Promise<void> {
-  return runTransaction<void>(NOTE_STORE, "readwrite", (store) => {
-    store.delete(id);
-  });
+export async function deleteLearningNote(id: string): Promise<void> {
+  const database = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction([NOTE_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    const notes = transaction.objectStore(NOTE_STORE);
+    const request = notes.get(id);
+    request.onsuccess = () => {
+      const note = request.result as LearningNote | undefined;
+      if (note) queueSyncOperationInTransaction(
+        transaction.objectStore(SYNC_METADATA_STORE),
+        transaction.objectStore(SYNC_OUTBOX_STORE),
+        syncEntityKey("note", note.sessionId, note.id),
+        "delete"
+      );
+      notes.delete(id);
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not delete the note."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Deleting the note was cancelled."));
+  }).finally(() => database.close());
 }
 
-export function saveQuiz(quiz: QuizDefinition): Promise<void> {
-  return runTransaction<void>(QUIZ_STORE, "readwrite", (store) => { store.put(quiz); });
+export async function saveQuiz(quiz: QuizDefinition): Promise<void> {
+  const database = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction([QUIZ_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    transaction.objectStore(QUIZ_STORE).put(quiz);
+    queueSyncOperationInTransaction(
+      transaction.objectStore(SYNC_METADATA_STORE),
+      transaction.objectStore(SYNC_OUTBOX_STORE),
+      syncEntityKey("quiz", quiz.sessionId, quiz.id),
+      "upsert"
+    );
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not save the quiz locally."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Saving the quiz was cancelled."));
+  }).finally(() => database.close());
 }
 
 export function listQuizzes(sessionId: string): Promise<QuizDefinition[]> {
@@ -247,19 +333,46 @@ export function listQuizzes(sessionId: string): Promise<QuizDefinition[]> {
 export async function deleteQuiz(id: string): Promise<void> {
   const database = await openDatabase();
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction([QUIZ_STORE, QUIZ_ATTEMPT_STORE], "readwrite");
-    transaction.objectStore(QUIZ_STORE).delete(id);
+    const transaction = database.transaction([QUIZ_STORE, QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    const quizzes = transaction.objectStore(QUIZ_STORE);
     const attempts = transaction.objectStore(QUIZ_ATTEMPT_STORE);
-    const request = attempts.index("quizId").getAllKeys(id);
-    request.onsuccess = () => { for (const key of request.result) attempts.delete(key); };
+    const metadata = transaction.objectStore(SYNC_METADATA_STORE);
+    const outbox = transaction.objectStore(SYNC_OUTBOX_STORE);
+    const quizRequest = quizzes.get(id);
+    quizRequest.onsuccess = () => {
+      const quiz = quizRequest.result as QuizDefinition | undefined;
+      if (quiz) queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("quiz", quiz.sessionId, quiz.id), "delete");
+      const request = attempts.index("quizId").getAll(id);
+      request.onsuccess = () => {
+        const related = request.result as QuizAttempt[];
+        for (const attempt of related) {
+          queueSyncOperationInTransaction(metadata, outbox, syncEntityKey("attempt", attempt.sessionId, attempt.id), "delete");
+          attempts.delete(attempt.id);
+        }
+        quizzes.delete(id);
+      };
+    };
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error ?? new Error("Could not remove the quiz and its attempts."));
     transaction.onabort = () => reject(transaction.error ?? new Error("Quiz deletion was cancelled."));
   }).finally(() => database.close());
 }
 
-export function saveQuizAttempt(attempt: QuizAttempt): Promise<void> {
-  return runTransaction<void>(QUIZ_ATTEMPT_STORE, "readwrite", (store) => { store.put(attempt); });
+export async function saveQuizAttempt(attempt: QuizAttempt): Promise<void> {
+  const database = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction([QUIZ_ATTEMPT_STORE, SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    transaction.objectStore(QUIZ_ATTEMPT_STORE).put(attempt);
+    queueSyncOperationInTransaction(
+      transaction.objectStore(SYNC_METADATA_STORE),
+      transaction.objectStore(SYNC_OUTBOX_STORE),
+      syncEntityKey("attempt", attempt.sessionId, attempt.id),
+      "upsert"
+    );
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not save the quiz attempt locally."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Saving the quiz attempt was cancelled."));
+  }).finally(() => database.close());
 }
 
 export function listQuizAttempts(sessionId: string): Promise<QuizAttempt[]> {
@@ -305,6 +418,48 @@ export interface SyncDeviceRecord {
   key: "installation";
   deviceId: string;
   createdAtMs: number;
+}
+
+
+function syncEntityKey(type: SyncEntityType, lessonId: string, entityId: string): string {
+  return `${type}:${lessonId}:${entityId}`;
+}
+
+/** Must be called inside the same read/write transaction as the local mutation. */
+function queueSyncOperationInTransaction(
+  metadataStore: IDBObjectStore,
+  outboxStore: IDBObjectStore,
+  entityKey: string,
+  operation: SyncOperation
+): void {
+  const metadataRequest = metadataStore.get(entityKey);
+  metadataRequest.onsuccess = () => {
+    const metadata = metadataRequest.result as SyncMetadataRecord | undefined;
+    if (!metadata) return; // Local-only records are never queued implicitly.
+    const pendingRequest = outboxStore.get(entityKey);
+    pendingRequest.onsuccess = () => {
+      const pending = pendingRequest.result as SyncOutboxRecord | undefined;
+      if (operation === "delete" && metadata.remoteRevision === 0) {
+        if (pending?.operation === "upsert") outboxStore.delete(entityKey);
+        metadataStore.delete(entityKey);
+        return;
+      }
+      const operationId = pending?.operation === operation ? pending.operationId : crypto.randomUUID();
+      outboxStore.put({
+        entityKey,
+        operationId,
+        ownerUid: metadata.ownerUid,
+        entityType: metadata.entityType,
+        lessonId: metadata.lessonId,
+        entityId: metadata.entityId,
+        operation,
+        baseRevision: metadata.remoteRevision,
+        payloadSchemaVersion: 1,
+        queuedAtMs: Date.now(),
+        retryCount: pending?.operation === operation ? pending.retryCount : 0
+      } satisfies SyncOutboxRecord);
+    };
+  };
 }
 
 function validateSyncIdentity(value: string, field: string): void {
