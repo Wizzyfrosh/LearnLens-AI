@@ -550,3 +550,29 @@ Verification:
 - GitHub Actions run 45863693688 was triggered for commit `b403a36`; status pending at the time of this update.
 - The prior intermediate run for `2b0dfa6` was cancelled by the subsequent version-bump push; use the final combined run for verification.
 - Browser runtime verification is still required. Do not claim toolbar or caption behavior fixed until the user tests the new artifact in Chrome.
+
+
+## 30. Caption capture ownership persistence — 2026-11-26
+
+Follow-up after user confirmed visible-caption capture still failed on v0.1.2.
+
+Root cause found in the background service worker:
+- `captionCaptureTabId` was held only in a module-level variable.
+- Manifest V3 service workers are suspended and restarted by Chrome. On restart, the in-memory tab ID resets to null.
+- The message handler rejects all `LEARNLENS_CAPTURE_STATUS` and `LEARNLENS_CAPTION_SEGMENT` messages unless `sender.tab.id === captionCaptureTabId`; after worker restart this silently discarded valid caption updates.
+
+Fixes:
+- Persist caption capture ownership in `chrome.storage.session` before messaging the content script.
+- Restore ownership during service-worker startup and await hydration before filtering incoming caption messages or stopping capture.
+- Clear persisted ownership on explicit stop, attachment failure, or tab close.
+- Move MutationObserver to the stable document root so replacing the YouTube player subtree does not detach it. Retain 500 ms polling as a fallback.
+- Bump extension version to `0.1.3`.
+
+Commits:
+- `5090996` — persist caption capture ownership across worker restarts.
+- `38a85c3` — observe stable document root for caption changes.
+- `ec5f0f0` — bump extension version to 0.1.3.
+
+Verification:
+- CI runs for the first two commits were started; final combined build is triggered by the version bump.
+- Browser runtime test is still required. Do not claim caption capture is fixed until the extension is tested in Chrome.
