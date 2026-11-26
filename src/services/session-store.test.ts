@@ -16,6 +16,7 @@ import {
   searchLearningNotes,
   acknowledgeSyncOperation,
   claimSyncEntity,
+  claimSelectedLocalSyncRecords,
   getOrCreateSyncDeviceId,
   getSyncMetadata,
   listSyncOutbox,
@@ -532,4 +533,51 @@ describe("local learning artifact storage", () => {
     });
     expect(version).toBe(7);
   });
+
+  it("requires explicit category selection, claims eligible records atomically, and isolates other accounts", async () => {
+    await saveLearningNote({
+      id: "claim-note-a", sessionId: "claim-lesson-a", videoId: "claim-lesson-a",
+      title: "Eligible note", content: "This content is validated but never copied into the outbox.",
+      createdAt: 10, updatedAt: 11
+    });
+    await saveLearningNote({
+      id: "claim-note-b", sessionId: "claim-lesson-b", videoId: "claim-lesson-b",
+      title: "Other owner's note", content: "Keep ownership isolated.",
+      createdAt: 12, updatedAt: 13
+    });
+    await claimSyncEntity({
+      entityKey: "note:claim-lesson-b:claim-note-b", entityType: "note",
+      lessonId: "claim-lesson-b", entityId: "claim-note-b", ownerUid: "user-b",
+      syncCategory: "notes"
+    });
+
+    const nothingSelected = await claimSelectedLocalSyncRecords("user-a", {
+      lessonMetadata: false, notes: false, quizzes: false, attempts: false
+    });
+    expect(nothingSelected.totalQueued).toBe(0);
+
+    const result = await claimSelectedLocalSyncRecords("user-a", {
+      lessonMetadata: false, notes: true, quizzes: false, attempts: false
+    });
+    expect(result.claimed.notes).toBe(1);
+    expect(result.skippedOtherAccount.notes).toBe(1);
+    expect(result.totalQueued).toBe(1);
+    expect(await getSyncMetadata("note:claim-lesson-a:claim-note-a")).toMatchObject({ ownerUid: "user-a" });
+    expect(await getSyncMetadata("note:claim-lesson-b:claim-note-b")).toMatchObject({ ownerUid: "user-b" });
+    const outbox = await listSyncOutbox("user-a");
+    expect(outbox).toHaveLength(1);
+    expect(outbox[0]).toMatchObject({ entityKey: "note:claim-lesson-a:claim-note-a", operation: "upsert" });
+    expect(outbox[0]).not.toHaveProperty("content");
+    expect(outbox[0]).not.toHaveProperty("transcriptText");
+
+    const repeat = await claimSelectedLocalSyncRecords("user-a", {
+      lessonMetadata: false, notes: true, quizzes: false, attempts: false
+    });
+    expect(repeat.claimed.notes).toBe(0);
+    expect(repeat.alreadyOwned.notes).toBe(1);
+    expect(repeat.skippedOtherAccount.notes).toBe(1);
+    expect(repeat.totalQueued).toBe(0);
+    expect(await listSyncOutbox("user-a")).toHaveLength(1);
+  });
+
 });
