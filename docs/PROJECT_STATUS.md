@@ -87,9 +87,26 @@
 - Keep the extension version at 0.1.0 unless the user explicitly requests a version change.
 - Never commit `.env.local`, API keys, App Check secrets, or private learner data.
 
-## 6. Next exact task
+## 6. Phase 6 — Optional cloud sync (not implemented yet)
 
-Begin Phase 6 planning: design opt-in cloud sync with Firebase Auth, Firestore per-user security rules, App Check, explicit sync controls, conflict handling, and export/delete workflows. Preserve local-first behavior; transcripts remain local by default.
+**Current state:** Planning and security design only. No cloud-sync implementation has started.
+
+**Repository findings**
+- Firebase AI Logic and App Check development wiring exist in the current app.
+- The existing App Check provider explicitly uses a debug token. That is suitable only for controlled development/testing, not production sync protection.
+- Firebase Auth, Firestore security rules, and Firebase project configuration files were not found at the repository paths inspected.
+- The current IndexedDB workflow remains the source of truth for local learning data.
+
+**Non-negotiable design constraints**
+- Sign-in and cloud sync remain optional; signed-out learners retain full local functionality.
+- Sync is explicit opt-in, with a clear explanation of what data leaves the device.
+- Initial sync scope: notes, quiz definitions, quiz attempts, and minimal lesson metadata.
+- Transcript segments and raw audio stay local by default; raw audio is never synced.
+- Firestore rules must deny by default and enforce authenticated per-user ownership.
+- Production-compatible App Check for a Chrome extension must be resolved before sync is enabled. Do not ship the debug-token provider as production attestation.
+- Account switching, offline writes, conflict handling, deletion propagation, and local/cloud data export must be designed and tested.
+
+**Next exact task:** Complete Phase 6A: inspect the IndexedDB schema and define versioned cloud DTOs, per-user document paths, conflict/tombstone semantics, and a threat model. Then decide the supported sign-in methods and production App Check strategy before implementing Auth or Firestore writes.
 
 
 ## 2026-11-26 follow-up — notes navigation and 10-question quiz reliability
@@ -107,3 +124,10 @@ Begin Phase 6 planning: design opt-in cloud sync with Firebase Auth, Firestore p
 - Phase 5: quiz generation (including 10 questions), transcript-grounded answer validation, grading visuals/feedback, and saved-attempt review are signed off.
 - Latest code remains at extension version 0.1.0. No version bump was requested.
 - Next phase is Phase 6 — Optional Cloud Sync. Cloud sync must remain opt-in; local-only lesson storage remains the default and transcripts must not sync by default.
+
+
+## 2026-11-26 — Phase 6 kickoff
+- Phase 4 and Phase 5 are formally complete following the user's confirmation that all runtime tests passed.
+- Phase 6 roadmap is now decomposed into security/data design, identity and Firebase security, and opt-in sync engine/user controls.
+- No Phase 6 code has been implemented yet. The immediate work is schema/security design, not blindly adding Firestore writes.
+- Important blocker: current App Check uses a development debug token. A production-compatible Chrome-extension attestation approach is required before cloud sync can be enabled.
