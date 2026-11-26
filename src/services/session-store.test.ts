@@ -19,7 +19,10 @@ import {
   getOrCreateSyncDeviceId,
   getSyncMetadata,
   listSyncOutbox,
-  queueSyncOperation
+  queueSyncOperation,
+  getLocalSyncCandidateCounts,
+  getLocalSyncPreferences,
+  saveLocalSyncPreferences
 } from "./session-store";
 
 function deleteDatabase(): Promise<void> {
@@ -82,7 +85,7 @@ describe("local learning artifact storage", () => {
       request.onsuccess = () => { const db = request.result; const result = Array.from(db.objectStoreNames); db.close(); resolve(result); };
       request.onerror = () => reject(request.error);
     });
-    expect(names).toEqual(expect.arrayContaining(["syncMetadata", "syncOutbox", "syncDevice"]));
+    expect(names).toEqual(expect.arrayContaining(["syncMetadata", "syncOutbox", "syncDevice", "syncPreferences"]));
     expect(await listSyncOutbox("user-a")).toEqual([]);
   });
 
@@ -204,6 +207,63 @@ describe("local learning artifact storage", () => {
       lessonId: "lesson-1", entityId: "note-1", ownerUid: "user-a",
       syncCategory: "quizzes"
     })).rejects.toThrow(/category/i);
+  });
+
+  it("stores category choices locally per account without enabling uploads", async () => {
+    const defaults = await getLocalSyncPreferences("user-a");
+    expect(defaults.categories).toEqual({
+      lessonMetadata: false, notes: false, quizzes: false, attempts: false
+    });
+    await saveLocalSyncPreferences("user-a", {
+      lessonMetadata: false, notes: true, quizzes: true, attempts: false
+    });
+    await saveLocalSyncPreferences("user-b", {
+      lessonMetadata: true, notes: false, quizzes: false, attempts: true
+    });
+    expect(await getLocalSyncPreferences("user-a")).toMatchObject({
+      categories: { lessonMetadata: false, notes: true, quizzes: true, attempts: false }
+    });
+    expect(await getLocalSyncPreferences("user-b")).toMatchObject({
+      categories: { lessonMetadata: true, notes: false, quizzes: false, attempts: true }
+    });
+  });
+
+  it("previews counts by category and account ownership without returning lesson content", async () => {
+    await saveLearningSession({
+      id: "preview-lesson", videoId: "preview-lesson", title: "Preview lesson",
+      url: "https://www.youtube.com/watch?v=preview-lesson", platform: "youtube",
+      transcriptText: "Private transcript must not be returned", transcriptFormat: "plain-text",
+      transcriptSource: "captions", updatedAt: 1
+    });
+    await saveLearningNote({
+      id: "preview-note", sessionId: "preview-lesson", videoId: "preview-lesson",
+      title: "Preview note", content: "Private note body", createdAt: 1, updatedAt: 1
+    });
+    await saveQuiz({
+      id: "preview-quiz", sessionId: "preview-lesson", title: "Preview quiz",
+      scope: "whole_lesson", scopeLabel: "Whole lesson", createdAt: 1, questions: []
+    });
+    await saveQuizAttempt({
+      id: "preview-attempt", quizId: "preview-quiz", sessionId: "preview-lesson",
+      createdAt: 1, results: [], objectiveScore: 0, objectiveTotal: 0, topicsToReview: []
+    });
+    await claimSyncEntity({
+      entityKey: "note:preview-lesson:preview-note", entityType: "note",
+      lessonId: "preview-lesson", entityId: "preview-note", ownerUid: "user-a",
+      syncCategory: "notes"
+    });
+    await claimSyncEntity({
+      entityKey: "attempt:preview-lesson:preview-attempt", entityType: "attempt",
+      lessonId: "preview-lesson", entityId: "preview-attempt", ownerUid: "user-b",
+      syncCategory: "attempts"
+    });
+    const counts = await getLocalSyncCandidateCounts("user-a");
+    expect(counts.lessonMetadata).toMatchObject({ total: 1, unclaimed: 1 });
+    expect(counts.notes).toMatchObject({ total: 1, ownedByCurrentAccount: 1 });
+    expect(counts.quizzes).toMatchObject({ total: 1, unclaimed: 1 });
+    expect(counts.attempts).toMatchObject({ total: 1, ownedByOtherAccount: 1 });
+    expect(JSON.stringify(counts)).not.toContain("Private transcript");
+    expect(JSON.stringify(counts)).not.toContain("Private note body");
   });
 
   it("creates one stable installation-scoped device ID", async () => {
@@ -470,6 +530,6 @@ describe("local learning artifact storage", () => {
       request.onsuccess = () => { resolve(request.result.version); request.result.close(); };
       request.onerror = () => reject(request.error);
     });
-    expect(version).toBe(6);
+    expect(version).toBe(7);
   });
 });
