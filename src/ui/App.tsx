@@ -274,10 +274,24 @@ export default function App() {
       setSavedQuizzes([]);
       setQuizAttempts([]);
       setActiveQuiz(null);
+      setQuizAnswers({});
       setQuizResult(null);
+      setEditingNoteId(null);
+      setNoteTitle("");
+      setNoteContent("");
+      setNoteTimestamp("");
+      setNoteSearch("");
       return;
     }
     let cancelled = false;
+    setEditingNoteId(null);
+    setNoteTitle("");
+    setNoteContent("");
+    setNoteTimestamp("");
+    setNoteSearch("");
+    setActiveQuiz(null);
+    setQuizAnswers({});
+    setQuizResult(null);
     Promise.all([listLearningNotes(sessionId), listLearningBookmarks(sessionId), listQuizzes(sessionId), listQuizAttempts(sessionId)]).then(([savedNotes, savedBookmarks, quizzes, attempts]) => {
       if (!cancelled) {
         setNotes(savedNotes);
