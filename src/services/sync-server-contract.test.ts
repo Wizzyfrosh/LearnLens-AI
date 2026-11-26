@@ -258,6 +258,29 @@ describe("server-side sync mutation contract", () => {
     });
   });
 
+
+  it("replays a recorded conflict instead of creating a second conflict on retry", () => {
+    const first = decideSyncServerMutation(parseRequest(), currentNote({ revision: 2 }), null, fingerprint);
+    if (first.kind !== "conflict") throw new Error("Expected a revision conflict.");
+    expect(decideSyncServerMutation(
+      parseRequest(),
+      currentNote({ revision: 2 }),
+      {
+        requestId,
+        requestFingerprint: fingerprint,
+        outcome: "conflict",
+        resultRevision: 2,
+        conflictCode: "revision_conflict"
+      },
+      fingerprint
+    )).toEqual({
+      kind: "replay",
+      outcome: "conflict",
+      resultRevision: 2,
+      conflictCode: "revision_conflict"
+    });
+  });
+
   it("does not let a stale delete remove a newer remote edit", () => {
     const request = parseRequest({ operation: "delete", payload: null, baseRevision: 0 });
     const decision = decideSyncServerMutation(request, currentNote({ revision: 3 }), null, fingerprint);
