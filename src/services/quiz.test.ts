@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseShortAnswerFeedback, scoreObjectiveAnswers, validateQuizResponse } from "./quiz";
+import { getQuizFeedbackSegments, parseShortAnswerFeedback, scoreObjectiveAnswers, validateQuizResponse } from "./quiz";
 import type { TranscriptSegment } from "../shared/types";
 
 const segments: TranscriptSegment[] = [
@@ -16,6 +16,34 @@ const payload = {
 };
 
 describe("lesson quiz validation and scoring", () => {
+  it("keeps short-answer feedback inside the quiz time range", () => {
+    const quiz = {
+      id: "quiz-1",
+      sessionId: "session-1",
+      title: "Lesson quiz",
+      scope: "time_range" as const,
+      scopeLabel: "From 00:00 to 00:05",
+      rangeStartSeconds: 0,
+      rangeEndSeconds: 5,
+      createdAt: 1,
+      questions: []
+    };
+    expect(getQuizFeedbackSegments(quiz, segments).map((segment) => segment.id)).toEqual(["1"]);
+  });
+
+  it("does not widen a time-range quiz to the full transcript when range metadata is missing", () => {
+    const quiz = {
+      id: "quiz-legacy",
+      sessionId: "session-1",
+      title: "Legacy quiz",
+      scope: "time_range" as const,
+      scopeLabel: "From 00:00 to 00:05",
+      createdAt: 1,
+      questions: []
+    };
+    expect(getQuizFeedbackSegments(quiz, segments)).toEqual([]);
+  });
+
   it("accepts a valid quiz with transcript-grounded evidence", () => {
     const questions = validateQuizResponse(JSON.stringify(payload), segments);
     expect(questions).toHaveLength(3);
