@@ -188,17 +188,18 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 ## 2026-11-26 — Phase 6C local sync foundation
 
 **Implemented**
-- IndexedDB schema v6 adds `syncMetadata`, `syncOutbox`, and `syncDevice`; existing v5 learning data is preserved and not automatically claimed or queued.
+- IndexedDB schema v7 adds `syncMetadata`, `syncOutbox`, `syncDevice`, and local-only `syncPreferences`; existing v5 learning data is preserved and not automatically claimed or queued.
 - Added account-bound entity claiming and guards that prevent one account from reassigning another account's local entity.
 - Added coalesced outbox operations, stable retry operation IDs, base revisions, retry metadata, acknowledgement checks, and cancellation of never-uploaded upserts on local deletion.
 - Added an installation-scoped device ID.
 - Integrated account-claimed outbox updates atomically with lesson metadata changes, note/quiz/attempt saves, note deletion, quiz deletion with attempt children, and lesson deletion with all child artifacts. Transcript-only lesson autosaves never enqueue lesson metadata; unclaimed records remain local-only.
 - Added allow-listed DTO mappers for lesson metadata, notes, quizzes, and quiz attempts. Full transcript/audio and unrecognized local fields are excluded.
 - Added size and timestamp validation plus YouTube URL canonicalization/sanitization.
+- Added Account-tab category preferences and a local record-count/ownership preview for verified users. Choices are saved only in IndexedDB; saving them does not claim records or upload data.
 - Added IndexedDB migration/outbox and DTO privacy regression tests.
 
 **Not yet implemented / no live cloud writes**
-- There is no sync opt-in/category consent UI, first-claim preview, account-switch orchestration, background sync runner, Firestore artifact write, pull cursor, conflict resolver, or tombstone propagation.
+- There is no explicit first-claim confirmation, account-switch orchestration, background sync runner, Firestore artifact write, pull cursor, conflict resolver, or tombstone propagation.
 - Live Firebase Email/Password configuration and desktop Chrome Auth flow remain unverified by the user.
 - Production-compatible App Check remains a hard release gate. Do not enable or deploy learning-artifact sync.
 
@@ -208,4 +209,4 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - Result: SUCCESS — TypeScript, 8 Vitest files / 65 tests, 8 Firestore Emulator Rules tests, production build, extension package verification, and artifact upload.
 - Package version remains 0.1.0.
 
-**Next engineering task:** Implement sync opt-in/category consent and a first-claim preview that shows exactly which existing local records will be assigned to the signed-in UID. Keep the sync runner and Firestore artifact writes disabled until live Auth QA and production App Check are approved.
+**Next engineering task:** Add explicit first-claim confirmation and account-switch isolation around the category preview. Keep the sync runner and Firestore artifact writes disabled until live Auth QA and production App Check are approved.
