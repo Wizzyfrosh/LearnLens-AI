@@ -519,9 +519,9 @@ Code changes:
 - Added bookmark export options: PDF via print dialog / Save as PDF, Word-compatible .doc, TXT, Markdown, and CSV. The Word export is .doc (not .docx). PDF export opens a print layout; it is not represented as a direct PDF download.
 
 Verification:
-- CI run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45857510179
-- CI commit: 05d73be6dee107043ee20bf4c10b48c184a15607.
-- All stages passed for that run: dependency installation, TypeScript typecheck, unit tests, production build, Chrome extension package verification, and artifact upload.
-- Artifact from that run: ID 15137320173, 129,233 bytes, expires 2026-12-26. Note that the final prompt newline and overlay light-theme selector were corrected in later commits; a newer CI run is required for the exact latest source.
-- The latest UI/quiz code has not yet been re-tested in desktop Chrome. CI success is not runtime verification.
+- Final CI run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45857822230
+- Verified code commit: 0d560e3558ef9b068c83f5fe2e49e408384b6989.
+- All stages passed: dependency installation, TypeScript typecheck, unit tests, production build, Chrome extension package verification, and artifact upload.
+- Final Chrome extension artifact: `learnlens-chrome-extension`, ID 15136203852, 129,235 bytes, expires 2026-12-26.
+- The code is CI-verified but has not yet been re-tested in desktop Chrome. CI success is not runtime verification.
 - Phase 4/5 acceptance remains open until the user tests queued note drafting, quiz generation, and export/theme UI in Chrome. Do not start Phase 6 before runtime acceptance and any resulting fixes. Audio transcription remains deferred under Phase 3.
