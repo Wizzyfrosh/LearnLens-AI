@@ -54,6 +54,7 @@ export default function App() {
   const [noteSearch, setNoteSearch] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [artifactMessage, setArtifactMessage] = useState("");
+  const [draftingNote, setDraftingNote] = useState(false);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [source, setSource] = useState("");
@@ -452,6 +453,35 @@ export default function App() {
     }
   }
 
+  async function draftNoteWithTutor() {
+    if (!segmentCount) {
+      setArtifactMessage("Capture or load lesson transcript text before drafting notes.");
+      return;
+    }
+    setDraftingNote(true);
+    setArtifactMessage("Generating a draft from the current lesson transcript. Review it before saving.");
+    try {
+      const draft = await askLearnLens(
+        "Create clear, concise study notes from this lesson transcript. Use a short descriptive title on the first line, then structured headings and bullet points. Include only information supported by the transcript. Do not invent timestamps or facts. This is an editable draft for learner review.\n\nLesson: " + video.title,
+        segments,
+        preference,
+        setProgress
+      );
+      const lines = draft.text.split("\n");
+      const firstLine = lines.find((line) => line.trim())?.replace(/^#+\s*/, "").trim();
+      setNoteTitle(firstLine || "Study notes");
+      setNoteContent(draft.text);
+      setNoteTimestamp("");
+      setEditingNoteId(null);
+      setArtifactMessage("AI draft created. Review and edit the content, then choose Save note.");
+    } catch (cause) {
+      setArtifactMessage(cause instanceof Error ? cause.message : "Could not generate a note draft.");
+    } finally {
+      setDraftingNote(false);
+      setProgress(null);
+    }
+  }
+
   async function saveNote(event: FormEvent) {
     event.preventDefault();
     if (!sessionId || !savedSession || !noteTitle.trim() || !noteContent.trim()) return;
@@ -685,6 +715,13 @@ export default function App() {
             <div className="section-heading">
               <div><FileText size={17} /><h2>Lesson notes</h2></div>
               <span>{notes.length} notes · {bookmarks.length} bookmarks</span>
+            </div>
+            <div className="note-draft-row">
+              <p>AI drafts are suggestions only. Review and edit before saving.</p>
+              <button className="secondary-button" type="button" onClick={() => void draftNoteWithTutor()} disabled={draftingNote || !segmentCount}>
+                {draftingNote ? <LoaderCircle className="spin" size={13} /> : <Sparkles size={13} />}
+                {draftingNote ? "Drafting..." : "Draft notes with AI"}
+              </button>
             </div>
             <form className="note-editor" onSubmit={(event) => void saveNote(event)}>
               <label className="field-label" htmlFor="note-title">Note title</label>
