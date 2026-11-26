@@ -4,10 +4,14 @@ import {
   acknowledgeSyncRequest,
   claimSyncEntity,
   deleteLearningNote,
+  getSyncConflict,
   getSyncRequest,
+  listSyncConflicts,
   listSyncOutbox,
   listSyncRequests,
+  markSyncRequestConflicted,
   markSyncRequestFailed,
+  pruneSyncRequestHistory,
   markSyncRequestInFlight,
   queueSyncOperation,
   saveLearningNote,
@@ -204,6 +208,105 @@ describe("durable sync request journal", () => {
       baseRevision: 1,
       payloadSnapshot: { content: "Second version" }
     });
+  });
+
+  it("persists a server conflict and permanently blocks automatic retry", async () => {
+    await createQueuedNote("conflicted-note", "Local content that must be preserved");
+    const prepared = await prepareSyncRequests("user-a", 10);
+    const request = prepared.requests[0];
+    await markSyncRequestInFlight(request.requestId, "user-a");
+
+    const conflict = await markSyncRequestConflicted(
+      request.requestId,
+      "user-a",
+      3,
+      "revision_conflict",
+      { title: "Remote title", content: "Remote version", createdAtMs: 1, updatedAtMs: 4 }
+    );
+    expect(conflict).toMatchObject({
+      requestId: request.requestId,
+      ownerUid: "user-a",
+      baseRevision: 0,
+      remoteRevision: 3,
+      conflictCode: "revision_conflict",
+      status: "open",
+      localPayloadSnapshot: { content: "Local content that must be preserved" },
+      remotePayloadSnapshot: { content: "Remote version" }
+    });
+    expect((await getSyncRequest(request.requestId))?.status).toBe("conflicted");
+    await expect(markSyncRequestInFlight(request.requestId, "user-a")).rejects.toThrow();
+    await expect(acknowledgeSyncRequest(request.requestId, "user-a", 1)).rejects.toThrow();
+    expect(await listSyncRequests("user-a", ["conflicted"])).toHaveLength(1);
+    expect(await listSyncConflicts("user-a", ["open"])).toHaveLength(1);
+    expect(await getSyncConflict(request.requestId, "user-a")).toEqual(conflict);
+    expect(await getSyncConflict(request.requestId, "user-b")).toBeNull();
+
+    const preparedAgain = await prepareSyncRequests("user-a", 10);
+    expect(preparedAgain.requests).toEqual([]);
+    expect(preparedAgain.blocked).toMatchObject([{
+      entityKey: request.entityKey,
+      reason: "request_terminal"
+    }]);
+    expect(await listSyncOutbox("user-a")).toHaveLength(1);
+  });
+
+  it("rejects malformed remote snapshots instead of storing untrusted conflict data", async () => {
+    await createQueuedNote("bad-remote-snapshot", "Preserve local note");
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    await expect(markSyncRequestConflicted(
+      request.requestId,
+      "user-a",
+      1,
+      "revision_conflict",
+      { title: "Remote", content: "Remote body", createdAtMs: 1, updatedAtMs: 2, transcriptText: "not allowed" } as never
+    )).rejects.toThrow();
+    expect((await getSyncRequest(request.requestId))?.status).toBe("in_flight");
+    expect(await listSyncConflicts("user-a")).toEqual([]);
+  });
+
+  it("replays an identical conflict response without duplicating or changing its record", async () => {
+    await createQueuedNote("idempotent-conflict", "Local snapshot");
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    const first = await markSyncRequestConflicted(
+      request.requestId, "user-a", 2, "entity_deleted", null, true
+    );
+    const replay = await markSyncRequestConflicted(
+      request.requestId, "user-a", 2, "entity_deleted", null, true
+    );
+    expect(replay).toEqual(first);
+    expect(await listSyncConflicts("user-a")).toHaveLength(1);
+  });
+
+  it("blocks a newer local edit behind an unresolved conflict and isolates account ownership", async () => {
+    const { note } = await createQueuedNote("conflict-edit", "Original local version");
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    await markSyncRequestConflicted(request.requestId, "user-a", 1, "revision_conflict");
+
+    await saveLearningNote({ ...note, content: "New edit after conflict", updatedAt: 10 });
+    const blocked = await prepareSyncRequests("user-a", 10);
+    expect(blocked.requests).toEqual([]);
+    expect(blocked.blocked).toMatchObject([{
+      entityKey: request.entityKey,
+      reason: "prior_request_pending"
+    }]);
+    await expect(markSyncRequestConflicted(request.requestId, "user-b", 1, "revision_conflict")).rejects.toThrow();
+    expect(await listSyncConflicts("user-b")).toEqual([]);
+    expect((await listSyncConflicts("user-a"))[0].localPayloadSnapshot).toMatchObject({
+      content: "Original local version"
+    });
+  });
+
+  it("does not prune unresolved conflict history", async () => {
+    await createQueuedNote("retained-conflict", "Keep this conflict");
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    await markSyncRequestConflicted(request.requestId, "user-a", 2, "revision_conflict");
+    expect(await pruneSyncRequestHistory("user-a", 0)).toBe(0);
+    expect((await getSyncRequest(request.requestId))?.status).toBe("conflicted");
+    expect(await listSyncConflicts("user-a")).toHaveLength(1);
   });
 
   it("fails closed because cloud writes remain disabled pending production Auth and App Check", async () => {

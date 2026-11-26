@@ -2,6 +2,7 @@ import type { TranscriptFormat } from "./transcript";
 import type { QuizAttempt, QuizDefinition } from "./quiz";
 import { toAttemptSyncDto, toLessonMetadataDto, toNoteSyncDto, toQuizSyncDto } from "./sync-dto";
 import type { AttemptSyncDto, LessonMetadataDto, NoteSyncDto, QuizSyncDto } from "./sync-dto";
+import { validateSyncServerRequest } from "./sync-server-contract";
 
 export interface LearningSession {
   id: string;
@@ -26,7 +27,7 @@ export interface LearningNote {
 }
 
 const DATABASE_NAME = "learnlens-local";
-const DATABASE_VERSION = 9;
+const DATABASE_VERSION = 10;
 const SESSION_STORE = "learningSessions";
 const NOTE_STORE = "learningNotes";
 const QUIZ_STORE = "learningQuizzes";
@@ -36,6 +37,7 @@ const SYNC_OUTBOX_STORE = "syncOutbox";
 const SYNC_DEVICE_STORE = "syncDevice";
 const SYNC_PREFERENCES_STORE = "syncPreferences";
 const SYNC_REQUEST_STORE = "syncRequests";
+const SYNC_CONFLICT_STORE = "syncConflicts";
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -132,6 +134,15 @@ function openDatabase(): Promise<IDBDatabase> {
       // outbox remains the coalesced pointer to the latest local desired state.
       if (!database.objectStoreNames.contains(SYNC_REQUEST_STORE)) {
         const store = database.createObjectStore(SYNC_REQUEST_STORE, { keyPath: "requestId" });
+        store.createIndex("ownerUid", "ownerUid", { unique: false });
+        store.createIndex("entityKey", "entityKey", { unique: false });
+        store.createIndex("status", "status", { unique: false });
+        store.createIndex("updatedAtMs", "updatedAtMs", { unique: false });
+      }
+      // v10 persists server conflicts locally so uncertain/rejected mutations
+      // cannot be retried or discarded before explicit learner resolution.
+      if (!database.objectStoreNames.contains(SYNC_CONFLICT_STORE)) {
+        const store = database.createObjectStore(SYNC_CONFLICT_STORE, { keyPath: "conflictId" });
         store.createIndex("ownerUid", "ownerUid", { unique: false });
         store.createIndex("entityKey", "entityKey", { unique: false });
         store.createIndex("status", "status", { unique: false });
@@ -450,7 +461,7 @@ export interface SyncOutboxRecord {
   lastErrorCode?: string;
 }
 
-export type SyncRequestStatus = "prepared" | "in_flight" | "retryable" | "acknowledged" | "superseded";
+export type SyncRequestStatus = "prepared" | "in_flight" | "retryable" | "acknowledged" | "superseded" | "conflicted";
 
 export interface SyncRequestRecord {
   requestId: string;
@@ -485,6 +496,30 @@ export interface SyncRequestPreparationResult {
   blockedReason: SyncRequestPreparationBlockReason | null;
 }
 
+export type SyncConflictCode = "revision_conflict" | "entity_deleted" | "immutable_entity_exists";
+export type SyncConflictStatus = "open" | "resolved";
+
+export interface SyncConflictRecord {
+  conflictId: string;
+  requestId: string;
+  operationId: string;
+  ownerUid: string;
+  entityKey: string;
+  entityType: SyncEntityType;
+  lessonId: string;
+  entityId: string;
+  operation: SyncOperation;
+  baseRevision: number;
+  remoteRevision: number;
+  conflictCode: SyncConflictCode;
+  localPayloadSnapshot: SyncPreparedPayload | null;
+  remotePayloadSnapshot: SyncPreparedPayload | null;
+  remoteIsDeleted: boolean;
+  status: SyncConflictStatus;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
 export interface SyncDeviceRecord {
   key: "installation";
   deviceId: string;
@@ -513,8 +548,10 @@ function queueSyncOperationInTransaction(
     relatedRequest.onsuccess = () => {
       const related = (relatedRequest.result as SyncRequestRecord[])
         .filter((request) => request.ownerUid === metadata.ownerUid);
-      const uncertain = related.some((request) =>
-        request.status === "in_flight" || request.status === "retryable"
+      const unresolved = related.some((request) =>
+        request.status === "in_flight" ||
+        request.status === "retryable" ||
+        request.status === "conflicted"
       );
 
       // A local mutation supersedes any snapshot which has not been sent yet.
@@ -526,7 +563,7 @@ function queueSyncOperationInTransaction(
         }
       }
 
-      if (operation === "delete" && metadata.remoteRevision === 0 && !uncertain) {
+      if (operation === "delete" && metadata.remoteRevision === 0 && !unresolved) {
         outboxStore.delete(entityKey);
         metadataStore.delete(entityKey);
         return;
@@ -633,13 +670,13 @@ export async function queueSyncOperation(
           relatedRequest.onsuccess = () => {
             const records = (relatedRequest.result as SyncRequestRecord[])
               .filter((record) => record.ownerUid === ownerUid);
-            const uncertain = records.some((record) => record.status === "in_flight" || record.status === "retryable");
+            const unresolved = records.some((record) => record.status === "in_flight" || record.status === "retryable" || record.status === "conflicted");
             for (const record of records) {
               if (record.status === "prepared") {
                 requestStore.put({ ...record, status: "superseded", updatedAtMs: Date.now() });
               }
             }
-            if (!uncertain) {
+            if (!unresolved) {
               outboxStore.delete(entityKey);
               metadataStore.delete(entityKey);
               result = null;
@@ -1070,7 +1107,11 @@ export async function createSyncRequestSnapshot(
           result = { request: sameRequest, blockedReason: null };
           return;
         }
-        if (sameRequest.status === "acknowledged" || sameRequest.status === "superseded") {
+        if (
+          sameRequest.status === "acknowledged" ||
+          sameRequest.status === "superseded" ||
+          sameRequest.status === "conflicted"
+        ) {
           result = { request: sameRequest, blockedReason: "request_terminal" };
           return;
         }
@@ -1147,7 +1188,7 @@ export async function createSyncRequestSnapshot(
       if (relatedRequests.some((request) =>
         request.ownerUid === ownerUid &&
         request.requestId !== operationId &&
-        (request.status === "in_flight" || request.status === "retryable")
+        (request.status === "in_flight" || request.status === "retryable" || request.status === "conflicted")
       )) {
         result = { request: null, blockedReason: "prior_request_pending" };
         return;
@@ -1247,6 +1288,164 @@ export async function listSyncRequests(
       .sort((a, b) => a.createdAtMs - b.createdAtMs)
       .slice(0, safeLimit));
   });
+}
+
+export async function getSyncConflict(conflictId: string, ownerUid: string): Promise<SyncConflictRecord | null> {
+  validateSyncIdentity(ownerUid, "account ID");
+  return runTransaction<SyncConflictRecord | null>(SYNC_CONFLICT_STORE, "readonly", (store, resolve) => {
+    const request = store.get(conflictId);
+    request.onsuccess = () => {
+      const conflict = request.result as SyncConflictRecord | undefined;
+      resolve(conflict?.ownerUid === ownerUid ? conflict : null);
+    };
+  });
+}
+
+export async function listSyncConflicts(
+  ownerUid: string,
+  statuses?: SyncConflictStatus[],
+  limit = 100
+): Promise<SyncConflictRecord[]> {
+  validateSyncIdentity(ownerUid, "account ID");
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+  return runTransaction<SyncConflictRecord[]>(SYNC_CONFLICT_STORE, "readonly", (store, resolve) => {
+    const request = store.index("ownerUid").getAll(ownerUid);
+    request.onsuccess = () => resolve((request.result as SyncConflictRecord[])
+      .filter((entry) => !statuses || statuses.includes(entry.status))
+      .sort((a, b) => b.updatedAtMs - a.updatedAtMs)
+      .slice(0, safeLimit));
+  });
+}
+
+/**
+ * Converts an uncertain request into a durable terminal conflict. The outbox
+ * operation is intentionally retained as the learner's unresolved local intent,
+ * but preparation is blocked until a dedicated resolution flow rebases or
+ * discards it. Replaying the same conflict response is idempotent.
+ */
+export async function markSyncRequestConflicted(
+  requestId: string,
+  ownerUid: string,
+  remoteRevision: number,
+  conflictCode: SyncConflictCode,
+  remotePayloadSnapshot: SyncPreparedPayload | null = null,
+  remoteIsDeleted = false
+): Promise<SyncConflictRecord> {
+  validateSyncIdentity(ownerUid, "account ID");
+  if (!Number.isSafeInteger(remoteRevision) || remoteRevision < 0) {
+    throw new Error("Invalid remote conflict revision.");
+  }
+  if (
+    conflictCode !== "revision_conflict" &&
+    conflictCode !== "entity_deleted" &&
+    conflictCode !== "immutable_entity_exists"
+  ) {
+    throw new Error("Invalid sync conflict code.");
+  }
+  if (typeof remoteIsDeleted !== "boolean" || (remoteIsDeleted && remotePayloadSnapshot !== null)) {
+    throw new Error("Invalid remote conflict snapshot.");
+  }
+  if (conflictCode === "entity_deleted" && !remoteIsDeleted) {
+    throw new Error("An entity-deleted conflict must include a tombstone state.");
+  }
+
+  const database = await openDatabase();
+  return new Promise<SyncConflictRecord>((resolve, reject) => {
+    const transaction = database.transaction([SYNC_REQUEST_STORE, SYNC_CONFLICT_STORE], "readwrite");
+    const requests = transaction.objectStore(SYNC_REQUEST_STORE);
+    const conflicts = transaction.objectStore(SYNC_CONFLICT_STORE);
+    let result: SyncConflictRecord | null = null;
+    const request = requests.get(requestId);
+    request.onsuccess = () => {
+      const record = request.result as SyncRequestRecord | undefined;
+      if (!record || record.ownerUid !== ownerUid) {
+        transaction.abort();
+        return;
+      }
+      const existingRequest = conflicts.get(requestId);
+      existingRequest.onsuccess = () => {
+        const existing = existingRequest.result as SyncConflictRecord | undefined;
+        if (record.status === "conflicted") {
+          if (
+            !existing ||
+            existing.ownerUid !== ownerUid ||
+            existing.remoteRevision !== remoteRevision ||
+            existing.conflictCode !== conflictCode ||
+            existing.remoteIsDeleted !== remoteIsDeleted ||
+            JSON.stringify(existing.remotePayloadSnapshot) !== JSON.stringify(remotePayloadSnapshot)
+          ) {
+            transaction.abort();
+            return;
+          }
+          result = existing;
+          return;
+        }
+        if (
+          (record.status !== "in_flight" && record.status !== "retryable") ||
+          existing
+        ) {
+          transaction.abort();
+          return;
+        }
+
+        if (remotePayloadSnapshot !== null) {
+          try {
+            validateSyncServerRequest({
+              protocolVersion: 1,
+              requestId: record.requestId,
+              deviceId: record.deviceId,
+              entityType: record.entityType,
+              lessonId: record.lessonId,
+              entityId: record.entityId,
+              operation: "upsert",
+              baseRevision: remoteRevision,
+              payloadSchemaVersion: 1,
+              payload: remotePayloadSnapshot
+            });
+          } catch {
+            transaction.abort();
+            return;
+          }
+        }
+
+        const now = Date.now();
+        const conflict: SyncConflictRecord = {
+          conflictId: requestId,
+          requestId,
+          operationId: record.operationId,
+          ownerUid,
+          entityKey: record.entityKey,
+          entityType: record.entityType,
+          lessonId: record.lessonId,
+          entityId: record.entityId,
+          operation: record.operation,
+          baseRevision: record.baseRevision,
+          remoteRevision,
+          conflictCode,
+          localPayloadSnapshot: record.payloadSnapshot,
+          remotePayloadSnapshot,
+          remoteIsDeleted,
+          status: "open",
+          createdAtMs: now,
+          updatedAtMs: now
+        };
+        conflicts.add(conflict);
+        requests.put({
+          ...record,
+          status: "conflicted",
+          lastErrorCode: conflictCode,
+          updatedAtMs: now
+        } satisfies SyncRequestRecord);
+        result = conflict;
+      };
+    };
+    transaction.oncomplete = () => {
+      if (result) resolve(result);
+      else reject(new Error("Sync conflict was not persisted."));
+    };
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not persist the local sync conflict."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Only a matching in-flight or retryable request can become conflicted."));
+  }).finally(() => database.close());
 }
 
 /** Marks a snapshot as transmitted before the network call begins. */

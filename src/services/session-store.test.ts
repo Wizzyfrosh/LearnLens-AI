@@ -20,7 +20,9 @@ import {
   getLocalSyncClaimCandidates,
   getOrCreateSyncDeviceId,
   getSyncMetadata,
+  getSyncRequest,
   getLocalSyncOperationSnapshots,
+  listSyncConflicts,
   listSyncOutbox,
   queueSyncOperation,
   getLocalSyncCandidateCounts,
@@ -110,6 +112,66 @@ describe("local learning artifact storage", () => {
     expect(schema.version).toBe(9);
     expect(schema.indexes).toContain("ownerUidEntityTypeQueuedAtMs");
     expect(schema.hasRequestStore).toBe(true);
+  });
+
+  it("upgrades version 9 by adding conflict storage without losing request snapshots", async () => {
+    const originalRequest = {
+      requestId: "11111111-1111-4111-8111-111111111111",
+      operationId: "11111111-1111-4111-8111-111111111111",
+      ownerUid: "user-a",
+      deviceId: "22222222-2222-4222-8222-222222222222",
+      entityKey: "note:lesson-9:note-9",
+      entityType: "note",
+      lessonId: "lesson-9",
+      entityId: "note-9",
+      operation: "upsert",
+      baseRevision: 0,
+      payloadSchemaVersion: 1,
+      payloadSnapshot: { title: "Preserve", content: "Do not drop this snapshot.", createdAtMs: 1, updatedAtMs: 2 },
+      status: "in_flight",
+      attemptCount: 1,
+      createdAtMs: 10,
+      updatedAtMs: 11
+    };
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local", 9);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        const requests = db.createObjectStore("syncRequests", { keyPath: "requestId" });
+        requests.createIndex("ownerUid", "ownerUid");
+        requests.createIndex("entityKey", "entityKey");
+        requests.createIndex("status", "status");
+        requests.createIndex("updatedAtMs", "updatedAtMs");
+        const outbox = db.createObjectStore("syncOutbox", { keyPath: "entityKey" });
+        outbox.createIndex("ownerUid", "ownerUid");
+        outbox.createIndex("queuedAtMs", "queuedAtMs");
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        const tx = db.transaction("syncRequests", "readwrite");
+        tx.objectStore("syncRequests").put(originalRequest);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => reject(tx.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    expect(await getSyncRequest(originalRequest.requestId)).toEqual(originalRequest);
+    expect(await listSyncConflicts("user-a")).toEqual([]);
+    const schema = await new Promise<{ version: number; hasConflictStore: boolean }>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local");
+      request.onsuccess = () => {
+        const db = request.result;
+        const result = {
+          version: db.version,
+          hasConflictStore: db.objectStoreNames.contains("syncConflicts")
+        };
+        db.close();
+        resolve(result);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    expect(schema).toEqual({ version: 10, hasConflictStore: true });
   });
 
   it("upgrades version 5 without changing existing learning records and creates empty sync stores", async () => {
