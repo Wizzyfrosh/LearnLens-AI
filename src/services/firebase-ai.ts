@@ -128,7 +128,7 @@ export async function generateQuizText(
     mode: modes[preference],
     inCloudParams: {
       model: "gemini-3.5-flash-lite",
-      generationConfig: { temperature: 0.15, maxOutputTokens: 3500, responseMimeType: "application/json" }
+      generationConfig: { temperature: 0.15, maxOutputTokens: 6000, responseMimeType: "application/json" }
     },
     onDeviceParams: {
       createOptions: {
