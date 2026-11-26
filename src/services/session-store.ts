@@ -19,25 +19,14 @@ export interface LearningNote {
   videoId: string;
   title: string;
   content: string;
-  timestampSeconds: number | null;
   createdAt: number;
   updatedAt: number;
 }
 
-export interface LearningBookmark {
-  id: string;
-  sessionId: string;
-  videoId: string;
-  label: string;
-  timestampSeconds: number;
-  createdAt: number;
-}
-
 const DATABASE_NAME = "learnlens-local";
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 const SESSION_STORE = "learningSessions";
 const NOTE_STORE = "learningNotes";
-const BOOKMARK_STORE = "learningBookmarks";
 const QUIZ_STORE = "learningQuizzes";
 const QUIZ_ATTEMPT_STORE = "quizAttempts";
 
@@ -71,11 +60,24 @@ function openDatabase(): Promise<IDBDatabase> {
         store.createIndex("updatedAt", "updatedAt", { unique: false });
       }
 
-      if (!database.objectStoreNames.contains(BOOKMARK_STORE)) {
-        const store = database.createObjectStore(BOOKMARK_STORE, { keyPath: "id" });
-        store.createIndex("sessionId", "sessionId", { unique: false });
-        store.createIndex("videoId", "videoId", { unique: false });
-        store.createIndex("timestampSeconds", "timestampSeconds", { unique: false });
+      // Remove the retired timestamp-bookmark store and strip legacy note timestamps.
+      // Learner notes are now standalone study documents, not timestamp anchors.
+      if (database.objectStoreNames.contains("learningBookmarks")) {
+        database.deleteObjectStore("learningBookmarks");
+      }
+      const notesStore = transaction?.objectStore(NOTE_STORE);
+      if (notesStore) {
+        const cursorRequest = notesStore.openCursor();
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result;
+          if (!cursor) return;
+          const note = cursor.value as Record<string, unknown>;
+          if ("timestampSeconds" in note) {
+            delete note.timestampSeconds;
+            cursor.update(note);
+          }
+          cursor.continue();
+        };
       }
 
       if (!database.objectStoreNames.contains(QUIZ_STORE)) {
@@ -156,9 +158,9 @@ export function getLatestSessionForVideo(videoId: string): Promise<LearningSessi
   });
 }
 
-export function getLatestManualSession(): Promise<LearningSession | null> {
+export function getLatestSavedSession(): Promise<LearningSession | null> {
   return runTransaction<LearningSession | null>(SESSION_STORE, "readonly", (store, resolve) => {
-    const request = store.index("platform").getAll("manual");
+    const request = store.getAll();
     request.onsuccess = () => {
       const sessions = (request.result as LearningSession[]).sort((a, b) => b.updatedAt - a.updatedAt);
       resolve(sessions[0] ?? null);
@@ -169,9 +171,9 @@ export function getLatestManualSession(): Promise<LearningSession | null> {
 export async function deleteLearningSession(id: string): Promise<void> {
   const database = await openDatabase();
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction([SESSION_STORE, NOTE_STORE, BOOKMARK_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE], "readwrite");
+    const transaction = database.transaction([SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE], "readwrite");
     transaction.objectStore(SESSION_STORE).delete(id);
-    for (const storeName of [NOTE_STORE, BOOKMARK_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE]) {
+    for (const storeName of [NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE]) {
       const store = transaction.objectStore(storeName);
       const request = store.index("sessionId").getAllKeys(id);
       request.onsuccess = () => {
@@ -207,29 +209,6 @@ export function searchLearningNotes(sessionId: string, query: string): Promise<L
 
 export function deleteLearningNote(id: string): Promise<void> {
   return runTransaction<void>(NOTE_STORE, "readwrite", (store) => {
-    store.delete(id);
-  });
-}
-
-export function saveLearningBookmark(bookmark: LearningBookmark): Promise<void> {
-  if (!Number.isFinite(bookmark.timestampSeconds) || bookmark.timestampSeconds < 0) {
-    return Promise.reject(new Error("A bookmark requires a valid non-negative lesson timestamp."));
-  }
-  return runTransaction<void>(BOOKMARK_STORE, "readwrite", (store) => {
-    store.put(bookmark);
-  });
-}
-
-export function listLearningBookmarks(sessionId: string): Promise<LearningBookmark[]> {
-  if (!sessionId) return Promise.resolve([]);
-  return runTransaction<LearningBookmark[]>(BOOKMARK_STORE, "readonly", (store, resolve) => {
-    const request = store.index("sessionId").getAll(sessionId);
-    request.onsuccess = () => resolve((request.result as LearningBookmark[]).sort((a, b) => a.timestampSeconds - b.timestampSeconds));
-  });
-}
-
-export function deleteLearningBookmark(id: string): Promise<void> {
-  return runTransaction<void>(BOOKMARK_STORE, "readwrite", (store) => {
     store.delete(id);
   });
 }
