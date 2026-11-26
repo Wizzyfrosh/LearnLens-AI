@@ -24,11 +24,14 @@ export interface LearningNote {
 }
 
 const DATABASE_NAME = "learnlens-local";
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 6;
 const SESSION_STORE = "learningSessions";
 const NOTE_STORE = "learningNotes";
 const QUIZ_STORE = "learningQuizzes";
 const QUIZ_ATTEMPT_STORE = "quizAttempts";
+const SYNC_METADATA_STORE = "syncMetadata";
+const SYNC_OUTBOX_STORE = "syncOutbox";
+const SYNC_DEVICE_STORE = "syncDevice";
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -91,6 +94,22 @@ function openDatabase(): Promise<IDBDatabase> {
         store.createIndex("sessionId", "sessionId", { unique: false });
         store.createIndex("quizId", "quizId", { unique: false });
         store.createIndex("createdAt", "createdAt", { unique: false });
+      }
+
+      // v6 adds empty sync infrastructure stores. Existing learning records are
+      // deliberately not claimed or queued during migration.
+      if (!database.objectStoreNames.contains(SYNC_METADATA_STORE)) {
+        const store = database.createObjectStore(SYNC_METADATA_STORE, { keyPath: "entityKey" });
+        store.createIndex("ownerUid", "ownerUid", { unique: false });
+        store.createIndex("lessonId", "lessonId", { unique: false });
+      }
+      if (!database.objectStoreNames.contains(SYNC_OUTBOX_STORE)) {
+        const store = database.createObjectStore(SYNC_OUTBOX_STORE, { keyPath: "entityKey" });
+        store.createIndex("ownerUid", "ownerUid", { unique: false });
+        store.createIndex("queuedAtMs", "queuedAtMs", { unique: false });
+      }
+      if (!database.objectStoreNames.contains(SYNC_DEVICE_STORE)) {
+        database.createObjectStore(SYNC_DEVICE_STORE, { keyPath: "key" });
       }
     };
     request.onsuccess = () => {
@@ -249,4 +268,223 @@ export function listQuizAttempts(sessionId: string): Promise<QuizAttempt[]> {
     const request = store.index("sessionId").getAll(sessionId);
     request.onsuccess = () => resolve((request.result as QuizAttempt[]).sort((a, b) => b.createdAt - a.createdAt));
   });
+}
+
+
+export type SyncEntityType = "lesson" | "note" | "quiz" | "attempt";
+export type SyncCategory = "lessonMetadata" | "notes" | "quizzes" | "attempts";
+export type SyncOperation = "upsert" | "delete";
+
+export interface SyncMetadataRecord {
+  entityKey: string;
+  entityType: SyncEntityType;
+  lessonId: string;
+  entityId: string;
+  ownerUid: string;
+  remoteRevision: number;
+  lastSyncedAtMs: number | null;
+  syncCategory: SyncCategory;
+}
+
+export interface SyncOutboxRecord {
+  entityKey: string;
+  operationId: string;
+  ownerUid: string;
+  entityType: SyncEntityType;
+  lessonId: string;
+  entityId: string;
+  operation: SyncOperation;
+  baseRevision: number;
+  payloadSchemaVersion: 1;
+  queuedAtMs: number;
+  retryCount: number;
+  lastErrorCode?: string;
+}
+
+export interface SyncDeviceRecord {
+  key: "installation";
+  deviceId: string;
+  createdAtMs: number;
+}
+
+function validateSyncIdentity(value: string, field: string): void {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(value)) {
+    throw new Error(`Invalid sync ${field}.`);
+  }
+}
+
+export async function getSyncMetadata(entityKey: string): Promise<SyncMetadataRecord | null> {
+  return runTransaction<SyncMetadataRecord | null>(SYNC_METADATA_STORE, "readonly", (store, resolve) => {
+    const request = store.get(entityKey);
+    request.onsuccess = () => resolve((request.result as SyncMetadataRecord | undefined) ?? null);
+  });
+}
+
+/** Explicitly binds a local record to one account. It never reassigns another account's data. */
+export async function claimSyncEntity(input: Omit<SyncMetadataRecord, "remoteRevision" | "lastSyncedAtMs">): Promise<SyncMetadataRecord> {
+  validateSyncIdentity(input.ownerUid, "account ID");
+  validateSyncIdentity(input.lessonId, "lesson ID");
+  validateSyncIdentity(input.entityId, "entity ID");
+  const database = await openDatabase();
+  return new Promise<SyncMetadataRecord>((resolve, reject) => {
+    const transaction = database.transaction(SYNC_METADATA_STORE, "readwrite");
+    const store = transaction.objectStore(SYNC_METADATA_STORE);
+    let result: SyncMetadataRecord | null = null;
+    const request = store.get(input.entityKey);
+    request.onsuccess = () => {
+      const existing = request.result as SyncMetadataRecord | undefined;
+      if (existing && existing.ownerUid !== input.ownerUid) {
+        transaction.abort();
+        return;
+      }
+      result = existing ?? { ...input, remoteRevision: 0, lastSyncedAtMs: null };
+      store.put(result);
+    };
+    transaction.oncomplete = () => resolve(result as SyncMetadataRecord);
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not claim this local record for sync."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("This local record belongs to another account."));
+  }).finally(() => database.close());
+}
+
+/** Coalesces pending changes by entity. No payload or transcript is copied into the outbox. */
+export async function queueSyncOperation(
+  entityKey: string,
+  ownerUid: string,
+  operation: SyncOperation
+): Promise<SyncOutboxRecord | null> {
+  validateSyncIdentity(ownerUid, "account ID");
+  const database = await openDatabase();
+  return new Promise<SyncOutboxRecord | null>((resolve, reject) => {
+    const transaction = database.transaction([SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    const metadataStore = transaction.objectStore(SYNC_METADATA_STORE);
+    const outboxStore = transaction.objectStore(SYNC_OUTBOX_STORE);
+    let result: SyncOutboxRecord | null = null;
+    const metadataRequest = metadataStore.get(entityKey);
+    metadataRequest.onsuccess = () => {
+      const metadata = metadataRequest.result as SyncMetadataRecord | undefined;
+      if (!metadata || metadata.ownerUid !== ownerUid) {
+        transaction.abort();
+        return;
+      }
+      const pendingRequest = outboxStore.get(entityKey);
+      pendingRequest.onsuccess = () => {
+        const pending = pendingRequest.result as SyncOutboxRecord | undefined;
+        if (pending && pending.ownerUid !== ownerUid) {
+          transaction.abort();
+          return;
+        }
+        if (operation === "delete" && metadata.remoteRevision === 0 && pending?.operation === "upsert") {
+          outboxStore.delete(entityKey);
+          result = null;
+          return;
+        }
+        const operationId = pending && pending.operation === operation
+          ? pending.operationId
+          : crypto.randomUUID();
+        result = {
+          entityKey,
+          operationId,
+          ownerUid,
+          entityType: metadata.entityType,
+          lessonId: metadata.lessonId,
+          entityId: metadata.entityId,
+          operation,
+          baseRevision: metadata.remoteRevision,
+          payloadSchemaVersion: 1,
+          queuedAtMs: Date.now(),
+          retryCount: pending?.retryCount ?? 0
+        };
+        outboxStore.put(result);
+      };
+    };
+    transaction.oncomplete = () => resolve(result);
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not queue the local sync operation."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Sync operation rejected because account ownership did not match."));
+  }).finally(() => database.close());
+}
+
+export async function listSyncOutbox(ownerUid: string, limit = 100): Promise<SyncOutboxRecord[]> {
+  validateSyncIdentity(ownerUid, "account ID");
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+  return runTransaction<SyncOutboxRecord[]>(SYNC_OUTBOX_STORE, "readonly", (store, resolve) => {
+    const request = store.index("ownerUid").getAll(ownerUid);
+    request.onsuccess = () => resolve((request.result as SyncOutboxRecord[])
+      .sort((a, b) => a.queuedAtMs - b.queuedAtMs)
+      .slice(0, safeLimit));
+  });
+}
+
+export async function acknowledgeSyncOperation(
+  entityKey: string,
+  ownerUid: string,
+  operationId: string,
+  newRevision: number
+): Promise<void> {
+  if (!Number.isSafeInteger(newRevision) || newRevision < 1) throw new Error("Invalid acknowledged sync revision.");
+  const database = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction([SYNC_METADATA_STORE, SYNC_OUTBOX_STORE], "readwrite");
+    const metadataStore = transaction.objectStore(SYNC_METADATA_STORE);
+    const outboxStore = transaction.objectStore(SYNC_OUTBOX_STORE);
+    const request = outboxStore.get(entityKey);
+    request.onsuccess = () => {
+      const pending = request.result as SyncOutboxRecord | undefined;
+      if (!pending || pending.ownerUid !== ownerUid || pending.operationId !== operationId) {
+        transaction.abort();
+        return;
+      }
+      if (newRevision !== pending.baseRevision + 1) {
+        transaction.abort();
+        return;
+      }
+      const metadataRequest = metadataStore.get(entityKey);
+      metadataRequest.onsuccess = () => {
+        const metadata = metadataRequest.result as SyncMetadataRecord | undefined;
+        if (!metadata || metadata.ownerUid !== ownerUid || metadata.remoteRevision !== pending.baseRevision) {
+          transaction.abort();
+          return;
+        }
+        metadataStore.put({ ...metadata, remoteRevision: newRevision, lastSyncedAtMs: Date.now() });
+        outboxStore.delete(entityKey);
+      };
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not acknowledge the sync operation."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Sync acknowledgement was stale or did not match the pending operation."));
+  }).finally(() => database.close());
+}
+
+export async function recordSyncRetry(
+  entityKey: string,
+  operationId: string,
+  errorCode: string
+): Promise<void> {
+  const safeCode = errorCode.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+  if (!safeCode) throw new Error("Invalid sync error code.");
+  return runTransaction<void>(SYNC_OUTBOX_STORE, "readwrite", (store) => {
+    const request = store.get(entityKey);
+    request.onsuccess = () => {
+      const pending = request.result as SyncOutboxRecord | undefined;
+      if (!pending || pending.operationId !== operationId) return;
+      store.put({ ...pending, retryCount: Math.min(20, pending.retryCount + 1), lastErrorCode: safeCode });
+    };
+  });
+}
+
+export async function getOrCreateSyncDeviceId(): Promise<string> {
+  const database = await openDatabase();
+  return new Promise<string>((resolve, reject) => {
+    const transaction = database.transaction(SYNC_DEVICE_STORE, "readwrite");
+    const store = transaction.objectStore(SYNC_DEVICE_STORE);
+    let deviceId = "";
+    const request = store.get("installation");
+    request.onsuccess = () => {
+      const existing = request.result as SyncDeviceRecord | undefined;
+      deviceId = existing?.deviceId ?? crypto.randomUUID();
+      if (!existing) store.put({ key: "installation", deviceId, createdAtMs: Date.now() } satisfies SyncDeviceRecord);
+    };
+    transaction.oncomplete = () => resolve(deviceId);
+    transaction.onerror = () => reject(transaction.error ?? new Error("Could not initialize the local sync device ID."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("Could not initialize the local sync device ID."));
+  }).finally(() => database.close());
 }
