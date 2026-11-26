@@ -136,17 +136,17 @@ Exit: Phase 5 implementation, automated checks, and desktop Chrome runtime verif
 **Phase boundary:** Keep LearnLens local-first. A learner must be able to use lessons, notes, quizzes, and attempts without signing in. Cloud sync is an explicit opt-in and must never silently upload lesson transcripts or raw audio.
 
 **Phase 6A — Security and data design (do first)**
-- [ ] Audit the current IndexedDB stores and define a versioned cloud DTO for each syncable artifact; do not upload internal IndexedDB records blindly.
-- [ ] Decide the initial sync scope: notes, quiz definitions, quiz attempts, and minimal lesson metadata only. Transcript segments and raw audio remain device-local by default.
-- [ ] Define stable per-user document paths, ownership fields, schema versions, server timestamps, and size limits.
-- [ ] Define deletion/tombstone behavior so deletes propagate across devices without resurrecting stale records.
-- [ ] Define deterministic conflict handling (updatedAt + revision/version) and document the user-visible behavior for concurrent edits.
-- [ ] Threat-model account switching, stale credentials, replayed writes, cross-user reads, offline queues, and partial sync failures.
+- [x] Audit the current IndexedDB stores and define a versioned cloud DTO for each syncable artifact; do not upload internal IndexedDB records blindly.
+- [x] Decide the initial sync scope: notes, quiz definitions, quiz attempts, and minimal lesson metadata only. Transcript segments and raw audio remain device-local by default.
+- [x] Define stable per-user document paths, ownership fields, schema versions, server timestamps, and size limits.
+- [x] Define deletion/tombstone behavior so deletes propagate across devices without resurrecting stale records.
+- [x] Define revision-based conflict handling that does not rely on client clocks, and document user-visible behavior for concurrent edits.
+- [x] Threat-model account switching, stale credentials, replayed writes, cross-user reads, offline queues, and partial sync failures.
 
-**Phase 6B — Identity and Firebase security**
+**Phase 6A exit:** Completed in `docs/CLOUD_SYNC_DATA_MODEL.md`. Phase 6B can begin with email/password Auth and emulator-only Rules work. Production sync remains blocked until the extension App Check strategy is proven.\n\n**Phase 6B — Identity and Firebase security**
 - [ ] Add Firebase Auth behind a dedicated auth service; keep app initialization shared and avoid coupling Auth to AI request code.
 - [ ] Implement sign-in, sign-out, session restoration, and explicit account-state UI. Do not block local use when signed out.
-- [ ] Choose and document the supported sign-in methods before implementation; do not add providers the UI and recovery flow cannot support.
+- [x] Choose and document email/password as the first sign-in method, including email verification and password reset; defer OAuth popup/redirect providers.
 - [ ] Add Firestore rules that deny by default and enforce request.auth.uid ownership on every read/write path.
 - [ ] Add emulator/security-rule tests for unauthenticated access, cross-user access, malformed payloads, and ownership changes.
 - [ ] Resolve production-compatible App Check for a Chrome extension before enabling sync. The existing debug-token provider is development-only and is not an acceptable production control.
@@ -280,3 +280,11 @@ Next exit criteria:
 - The current App Check setup explicitly uses a debug token. This is development-only and must not be reused as production protection for cloud sync.
 - Phase 6 must begin with a security/data-model design and a production-compatible App Check decision, before any sync writes are implemented.
 - Preserve the existing local-first IndexedDB workflow. Initial cloud scope should be limited to opted-in notes, quizzes, attempts, and minimal lesson metadata; transcript segments and raw audio remain local by default.
+
+
+## 14. Phase 6A data model completed — 2026-11-26
+- Audited schema v5 in `src/services/session-store.ts`: learningSessions, learningNotes, learningQuizzes, and quizAttempts are the active stores; learningBookmarks was retired in v5.
+- Added `docs/CLOUD_SYNC_DATA_MODEL.md` with allow-listed DTOs, per-user Firestore paths, revision-based conflict rules, tombstones, local outbox design, account-switch safeguards, and a threat model.
+- Selected email/password as the first Auth method using the Firebase `firebase/auth/web-extension` entry point; verification and password reset are required. OAuth popup/redirect is deferred.
+- Phase 6A is complete. No Auth, Firestore writes, sync UI, or cloud sync code has been implemented yet.
+- App Check remains a production blocker: Firebase's web documentation does not establish that the Chrome extension origin is accepted by reCAPTCHA Enterprise. A real installed-extension attestation spike is required before sync enforcement.
