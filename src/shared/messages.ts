@@ -37,6 +37,7 @@ export type ExtensionMessage =
   | { type: "LEARNLENS_AUDIO_CHUNK"; payload: AudioChunkPayload }
   | { type: "LEARNLENS_CONTENT_START_CAPTION_CAPTURE" }
   | { type: "LEARNLENS_CONTENT_STOP_CAPTION_CAPTURE" }
+  | { type: "LEARNLENS_OPEN_QUIZ_OVERLAY" }
   | { type: "LEARNLENS_CAPTURE_STATUS"; payload: CaptionCaptureStatusPayload }
   | { type: "LEARNLENS_CAPTION_SEGMENT"; payload: TranscriptSegment };
 
