@@ -318,7 +318,7 @@ Next exit criteria:
 - Added regression tests for v5→v6 preservation, account ownership, outbox coalescing/acknowledgement, stale acknowledgements, unsynced deletion, device ID persistence, DTO allow-lists, URL sanitization, timestamps, and payload size limits.
 
 **Explicitly not implemented yet**
-- Existing local save/delete operations are not yet atomically coupled to the outbox. The current APIs are foundation primitives only; no automatic enqueue occurs.
+- Lesson metadata changes, note/quiz/attempt saves, note deletion, quiz deletion with attempt children, and lesson deletion with all child artifacts now enqueue account-claimed operations atomically with the local mutation. Transcript-only lesson autosaves do not enqueue metadata. Unclaimed records remain local-only. The first-claim preview must explicitly queue selected existing records.
 - No account-claim preview, sync consent UI, background sync runner, Firestore artifact writes, pull cursor, conflict resolver, or tombstone propagation is enabled.
 - Live Firebase Auth setup and production-compatible App Check remain release gates.
 
