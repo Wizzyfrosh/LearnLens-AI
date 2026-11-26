@@ -148,3 +148,11 @@ footer{border-top:1px solid #e8ebf2;padding-top:13px;color:#9aa3b2;font-size:9px
 .quiz-result strong{font-size:12px;color:#344158}
 .quiz-result p,.quiz-history-summary{font-size:10px;line-height:1.5;color:#65738a;margin:0}
 .quiz-history-summary{margin-top:10px}
+
+.quiz-feedback strong{font-weight:700;color:#465875}
+.quiz-attempt-history,.topic-review-summary{display:grid;gap:7px;margin-top:13px}
+.quiz-attempt-history>strong,.topic-review-summary>strong{font-size:11px;color:#344158}
+.quiz-attempt-history article{display:grid;gap:3px;border-bottom:1px solid #edf0f5;padding:7px 0}
+.quiz-attempt-history article span{font-size:10px;color:#59677d}
+.quiz-attempt-history article small,.topic-review-summary small{font-size:9px;line-height:1.5;color:#8792a5}
+.topic-review-summary>span{display:inline-flex;align-self:start;border-radius:6px;background:#f3f6fb;color:#596b8d;padding:5px 8px;font-size:9px}
