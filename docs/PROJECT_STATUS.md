@@ -106,7 +106,7 @@
 - Production-compatible App Check for a Chrome extension must be resolved before sync is enabled. Do not ship the debug-token provider as production attestation.
 - Account switching, offline writes, conflict handling, deletion propagation, and local/cloud data export must be designed and tested.
 
-**Next exact task:** Complete Phase 6A: inspect the IndexedDB schema and define versioned cloud DTOs, per-user document paths, conflict/tombstone semantics, and a threat model. Then decide the supported sign-in methods and production App Check strategy before implementing Auth or Firestore writes.
+**Next exact task:** Start Phase 6B with Firebase Auth email/password behind a dedicated auth service and account-state UI that leaves signed-out local usage unchanged. In parallel, add Firestore Emulator configuration and deny-by-default per-UID Rules tests. Do not enable production sync or Firestore enforcement until the App Check extension-origin spike has a verified result.
 
 
 ## 2026-11-26 follow-up — notes navigation and 10-question quiz reliability
@@ -131,3 +131,22 @@
 - Phase 6 roadmap is now decomposed into security/data design, identity and Firebase security, and opt-in sync engine/user controls.
 - No Phase 6 code has been implemented yet. The immediate work is schema/security design, not blindly adding Firestore writes.
 - Important blocker: current App Check uses a development debug token. A production-compatible Chrome-extension attestation approach is required before cloud sync can be enabled.
+
+
+## 2026-11-26 — Phase 6A data-model audit complete
+
+**Audited IndexedDB v5**
+- Confirmed four active stores: `learningSessions`, `learningNotes`, `learningQuizzes`, and `quizAttempts`. The v5 migration removed `learningBookmarks`.
+- Session records contain `transcriptText`; therefore raw local session records must never be serialized directly to Firestore.
+- Note, quiz, and attempt IDs are UUIDs. YouTube session IDs are the YouTube video ID; manually imported session IDs are UUIDs.
+- Notes and session metadata are mutable; quizzes and attempts are currently append-only in the UI. Local deletes are physical and cascade to child records, so sync needs outbox/tombstone writes in the same local transaction.
+- Existing records have no account owner, device ID, remote revision, outbox, or tombstone metadata.
+
+**Data model decisions**
+- Added [Cloud Sync Data Model](./CLOUD_SYNC_DATA_MODEL.md) defining cloud DTO allow-lists, Firestore paths under `users/{uid}`, v6 local sync metadata/outbox stores, revision compare-and-set, conflict copies, child tombstones, account-switch safeguards, and the threat model.
+- Full transcript text, transcript segments, raw audio, tutor prompts/conversations, tokens, and browser state are excluded from v1 sync. Quiz evidence quotes and learner answers are included only when their respective sync categories are explicitly enabled.
+- Selected email/password as the first Auth method, with verification and password-reset flows. OAuth popup/redirect is deferred.
+- Phase 6A is complete. No Auth, Firestore writes, or sync code has been implemented yet.
+
+**Open production gate**
+- Current App Check code uses the debug provider. Firebase's web App Check docs describe reCAPTCHA Enterprise Web keys with configured domains but do not establish compatibility with the Chrome extension origin. Verify this with the actual installed extension ID or a secure hosted attestation design before enabling sync. Never replace this with a public token-minting endpoint or a bundled secret.
