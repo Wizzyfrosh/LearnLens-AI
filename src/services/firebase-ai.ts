@@ -218,7 +218,7 @@ export async function askLearnLens(
     `LEARNER QUESTION: ${question}`
   ].join("\n");
 
-  const result = await model.generateContent(prompt);
+  const result = await withAppCheckGuidance(model.generateContent(prompt));
   const source = result.response.inferenceSource;
 
   // Firebase exposes lowercase enum values. Keep LearnLens's UI contract
