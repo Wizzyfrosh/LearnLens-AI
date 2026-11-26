@@ -498,6 +498,7 @@ function syncEntityKey(type: SyncEntityType, lessonId: string, entityId: string)
 
 /** Must be called inside the same read/write transaction as the local mutation. */
 /** Must be called inside the same read/write transaction as the local mutation. */
+/** Must be called inside the same read/write transaction as the local mutation. */
 function queueSyncOperationInTransaction(
   metadataStore: IDBObjectStore,
   outboxStore: IDBObjectStore,
@@ -510,7 +511,28 @@ function queueSyncOperationInTransaction(
     const metadata = metadataRequest.result as SyncMetadataRecord | undefined;
     if (!metadata) return; // Local-only records are never queued implicitly.
 
-    const queueLatestOperation = () => {
+    const relatedRequest = requestStore.index("entityKey").getAll(entityKey);
+    relatedRequest.onsuccess = () => {
+      const related = relatedRequest.result as SyncRequestRecord[];
+      const uncertain = related.some((request) =>
+        request.status === "in_flight" || request.status === "retryable"
+      );
+
+      // A local mutation supersedes any snapshot which has not been sent yet.
+      // In-flight/retryable snapshots remain immutable until their outcome is
+      // resolved, because a timeout does not prove that the server rejected it.
+      for (const request of related) {
+        if (request.status === "prepared") {
+          requestStore.put({ ...request, status: "superseded", updatedAtMs: Date.now() });
+        }
+      }
+
+      if (operation === "delete" && metadata.remoteRevision === 0 && !uncertain) {
+        outboxStore.delete(entityKey);
+        metadataStore.delete(entityKey);
+        return;
+      }
+
       outboxStore.put({
         entityKey,
         operationId: crypto.randomUUID(),
@@ -524,33 +546,6 @@ function queueSyncOperationInTransaction(
         queuedAtMs: Date.now(),
         retryCount: 0
       } satisfies SyncOutboxRecord);
-    };
-
-    if (operation !== "delete" || metadata.remoteRevision > 0) {
-      queueLatestOperation();
-      return;
-    }
-
-    // A never-uploaded record may be discarded locally. However, a prepared
-    // request is not proof of transmission, while an in-flight/retryable request
-    // may already have reached the server and therefore requires a tombstone.
-    const requests = requestStore.index("entityKey").getAll(entityKey);
-    requests.onsuccess = () => {
-      const related = requests.result as SyncRequestRecord[];
-      const uncertain = related.some((request) =>
-        request.status === "in_flight" || request.status === "retryable"
-      );
-      for (const request of related) {
-        if (request.status === "prepared") {
-          requestStore.put({ ...request, status: "superseded", updatedAtMs: Date.now() });
-        }
-      }
-      if (!uncertain) {
-        outboxStore.delete(entityKey);
-        metadataStore.delete(entityKey);
-        return;
-      }
-      queueLatestOperation();
     };
   };
 }
@@ -634,16 +629,19 @@ export async function queueSyncOperation(
           transaction.abort();
           return;
         }
-        if (operation === "delete" && metadata.remoteRevision === 0 && pending?.operation === "upsert") {
+        if (operation === "delete" && metadata.remoteRevision === 0) {
           const relatedRequest = requestStore.index("entityKey").getAll(entityKey);
           relatedRequest.onsuccess = () => {
             const records = relatedRequest.result as SyncRequestRecord[];
             const uncertain = records.some((record) => record.status === "in_flight" || record.status === "retryable");
             for (const record of records) {
-              if (record.status === "prepared") requestStore.put({ ...record, status: "superseded", updatedAtMs: Date.now() });
+              if (record.status === "prepared") {
+                requestStore.put({ ...record, status: "superseded", updatedAtMs: Date.now() });
+              }
             }
             if (!uncertain) {
               outboxStore.delete(entityKey);
+              metadataStore.delete(entityKey);
               result = null;
               return;
             }

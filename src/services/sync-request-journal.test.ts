@@ -168,8 +168,8 @@ describe("durable sync request journal", () => {
     const first = prepared.requests[0];
 
     await saveLearningNote({ ...note, content: "Changed before send", updatedAt: 3 });
-    const oldRequest = await markSyncRequestInFlight(first.requestId, "user-a");
-    expect(oldRequest.status).toBe("superseded");
+    expect((await getSyncRequest(first.requestId))?.status).toBe("superseded");
+    await expect(markSyncRequestInFlight(first.requestId, "user-a")).rejects.toThrow();
     expect((await getSyncRequest(first.requestId))?.payloadSnapshot).toMatchObject({ content: "Before send" });
 
     const latest = await prepareSyncRequests("user-a", 10);
