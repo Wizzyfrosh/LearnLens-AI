@@ -1,6 +1,7 @@
 import {
   createSyncRequestSnapshot,
   getLocalSyncOperationSnapshots,
+  pruneSyncRequestHistory,
   getLocalSyncPreferences,
   getOrCreateSyncDeviceId
 } from "./session-store";
@@ -103,6 +104,7 @@ export async function prepareSyncRequests(
   limit = 25
 ): Promise<PreparedSyncRequestBatch> {
   const batch = await prepareSyncBatch(ownerUid, limit);
+  await pruneSyncRequestHistory(ownerUid, 100);
   const requests: SyncRequestRecord[] = [];
   const blocked: PreparedSyncRequestBatch["blocked"] = [...batch.blocked];
 

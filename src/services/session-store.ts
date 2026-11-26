@@ -497,8 +497,6 @@ function syncEntityKey(type: SyncEntityType, lessonId: string, entityId: string)
 }
 
 /** Must be called inside the same read/write transaction as the local mutation. */
-/** Must be called inside the same read/write transaction as the local mutation. */
-/** Must be called inside the same read/write transaction as the local mutation. */
 function queueSyncOperationInTransaction(
   metadataStore: IDBObjectStore,
   outboxStore: IDBObjectStore,
@@ -513,7 +511,8 @@ function queueSyncOperationInTransaction(
 
     const relatedRequest = requestStore.index("entityKey").getAll(entityKey);
     relatedRequest.onsuccess = () => {
-      const related = relatedRequest.result as SyncRequestRecord[];
+      const related = (relatedRequest.result as SyncRequestRecord[])
+        .filter((request) => request.ownerUid === metadata.ownerUid);
       const uncertain = related.some((request) =>
         request.status === "in_flight" || request.status === "retryable"
       );
@@ -632,7 +631,8 @@ export async function queueSyncOperation(
         if (operation === "delete" && metadata.remoteRevision === 0) {
           const relatedRequest = requestStore.index("entityKey").getAll(entityKey);
           relatedRequest.onsuccess = () => {
-            const records = relatedRequest.result as SyncRequestRecord[];
+            const records = (relatedRequest.result as SyncRequestRecord[])
+              .filter((record) => record.ownerUid === ownerUid);
             const uncertain = records.some((record) => record.status === "in_flight" || record.status === "retryable");
             for (const record of records) {
               if (record.status === "prepared") {
@@ -1090,6 +1090,25 @@ export async function createSyncRequestSnapshot(
         result = { request: null, blockedReason: "operation_changed" };
         return;
       }
+      const supportedTypes: SyncEntityType[] = ["lesson", "note", "quiz", "attempt"];
+      try {
+        validateSyncIdentity(pending.ownerUid, "account ID");
+        validateSyncIdentity(pending.lessonId, "lesson ID");
+        validateSyncIdentity(pending.entityId, "entity ID");
+      } catch {
+        result = { request: null, blockedReason: "invalid_outbox" };
+        return;
+      }
+      if (
+        !supportedTypes.includes(pending.entityType) ||
+        pending.entityKey !== syncEntityKey(pending.entityType, pending.lessonId, pending.entityId) ||
+        (pending.operation !== "upsert" && pending.operation !== "delete") ||
+        !Number.isSafeInteger(pending.baseRevision) || pending.baseRevision < 0 ||
+        pending.payloadSchemaVersion !== 1
+      ) {
+        result = { request: null, blockedReason: "invalid_outbox" };
+        return;
+      }
       if (!metadata) {
         result = { request: null, blockedReason: "metadata_missing" };
         return;
@@ -1112,12 +1131,16 @@ export async function createSyncRequestSnapshot(
         lesson: "lessonMetadata", note: "notes", quiz: "quizzes", attempt: "attempts"
       };
       const category = categoryByType[pending.entityType];
+      if (metadata.syncCategory !== category) {
+        result = { request: null, blockedReason: "ownership_mismatch" };
+        return;
+      }
       if (!preferences?.categories[category]) {
         result = { request: null, blockedReason: "category_not_enabled" };
         return;
       }
       for (const request of relatedRequests) {
-        if (request.requestId !== operationId && request.status === "prepared") {
+        if (request.ownerUid === ownerUid && request.requestId !== operationId && request.status === "prepared") {
           requests.put({ ...request, status: "superseded", updatedAtMs: Date.now() });
         }
       }
