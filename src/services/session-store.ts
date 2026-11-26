@@ -92,8 +92,7 @@ function runTransaction<T>(
 ): Promise<T> {
   return openDatabase().then((database) => new Promise<T>((resolve, reject) => {
     let settled = false;
-    let hasResult = false;
-    let result: T;
+    let result: T = undefined as T;
     const finish = (callback: () => void) => {
       if (settled) return;
       settled = true;
@@ -107,13 +106,9 @@ function runTransaction<T>(
       transaction.onabort = () => finish(() => reject(transaction.error ?? new Error("Local storage transaction was cancelled.")));
       operation(
         transaction.objectStore(storeName),
-        (value) => { result = value; hasResult = true; },
+        (value) => { result = value; },
         (error) => finish(() => reject(error))
       );
-      if (mode === "readwrite" && !hasResult) {
-        // Write operations resolve with undefined after the transaction commits.
-        result = undefined as T;
-      }
     } catch (error) {
       finish(() => reject(error instanceof Error ? error : new Error("Could not start local storage transaction.")));
     }
