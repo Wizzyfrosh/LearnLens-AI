@@ -350,3 +350,21 @@ Next exit criteria:
 **Safety boundary**
 - No Firestore learning-artifact writes were added. Do not enable sync until opt-in controls, account-switch isolation, live Auth QA, and production App Check are verified. Mutation/outbox atomicity is implemented for the existing local CRUD paths.
 - Extension/package version remains 0.1.0.
+
+
+## 17. Phase 6.4 — explicit cloud-sync consent client foundation (2026-11-27)
+
+**Implemented**
+- Added a separate client module for the `updateSyncSettings` Firebase callable. The module validates the exact consent schema and category dependencies, checks that the signed-in UID matches the requested owner, requires email verification, obtains an Auth token, and validates the server response.
+- Kept the server-consent transport behind `SYNC_SERVER_CONSENT_WRITES_ENABLED = false`. The production wrapper exits before Auth/Functions initialization, App Check token acquisition, or network I/O. Tests use injected dependencies to verify the callable orchestration without contacting Firebase.
+- Added an Account consent-review surface that displays selected categories and requires an acknowledgement. It clearly states that full transcript text and the complete caption stream are excluded from sync; short quiz evidence excerpts are included when Quiz definitions are selected; audio is excluded from sync but the separate audio-transcription feature retains its own explicit permission.
+- Hardened the callable's backend validator and Firestore Rules so enabled consent cannot be saved with all categories disabled. Quiz attempts remain dependent on Quiz definitions.
+- Verified on commit `1002b6b5e8ff6353c0753d471a386df00180b148`: 15 Vitest files / 167 unit tests, 11 Firestore Rules tests, 26 Firebase Functions/Admin tests, typecheck, production build, Chrome package verification, and artifact upload all passed.
+
+**Still blocked / next steps**
+- Server-consent submission remains hard-disabled; no live consent write has occurred.
+- Add authenticated retrieval of the saved server consent so the Account UI can accurately display persisted consent after reload and offer a clear withdrawal/status control.
+- Confirm the production Firebase project and Functions/Firestore region; complete live Auth verification; establish production App Check for the published Chrome extension ID; configure `SYNC_CURSOR_HMAC_KEY` in Secret Manager; deploy only after explicit review.
+- Manually test the Account consent-review UI in desktop Chrome after the release gate is ready. Then test a read-only pull with a second device before any artifact writes are considered.
+- Keep `SYNC_CLOUD_PULL_ENABLED`, `SYNC_CLOUD_WRITES_ENABLED`, and `SYNC_SERVER_CONSENT_WRITES_ENABLED` false until all production and end-to-end checks pass.
+- Keep the extension version at 0.1.0.
