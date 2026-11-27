@@ -58,6 +58,9 @@ export function validateSyncSettingsRequest(value: unknown): SyncSettingsInput {
     attempts: value.categories.attempts as boolean
   };
   assertSyncCategoryDependencies(categories);
+  if (value.enabled && !Object.values(categories).some(Boolean)) {
+    throw new Error("Select at least one category before enabling cloud sync.");
+  }
 
   return { enabled: value.enabled, categories };
 }
