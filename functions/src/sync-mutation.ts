@@ -281,7 +281,8 @@ export async function applySyncMutation(
     if (request.entityType === "quiz" && request.operation === "delete") {
       const attemptsQuery = database
         .collection(root + "/lessons/" + request.lessonId + "/attempts")
-        .where("payload.quizId", "==", request.entityId);
+        .where("payload.quizId", "==", request.entityId)
+        .limit(1);
       const attempts = await transaction.get(attemptsQuery);
       hasActiveAttemptsForQuiz = !attempts.empty;
     }
