@@ -3,9 +3,9 @@ import { after, before, describe, it } from "node:test";
 import { randomUUID } from "node:crypto";
 import { initializeApp, type App } from "firebase-admin/app";
 import { FieldValue, getFirestore, type Firestore } from "firebase-admin/firestore";
-import { applySyncMutation } from "./sync-mutation";
-import { saveSyncSettingsForAccount } from "./sync-settings";
-import { SyncBackendError } from "./errors";
+import { applySyncMutation } from "../src/sync-mutation";
+import { saveSyncSettingsForAccount } from "../src/sync-settings";
+import { SyncBackendError } from "../src/errors";
 
 let app: App;
 let database: Firestore;

@@ -24,6 +24,7 @@
   },
   "include": [
     "src/**/*.ts",
+    "tests/**/*.ts",
     "../src/services/sync-server-contract.ts",
     "../src/services/sync-dto.ts",
     "../src/services/session-store.ts",

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { validateSyncSettingsInput } from "./sync-settings";
+import { validateSyncSettingsInput } from "../src/sync-settings";
 
 describe("server sync settings consent validation", () => {
   it("accepts the exact consent shape with dependent quiz categories enabled", () => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { requireVerifiedAppCaller } from "./auth-guards";
-import { SyncBackendError } from "./errors";
+import { requireVerifiedAppCaller } from "../src/auth-guards";
+import { SyncBackendError } from "../src/errors";
 
 describe("sync callable authentication and App Check gate", () => {
   const verifiedAuth = { uid: "verified-user", token: { email_verified: true } };

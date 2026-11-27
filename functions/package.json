@@ -7,7 +7,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test lib/functions/src/auth-guards.test.js lib/functions/src/sync-settings.test.js lib/functions/src/sync-mutation.test.js"
+    "test": "npm run build && node --test lib/functions/tests/auth-guards.test.js lib/functions/tests/sync-settings.test.js lib/functions/tests/sync-mutation.test.js"
   },
   "dependencies": {
     "firebase-admin": "14.3.0",
