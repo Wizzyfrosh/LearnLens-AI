@@ -9,6 +9,7 @@ on:
       - "firestore.rules"
       - "firebase.json"
       - "firestore.indexes.json"
+      - "tests/firestore.rules.test.mjs"
       - ".github/workflows/turnstile-poc.yml"
   pull_request:
     branches:
@@ -16,6 +17,9 @@ on:
     paths:
       - "functions/**"
       - "firestore.rules"
+      - "firebase.json"
+      - "firestore.indexes.json"
+      - "tests/firestore.rules.test.mjs"
       - ".github/workflows/turnstile-poc.yml"
 
 permissions:
@@ -70,6 +74,9 @@ jobs:
             throw new Error("Missing Firestore TTL policies: " + [...expected].join(", "));
           }
           NODE
+
+      - name: Run Firestore Security Rules tests
+        run: npm run test:rules
 
       - name: Run isolated Turnstile validator tests
         working-directory: functions
