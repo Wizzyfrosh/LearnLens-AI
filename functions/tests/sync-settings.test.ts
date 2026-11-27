@@ -37,6 +37,13 @@ describe("server sync settings consent validation", () => {
     }), /missing or unsupported fields/i);
   });
 
+  it("rejects enabling cloud sync with no selected categories", () => {
+    assert.throws(() => validateSyncSettingsInput({
+      enabled: true,
+      categories: { lessonMetadata: false, notes: false, quizzes: false, attempts: false }
+    }), /at least one sync category/i);
+  });
+
   it("allows a fully disabled settings state without enabling any category", () => {
     assert.equal(validateSyncSettingsInput({
       enabled: false,
