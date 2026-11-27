@@ -112,14 +112,16 @@ function parseSettings(value: unknown, category: SyncCategory): SyncSettings {
     !isRecord(value.categories)
   ) invalidState("The account sync settings are invalid.");
 
+  const rawCategories = value.categories;
+  if (!isRecord(rawCategories)) invalidState("The account sync categories are invalid.");
   const categoryKeys: SyncCategory[] = ["lessonMetadata", "notes", "quizzes", "attempts"];
   if (
-    Object.keys(value.categories).length !== categoryKeys.length ||
-    Object.keys(value.categories).some((key) => !categoryKeys.includes(key as SyncCategory)) ||
-    categoryKeys.some((key) => typeof value.categories![key] !== "boolean")
+    Object.keys(rawCategories).length !== categoryKeys.length ||
+    Object.keys(rawCategories).some((key) => !categoryKeys.includes(key as SyncCategory)) ||
+    categoryKeys.some((key) => typeof rawCategories[key] !== "boolean")
   ) invalidState("The account sync categories are invalid.");
 
-  const categories = value.categories as Record<SyncCategory, boolean>;
+  const categories = rawCategories as Record<SyncCategory, boolean>;
   if (categories.attempts && !categories.quizzes) {
     invalidState("Quiz attempts require Quiz definitions to be enabled.");
   }
