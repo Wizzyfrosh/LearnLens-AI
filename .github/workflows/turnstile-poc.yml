@@ -18,10 +18,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Java for Firestore Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Install root dependencies
+        run: npm install --no-audit --no-fund --legacy-peer-deps
 
       - name: Install Functions dependencies
         working-directory: functions
@@ -34,3 +43,6 @@ jobs:
       - name: Run isolated Turnstile validator tests
         working-directory: functions
         run: node --test lib/functions/tests/turnstile-validation.test.js
+
+      - name: Run challenge-session Firestore emulator tests
+        run: npx firebase emulators:exec --only firestore --project demo-learnlens-functions "node --test functions/lib/functions/tests/app-check-challenge-sessions.test.js"
