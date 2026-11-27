@@ -387,3 +387,20 @@ Next exit criteria:
 - No live consent read/withdrawal test or desktop Chrome test of the new Account status panel has been performed.
 - Cloud pull and artifact write dispatch remain separately hard-disabled. Do not enable any gate until production App Check, Firebase project/region, Secret Manager key, live Auth, and manual safety tests are approved.
 - Extension version remains 0.1.0.
+
+
+## 19. Phase 6.6 — production App Check architecture assessment (2026-11-27)
+
+**Findings**
+- The existing Firebase Web App Check integration in `src/services/firebase-ai.ts` uses a debug provider and must remain development-only.
+- Firebase documents reCAPTCHA Enterprise as the built-in Web provider, with allowed web domains. Its documentation does not explicitly confirm support for a `chrome-extension://<id>` origin. Compatibility must be proven with the actual final Chrome Web Store extension ID.
+- Manifest V3 requires extension executable code to be packaged and restricts remote scripts in extension pages. Do not inject remote reCAPTCHA scripts into extension pages to work around this.
+- Firebase's custom provider API supports a client `getToken()` exchange with a server-side token acquisition service. The proof sent to that service must be independently verified. A bundled secret, caller-provided extension ID, or unverified Origin header is not valid proof.
+- A hosted challenge may reduce automated abuse but does not establish cryptographic proof that the request came from the authentic installed extension. It must be treated as abuse mitigation, not as strong app attestation.
+- Retain verified Firebase Auth, owner-scoped authorization, explicit server-side consent, schema validation, rate limits/quotas and auditability as primary controls. App Check remains an additional protection layer. Do not remove server-side `enforceAppCheck:true` simply to bypass the extension integration problem.
+
+**Implementation decision**
+- No production App Check provider has been selected, enabled, or deployed. No console changes, keys, token-minting endpoints, or live Firebase requests were made.
+- Next: build an isolated proof-of-concept for (A) built-in reCAPTCHA Enterprise in the extension context and (B) hosted challenge + custom provider. Test with the final published extension ID and document CSP, Chrome Web Store policy, token replay, verification, quotas/cost and abuse controls.
+- Keep `SYNC_SERVER_CONSENT_READS_ENABLED`, `SYNC_SERVER_CONSENT_WRITES_ENABLED`, `SYNC_CLOUD_PULL_ENABLED`, and `SYNC_CLOUD_WRITES_ENABLED` false. Keep version 0.1.0.
+- References: Firebase App Check [overview](https://firebase.google.com/docs/app-check), [reCAPTCHA Enterprise](https://firebase.google.com/docs/app-check/web/recaptcha-enterprise-provider), [custom provider](https://firebase.google.com/docs/app-check/web/custom-provider); Chrome [Manifest V3 security](https://developer.chrome.com/docs/extensions/develop/migrate/improve-security).
