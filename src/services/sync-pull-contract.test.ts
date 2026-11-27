@@ -28,6 +28,7 @@ function page(overrides: Record<string, unknown> = {}) {
     snapshotSequence: 8,
     scannedThroughSequence: 5,
     changes: [noteChange],
+    hasMore: true,
     nextCursor: "opaque-signed-cursor",
     ...overrides
   };
@@ -61,12 +62,17 @@ describe("category-scoped sync pull contract", () => {
   });
 
   it("requires completed pages to reach the fixed snapshot watermark", () => {
-    expect(() => validateSyncPullPage(page({ nextCursor: null }), "notes", 3))
-      .toThrow(/snapshot watermark/i);
-    expect(validateSyncPullPage(page({
+    expect(() => validateSyncPullPage(page({
+      scannedThroughSequence: 5,
+      hasMore: false
+    }), "notes", 3)).toThrow(/snapshot watermark/i);
+    const completed = validateSyncPullPage(page({
       scannedThroughSequence: 8,
-      nextCursor: null
-    }), "notes", 3).nextCursor).toBeNull();
+      hasMore: false,
+      nextCursor: "completed-checkpoint"
+    }), "notes", 3);
+    expect(completed.hasMore).toBe(false);
+    expect(completed.nextCursor).toBe("completed-checkpoint");
   });
 
   it("rejects payloads on tombstones and unknown payload fields", () => {

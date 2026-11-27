@@ -206,7 +206,10 @@ A pull page contains exactly:
 - snapshotSequence, fixed for the complete paging session;
 - scannedThroughSequence, the feed position reached by this page;
 - up to 100 matching changes in strictly increasing sequence order, all within (fromSequence, scannedThroughSequence];
-- nextCursor, either the opaque continuation token or null when scannedThroughSequence equals snapshotSequence.
+- hasMore, indicating whether another page remains in this fixed snapshot;
+- nextCursor, an opaque checkpoint token that is always returned, including on the final page.
+
+The final checkpoint is not null: it is persisted and reused to begin the next bounded snapshot, preventing the client from having to submit a forgeable raw sequence number. The server recognizes a completed checkpoint and captures a new snapshot watermark on the next pull request.
 
 The server may scan past feed entries for other categories, so change sequences need to be strictly increasing, not contiguous. A continuation page must advance scannedThroughSequence. A completed page must reach the original snapshotSequence. Pages must not silently move their snapshot watermark between requests. The page validator in src/services/sync-pull-contract.ts enforces this response shape, category isolation, DTO allow-lists, sequence bounds, and cursor continuity.
 

@@ -29,8 +29,10 @@ export interface SyncPullPage {
   snapshotSequence: number;
   scannedThroughSequence: number;
   changes: SyncPullChangeRecord[];
-  /** Server-issued, account/device/category-bound opaque continuation token. */
-  nextCursor: string | null;
+  /** Whether more pages remain in this fixed snapshot. */
+  hasMore: boolean;
+  /** Always returned: the opaque checkpoint used for the next page or next snapshot. */
+  nextCursor: string;
 }
 
 export type SyncPullMergeAction =
@@ -124,7 +126,7 @@ export function validateSyncPullPage(
   if (!isRecord(value)) throw new Error("Invalid sync pull page.");
   const allowed = [
     "protocolVersion", "category", "fromSequence", "snapshotSequence",
-    "scannedThroughSequence", "changes", "nextCursor"
+    "scannedThroughSequence", "changes", "hasMore", "nextCursor"
   ];
   if (Object.keys(value).some((key) => !allowed.includes(key)) ||
       allowed.some((key) => !Object.prototype.hasOwnProperty.call(value, key))) {
@@ -163,14 +165,17 @@ export function validateSyncPullPage(
     priorSequence = change.sequence;
   }
 
-  if (value.nextCursor !== null &&
-      (typeof value.nextCursor !== "string" || value.nextCursor.length === 0 || value.nextCursor.length > CURSOR_MAX_LENGTH)) {
+  if (typeof value.hasMore !== "boolean") throw new Error("Invalid sync pull continuation state.");
+  if (typeof value.nextCursor !== "string" || value.nextCursor.length === 0 || value.nextCursor.length > CURSOR_MAX_LENGTH) {
     throw new Error("Invalid opaque sync pull cursor.");
   }
-  if (value.nextCursor === null && value.scannedThroughSequence !== value.snapshotSequence) {
+  if (!value.hasMore && value.scannedThroughSequence !== value.snapshotSequence) {
     throw new Error("A completed sync pull page must scan through its snapshot watermark.");
   }
-  if (value.nextCursor !== null && value.scannedThroughSequence === value.fromSequence) {
+  if (value.hasMore && value.scannedThroughSequence === value.snapshotSequence) {
+    throw new Error("A completed snapshot cannot advertise another page.");
+  }
+  if (value.hasMore && value.scannedThroughSequence === value.fromSequence) {
     throw new Error("A continuing sync pull page must advance its scan watermark.");
   }
   if (value.changes.length === 0 && value.scannedThroughSequence === value.fromSequence &&
