@@ -41,6 +41,16 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Challenge bootstrap state is server-owned. The Admin SDK is the only
+    // component allowed to read or mutate these records.
+    match /appCheckChallengeSessions/{sessionId} {
+      allow read, write: if false;
+    }
+
+    match /appCheckChallengeRateLimits/{rateLimitId} {
+      allow read, write: if false;
+    }
+
     // The artifact paths are intentionally closed until the sync engine,
     // schema validators, and tombstone protocol are implemented and reviewed.
     match /{document=**} {
