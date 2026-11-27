@@ -146,6 +146,11 @@ export function validateSyncPullPage(
     throw new Error("Sync pull page exceeds its change limit.");
   }
 
+  for (const candidate of value.changes) {
+    if (!isRecord(candidate) || candidate.entityType !== TYPE_BY_CATEGORY[expectedCategory]) {
+      throw new Error("Sync pull page contains a change from another category.");
+    }
+  }
   const changes = value.changes.map(validateChange);
   let priorSequence = value.fromSequence as number;
   for (const change of changes) {
