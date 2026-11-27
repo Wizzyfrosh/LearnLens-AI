@@ -198,7 +198,7 @@ describe("Firebase Admin sync mutation adapter", () => {
   it("stores stale requests as conflicts with both local and remote snapshots", async () => {
     const uid = newUid();
     await enableSync(uid);
-    await applySyncMutation(uid, noteRequest());
+    await applySyncMutation(uid, noteRequest(), database);
 
     const stale = noteRequest("note-1", newRequestId(), {
       payload: {
@@ -237,7 +237,7 @@ describe("Firebase Admin sync mutation adapter", () => {
       (cause: unknown) => cause instanceof SyncBackendError && cause.message.includes("quiz_not_found")
     );
 
-    await applySyncMutation(uid, quizRequest());
+    await applySyncMutation(uid, quizRequest(), database);
     const attempt = await attemptRequest();
     await applySyncMutation(uid, attempt, database);
 
@@ -257,7 +257,7 @@ describe("Firebase Admin sync mutation adapter", () => {
   it("rejects an attempt that refers to a question absent from the referenced quiz", async () => {
     const uid = newUid();
     await enableSync(uid);
-    await applySyncMutation(uid, quizRequest());
+    await applySyncMutation(uid, quizRequest(), database);
 
     await assert.rejects(
       applySyncMutation(uid, attemptRequest(newRequestId(), {
