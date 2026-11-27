@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "rootDir": "..",
+    "outDir": "lib",
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ],
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "../src/services/sync-server-contract.ts",
+    "../src/services/sync-dto.ts",
+    "../src/services/session-store.ts",
+    "../src/services/sync-policy.ts",
+    "../src/services/quiz.ts",
+    "../src/services/transcript.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "lib"
+  ]
+}

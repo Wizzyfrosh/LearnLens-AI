@@ -1,5 +1,5 @@
 import type { SyncEntityType, SyncOperation, SyncPreparedPayload } from "./session-store";
-import type { AttemptSyncDto } from "./sync-dto";
+import type { AttemptSyncDto, QuizSyncDto } from "./sync-dto";
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -63,6 +63,8 @@ export interface SyncServerConflictWrite {
   remoteRevision: number;
   reason: "revision_conflict" | "entity_deleted" | "immutable_entity_exists";
   payloadSnapshot: SyncPreparedPayload | null;
+  remotePayloadSnapshot: SyncPreparedPayload | null;
+  remoteIsDeleted: boolean;
 }
 
 export type SyncServerDecision =
@@ -164,6 +166,12 @@ export function validateSyncServerMutationDependencies(
       payload: referencedQuiz.payload
     });
   } catch {
+    return { kind: "reject", code: "quiz_reference_mismatch" };
+  }
+  const quizPayload = referencedQuiz.payload as QuizSyncDto;
+  const knownQuestionIds = new Set(quizPayload.questions.map((question) => question.id));
+  const attemptPayload = validated.payload as AttemptSyncDto;
+  if (attemptPayload.results.some((result) => !knownQuestionIds.has(result.questionId))) {
     return { kind: "reject", code: "quiz_reference_mismatch" };
   }
   return { kind: "allow" };
@@ -508,7 +516,9 @@ export function decideSyncServerMutation(
         baseRevision: request.baseRevision,
         remoteRevision,
         reason,
-        payloadSnapshot: request.payload
+        payloadSnapshot: request.payload,
+        remotePayloadSnapshot: current?.isDeleted ? null : current?.payload ?? null,
+        remoteIsDeleted: current?.isDeleted ?? false
       },
       receipt
     };

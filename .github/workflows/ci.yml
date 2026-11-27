@@ -28,12 +28,24 @@ jobs:
           java-version: 21
       - name: Install dependencies
         run: npm install --no-audit --no-fund --legacy-peer-deps
+      - name: Set up Node.js 22 for Firebase Functions
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Functions dependencies
+        run: npm --prefix functions install --no-audit --no-fund
       - name: Typecheck
         run: npm run typecheck
       - name: Unit tests
         run: npm test
       - name: Firestore Security Rules tests
         run: npm run test:rules
+      - name: Firebase Admin sync backend integration tests
+        run: npm run test:functions
+      - name: Restore Node.js 24 for extension build
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - name: Production build
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}

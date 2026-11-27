@@ -23,6 +23,7 @@ service cloud.firestore {
         && data.categories.notes is bool
         && data.categories.quizzes is bool
         && data.categories.attempts is bool
+        && (!data.categories.attempts || data.categories.quizzes)
         && data.updatedAt == request.time;
     }
 

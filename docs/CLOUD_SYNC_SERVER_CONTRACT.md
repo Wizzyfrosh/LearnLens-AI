@@ -1,6 +1,6 @@
 # LearnLens AI — Server-Side Sync Mutation Contract
 
-**Status:** Phase 6.1 protocol decisions and pure validation policies implemented; pull transport, Admin endpoint, and cloud artifact writes remain disabled.  
+**Status:** Phase 6.1 protocol decisions and the Phase 6.2 Firebase Admin callable adapter are implemented in source and emulator-tested. No endpoint is deployed and extension cloud writes remain hard-disabled.  
 **Protocol:** request envelope v1, DTO schema v1  
 **Authority:** this document supersedes the earlier server-transaction placeholders in CLOUD_SYNC_DATA_MODEL.md.
 
@@ -13,7 +13,7 @@
 - The endpoint must require authenticated, email-verified Firebase identity and valid App Check. The UID must come from verified server-side Auth claims, never from the request body.
 - App Check is not a replacement for authentication, consent, validation, ownership checks, or revision checks. An Admin SDK endpoint bypasses Firestore Security Rules, so all authorization and validation described here must run in the endpoint itself.
 
-The implementation in src/services/sync-server-contract.ts is pure domain logic. It validates request DTOs, creates canonical request text, derives safe document paths, and returns transaction decisions. It does not authenticate callers, calculate SHA-256, contact Firestore, or persist anything. A Firebase Admin adapter is still required.
+The implementation in src/services/sync-server-contract.ts is pure domain logic. It validates request DTOs, creates canonical request text, derives safe document paths, and returns transaction decisions. The separate functions/ workspace now contains an Admin adapter, Auth/App Check callables, and emulator tests; no deployment has occurred.
 
 ## 2. Client request envelope
 
@@ -64,6 +64,7 @@ All paths are scoped beneath the UID obtained from the verified token:
 - users/{uid}/lessons/{lessonId}/attempts/{attemptId}
 - users/{uid}/syncReceipts/{requestId}
 - users/{uid}/syncConflicts/{requestId}
+- users/{uid}/syncConflictSnapshots/{requestId}_local and _remote
 
 A lesson entity uses entityId equal to lessonId. Child artifact IDs remain stable local IDs. Path segments are never constructed from unvalidated strings.
 
@@ -111,7 +112,7 @@ A delete must remove the payload from the document and retain only its envelope/
 ## 7. Conflict and receipt writes
 
 A revision conflict, entity-deleted conflict, or immutable-entity conflict writes both:
-- a syncConflicts/{requestId} record containing entity identity, base and remote revisions, reason, device ID, operation, and the exact local payload snapshot (null for a delete);
+- a syncConflicts/{requestId} metadata record containing entity identity, base and remote revisions, reason, device ID, tombstone state, and references to split local/remote snapshots under syncConflictSnapshots. Each snapshot is a separate document so two maximum-sized DTOs cannot exceed Firestore’s 1 MiB per-document limit;
 - a syncReceipts/{requestId} record with outcome=conflict, the request fingerprint, and the remote revision.
 
 Both writes occur atomically in the same transaction. A retry then replays the original conflict result rather than creating duplicate conflict records. Conflict content remains subject to the same category consent and retention/privacy policy as the original artifact.
@@ -135,13 +136,11 @@ The Firestore Admin SDK bypasses Firestore Security Rules. The endpoint must not
 ## 9. Remaining release blockers before an endpoint can be deployed
 
 - Complete live Firebase Auth QA: signup, verification, forced ID-token refresh, sign-in, sign-out, account switching, and unverified-token denial in the installed Chrome extension.
-- Prove a production App Check provider with the actual published extension identity. The current debug provider is not production attestation.
-- Implement the Admin SDK endpoint and emulator/integration tests for concurrent transactions, receipt replay, idempotency-key collision, conflicts, and account isolation.
-- The account screen compares local/remote DTO previews and exposes local-only "Keep remote" and "Keep local" actions. Resolution updates IndexedDB atomically: keep-local rebases the current local entity or deletion onto the remote revision with a fresh operation ID; keep-remote applies the allow-listed remote DTO or accepts the remote deletion and clears the blocked outbox operation. The request is marked terminal "resolved"; conflict snapshots are retained. A remote lesson deletion removes its sync claim but deliberately keeps the lesson/transcript local-only because transcript data is excluded from the sync DTO. Local edits made after the original request are captured in latestLocalPayloadSnapshot before keep-remote overwrites the visible local DTO. Resolved history is available on the account screen. Learners can copy/export the allow-listed local snapshot as JSON; note, quiz, and quiz-attempt snapshots can also be restored once as a new local-only record with a fresh ID. Attempt recovery requires its linked quiz to remain on the device. Lesson metadata is export-only because it cannot restore the excluded transcript.
-- Resolve category dependencies before enabling attempt sync. An attempt references quizId, but category controls currently let a learner enable attempts while quizzes are disabled. The endpoint/UI must either require quiz sync for attempt sync or deliberately support attempts without the referenced quiz.
-- Decide how child artifacts should be presented on a second device when notes/quizzes/attempts are enabled but lessonMetadata is disabled. Their Firestore paths are nested under a lesson ID, but no lesson metadata would be pulled.
-- Implement pull cursors and merge logic that cannot overwrite pending local edits or resurrect tombstones.
-- Keep the client transport fail-closed until all of these gates are completed and explicitly reviewed.
+- Prove a production App Check provider with the actual published extension identity. The callable functions enforce App Check in code, but the current extension debug provider is not production attestation.
+- Verify the Firebase project ID and Firestore database region, then deploy Functions only after the owner approves the target project and production App Check configuration. No .firebaserc is committed.
+- Implement the actual pull callable/cursor signature verification and the IndexedDB pull applier/remote-only library. The pull response validator and merge policy are in place, but the pull endpoint and client cursor persistence are not.
+- Implement end-to-end two-device tests against a dedicated Firebase test project and verify account isolation, offline replay, account switching, opt-out races, and data export/delete behavior.
+- Keep src/services/sync-transport.ts hard-disabled until these release gates and the pull implementation are complete.
 
 ## 10. Current implementation status
 
@@ -161,13 +160,20 @@ Implemented and unit-tested in this phase:
 - tombstone payload removal and no ordinary resurrection;
 - immutable quiz/attempt creation semantics.
 
-Not implemented:
-- Firebase callable/HTTPS function;
-- Firebase Admin SDK transaction adapter;
-- server-side Auth/App Check verification and deployment;
-- cloud reads/writes from the extension.
+Implemented in Phase 6.2 source and Firestore-emulator tests:
+- Node.js 22 Firebase Functions v2 callables for account sync settings and one-request artifact mutation;
+- Firebase callable Auth context, email_verified enforcement, and enforceAppCheck=true;
+- Admin SDK transaction adapter for settings consent, revision compare-and-set, receipt replay/key-collision rejection, conflict snapshots, device metadata, and per-account pull-feed sequence allocation;
+- transactional quiz-parent reads for attempts and a guard against deleting quizzes with active synced attempts;
+- Firestore emulator integration tests for apply, replay, idempotency-key collision, conflicts, attempt dependencies, and concurrent feed sequence allocation.
 
-No learning-artifact cloud write can occur in the current build.
+Still not implemented:
+- deployment to a confirmed Firebase project;
+- production Chrome extension App Check attestation;
+- the pull callable and signed cursor issuance/verification;
+- client cloud transport, client pull application, and two-device end-to-end QA.
+
+The extension still cannot perform any learning-artifact cloud write in the current build.
 
 
 ## 11. Quiz-attempt dependency policy (Phase 6.1 decision)
@@ -232,3 +238,27 @@ The pure merge classifier in src/services/sync-pull-contract.ts covers stale eve
 ### 12.4 Deletion and recovery semantics
 
 V1 tombstones are permanent protocol records and ordinary upserts cannot resurrect them. A learner who wants a new artifact after deletion creates a new entity ID. Explicit restore of a deleted remote artifact is not supported. Existing local conflict recovery remains a separate local-only copy workflow and does not remove or rewrite a remote tombstone. A later restore-to-cloud feature must be an explicit new operation with a fresh ID or a separately versioned restore protocol.
+
+
+## 13. Phase 6.2 Admin backend implementation notes
+
+The separate Functions workspace is at functions/. It uses Firebase Functions v2 callable handlers and the Firebase Admin SDK. The project runtime is Node.js 22; the Functions workspace pins firebase-functions 7.4.0 and firebase-admin 14.3.0. These are server dependencies and are not bundled into the Chrome extension.
+
+Exports:
+- updateSyncSettings: requires verified Auth and App Check, validates the exact consent/category shape, and writes users/{uid}/settings/sync with a server timestamp.
+- syncMutation: requires verified Auth and App Check, derives UID exclusively from request.auth, validates the immutable request envelope, computes its SHA-256 fingerprint, and performs entity/receipt/conflict/device/feed writes inside one Firestore transaction.
+
+Every accepted apply writes the entity, receipt, per-account feed counter, and immutable feed event atomically. Conflicts persist metadata and separate local/remote snapshot documents in the same transaction; splitting the snapshots avoids Firestore’s 1 MiB per-document ceiling. Dependency failures do not write a receipt, so a blocked local request can be retried after its missing prerequisite is available. Identical request retries replay the receipt without allocating another feed sequence. A reused request ID with another body is rejected.
+
+Quiz attempts require an active quiz under the same UID and lesson. Every attempt result questionId must exist in that quiz. Quiz deletion is rejected while active attempt documents reference it. The Admin adapter checks the quiz or attempt collection inside the same transaction as the mutation.
+
+Local emulator checks:
+- npm install --prefix functions
+- npm run test:functions
+
+The root CI runs those tests against the Firestore Emulator. Do not run the Functions deploy command yet. The project has no committed .firebaserc, its Firestore region has not been confirmed, live Auth QA is outstanding, and the production extension App Check provider is not approved.
+
+Official API behavior references:
+- https://firebase.google.com/docs/functions/callable
+- https://firebase.google.com/docs/app-check/cloud-functions
+- https://firebase.google.com/docs/auth/admin/verify-id-tokens

@@ -1,10 +1,10 @@
 # LearnLens AI — Project Status and Continuity Checklist
 
-**Last updated:** 2026-11-26  
+**Last updated:** 2026-11-27  
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
 **Extension version:** 0.1.0  
-**Current checkpoint:** Phases 4 and 5 are complete. Phase 6A design and Phase 6B Auth/Rules code are implemented. Phase 6C IndexedDB v6 sync metadata/outbox primitives and allow-listed DTO mappers are implemented; live Firebase Auth QA, atomic mutation/outbox integration, opt-in UI, and production App Check remain open.
+**Current checkpoint:** Phases 4 and 5 are complete. Phase 6.1 protocol decisions are implemented; Phase 6.2 Firebase Admin callable source and Firestore-emulator tests are being added. The backend is not deployed and the extension cloud transport remains disabled. Live Firebase Auth QA and production Chrome App Check remain release gates.
 
 > CI and desktop Chrome runtime verification have both passed for the Phase 4 and Phase 5 scope described below.
 
@@ -209,3 +209,21 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - Package version remains 0.1.0.
 
 **Next engineering task:** Add explicit first-claim confirmation and account-switch isolation around the category preview. Keep the sync runner and Firestore artifact writes disabled until live Auth QA and production App Check are approved.
+
+
+## 2026-11-27 — Phase 6.1 protocol finalization and Phase 6.2 backend foundation
+- Phase 6.1 completed: the client enforces quiz-attempt dependency on quiz definitions; the server policy requires an active same-lesson quiz and known question IDs; quiz deletion is blocked while synced attempts remain active.
+- Pull contract finalized with category-scoped bounded pages, opaque checkpoints (including completed-page checkpoint), strict payload validation, safe merge classification, remote-only artifact behavior, and transcript-preserving lesson tombstones.
+- Phase 6.2 source foundation added in a separate Firebase Functions v2 workspace. The two callables enforce verified Firebase Auth and App Check. One handles explicit server-side sync consent; the other applies a mutation transactionally and writes the immutable feed event, receipt, and entity together.
+- The current branch still has no .firebaserc binding and no live Functions deployment. Firebase project ID/Firestore region, live email-verification QA, and production Chrome App Check remain release gates.
+- The extension transport remains hard-disabled; no learning artifact is uploaded by this build.
+
+
+## 2026-11-27 — Phase 6.2 backend implementation
+- Added a separate Node.js 22 Firebase Functions v2 workspace with callables for account sync settings and single-request artifact mutation.
+- Callables require verified Firebase Auth and enforce App Check. UID derives only from the callable Auth context, never the request body.
+- Admin mutation transactions validate settings, payload allow-lists and revisions; atomically write entity state, receipt, device metadata, feed counter and immutable change event.
+- Conflicts preserve local and remote snapshots in separate documents to stay below Firestore's per-document size limit.
+- Quiz attempt writes require the referenced quiz and all referenced question IDs to exist. Quiz deletion is blocked while active attempts reference it.
+- Emulator tests cover settings consent, mutation apply/replay/key collision, conflicts, quiz dependencies and concurrent feed sequence allocation.
+- No Firebase project is bound; no Functions deployment or client cloud write is enabled. Live Auth QA, production extension App Check, Firestore region confirmation and the client pull implementation remain required.

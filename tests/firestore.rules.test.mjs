@@ -72,6 +72,21 @@ test("an authenticated user cannot read or write another user's settings", async
   await assertFails(setDoc(doc(db, settingsPath("user-b")), validSettings()));
 });
 
+test("sync settings reject attempts without quiz definitions", async () => {
+  const db = testEnv.authenticatedContext("user-a", { email_verified: true }).firestore();
+  await assertFails(setDoc(doc(db, settingsPath("user-a")), {
+    schemaVersion: 1,
+    enabled: true,
+    categories: {
+      lessonMetadata: false,
+      notes: false,
+      quizzes: false,
+      attempts: true
+    },
+    updatedAt: serverTimestamp()
+  }));
+});
+
 test("sync settings reject extra fields and incomplete category maps", async () => {
   const db = testEnv.authenticatedContext("user-a", { email_verified: true }).firestore();
   await assertFails(setDoc(doc(db, settingsPath("user-a")), {
@@ -142,7 +157,10 @@ test("clients cannot read or write any sync device, artifact, receipt, or confli
     "users/user-a/lessons/lesson-a/quizzes/quiz-a",
     "users/user-a/lessons/lesson-a/attempts/attempt-a",
     "users/user-a/syncReceipts/request-a",
-    "users/user-a/syncConflicts/request-a"
+    "users/user-a/syncConflicts/request-a",
+    "users/user-a/syncConflictSnapshots/request-a_local",
+    "users/user-a/syncChanges/1",
+    "users/user-a/syncState/changeFeed"
   ];
 
   for (const path of protectedPaths) {

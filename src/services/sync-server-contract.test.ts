@@ -253,7 +253,9 @@ describe("server-side sync mutation contract", () => {
         reason: "revision_conflict",
         baseRevision: 0,
         remoteRevision: 2,
-        payloadSnapshot: notePayload
+        payloadSnapshot: notePayload,
+        remotePayloadSnapshot: notePayload,
+        remoteIsDeleted: false
       },
       receipt: { outcome: "conflict", resultRevision: 2 }
     });
@@ -422,6 +424,32 @@ describe("server-side sync mutation contract", () => {
     expect(validateSyncServerMutationDependencies(quizDelete, {
       attempts: true, quizzes: true
     }, null, false)).toEqual({ kind: "allow" });
+  });
+
+  it("rejects an attempt containing a question ID absent from the referenced quiz", async () => {
+    const { validateSyncServerMutationDependencies } = await import("./sync-server-contract");
+    const attemptRequest = validateSyncServerRequest(rawRequest({
+      entityType: "attempt",
+      entityId: "attempt-1",
+      payload: {
+        quizId: "quiz-1",
+        createdAtMs: 300,
+        results: [{ questionId: "not-in-quiz", answer: "ATP", correct: true, feedback: "Correct." }],
+        objectiveScore: 1,
+        objectiveTotal: 1,
+        topicsToReview: []
+      }
+    }));
+    expect(validateSyncServerMutationDependencies(attemptRequest, {
+      attempts: true, quizzes: true
+    }, {
+      entityType: "quiz",
+      lessonId: "lesson-1",
+      entityId: "quiz-1",
+      revision: 1,
+      isDeleted: false,
+      payload: quizPayload
+    })).toEqual({ kind: "reject", code: "quiz_reference_mismatch" });
   });
 
   it("rejects an attempt whose quiz ID points to another lesson or entity", async () => {
