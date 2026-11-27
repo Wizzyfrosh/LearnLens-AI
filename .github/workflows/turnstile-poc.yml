@@ -6,12 +6,14 @@ on:
       - phase-6-6-2-turnstile-custom-provider-poc
     paths:
       - "functions/**"
+      - "firestore.rules"
       - ".github/workflows/turnstile-poc.yml"
   pull_request:
     branches:
       - phase-6-6-app-check-poc
     paths:
       - "functions/**"
+      - "firestore.rules"
       - ".github/workflows/turnstile-poc.yml"
 
 permissions:
