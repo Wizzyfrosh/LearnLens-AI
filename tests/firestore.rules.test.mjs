@@ -87,6 +87,21 @@ test("sync settings reject attempts without quiz definitions", async () => {
   }));
 });
 
+test("sync settings reject enabling with no selected categories", async () => {
+  const db = testEnv.authenticatedContext("user-a", { email_verified: true }).firestore();
+  await assertFails(setDoc(doc(db, settingsPath("user-a")), {
+    schemaVersion: 1,
+    enabled: true,
+    categories: {
+      lessonMetadata: false,
+      notes: false,
+      quizzes: false,
+      attempts: false
+    },
+    updatedAt: serverTimestamp()
+  }));
+});
+
 test("sync settings reject extra fields and incomplete category maps", async () => {
   const db = testEnv.authenticatedContext("user-a", { email_verified: true }).firestore();
   await assertFails(setDoc(doc(db, settingsPath("user-a")), {
