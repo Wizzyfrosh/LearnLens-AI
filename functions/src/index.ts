@@ -1,15 +1,17 @@
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
-import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
+import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { defineSecret, defineString } from "firebase-functions/params";
 import { requireVerifiedAppCaller } from "./auth-guards";
 import { SyncBackendError } from "./errors";
 import { applySyncMutation } from "./sync-mutation";
 import { getSyncSettingsForAccount, saveSyncSettingsForAccount } from "./sync-settings";
 import { pullSyncChanges } from "./sync-pull";
-import { createChallengeSession, completeChallengeSession, consumeChallengeSession, getChallengeVerificationContext } from "./app-check-poc/challenge-sessions";
-import { enforceChallengeRateLimit } from "./app-check-poc/challenge-rate-limit";
-import { verifyTurnstileResponse } from "./app-check-poc/turnstile-validation";
+import {
+  claimAuthenticatedChallengeSession,
+  completeAuthenticatedChallengeSession,
+  createAuthenticatedChallengeSession
+} from "./app-check-poc/challenge-service";
 
 const adminApp = getApps()[0] ?? initializeApp();
 const database = getFirestore(adminApp);
@@ -26,6 +28,19 @@ function toHttpsError(cause: unknown): HttpsError {
   // Do not log or return request payloads, note bodies, quiz keys, or tokens.
   console.error("LearnLens sync backend failed", cause instanceof Error ? cause.name : "unknown");
   return new HttpsError("internal", "LearnLens could not complete the sync request.");
+}
+
+/** Requires Firebase Auth and a verified email for bootstrap operations. */
+function requireVerifiedChallengeUser(
+  auth: { uid: string; token: { email_verified?: unknown } } | null | undefined
+): string {
+  if (!auth || typeof auth.uid !== "string") {
+    throw new SyncBackendError("unauthenticated", "Sign in before starting the security challenge.");
+  }
+  if (auth.token?.email_verified !== true) {
+    throw new SyncBackendError("failed-precondition", "Verify your email address before continuing the security challenge.");
+  }
+  return auth.uid;
 }
 
 /**
@@ -77,7 +92,6 @@ export const syncMutation = onCall(
   }
 );
 
-
 /**
  * Returns a bounded, category-scoped page from one fixed account feed
  * snapshot. Signed cursor tokens are bound to UID, device and category.
@@ -100,31 +114,24 @@ export const syncPull = onCall(
   }
 );
 
-
 /**
- * Bootstrap endpoint: requires verified Firebase Auth but intentionally does
- * not require App Check, because this flow obtains the first App Check token.
- * It is isolated from all sync callables and rate-limited per authenticated UID.
+ * Bootstrap: requires Firebase Authentication and verified email, but not
+ * App Check because this operation creates the session needed to obtain the
+ * first App Check token. This is isolated from all sync callables.
  */
 export const createAppCheckChallengeSession = onCall(
   { enforceAppCheck: false, maxInstances: 3, memory: "256MiB" },
   async (request) => {
     try {
-      if (!request.auth || typeof request.auth.uid !== "string") {
-        throw new SyncBackendError("unauthenticated", "Sign in before starting the security challenge.");
-      }
-      if (request.auth.token?.email_verified !== true) {
-        throw new SyncBackendError("failed-precondition", "Verify your email address before starting the security challenge.");
-      }
-      const uid = request.auth.uid;
-      await enforceChallengeRateLimit("create", uid, database);
-      const created = await createChallengeSession(
+      const uid = requireVerifiedChallengeUser(request.auth);
+      return await createAuthenticatedChallengeSession(
         uid,
-        challengeAppId.value(),
-        challengeAction.value(),
+        {
+          appId: challengeAppId.value(),
+          action: challengeAction.value()
+        },
         database
       );
-      return created;
     } catch (cause) {
       throw toHttpsError(cause);
     }
@@ -132,96 +139,82 @@ export const createAppCheckChallengeSession = onCall(
 );
 
 /**
- * Public challenge callback. Siteverify is performed server-side; callers
- * cannot choose expected hostname, action, cdata, UID or App ID.
+ * Authenticated challenge completion. The hosted challenge page returns the
+ * short-lived Turnstile response to the extension; the extension calls this
+ * callable with its Firebase Auth context. Firebase credentials are never
+ * passed to the hosted challenge page.
  */
-export const completeAppCheckChallenge = onRequest(
+export const completeAppCheckChallenge = onCall(
   {
-    cors: false,
+    enforceAppCheck: false,
     maxInstances: 3,
     memory: "256MiB",
     timeoutSeconds: 20,
     secrets: [turnstileSecret]
   },
-  async (request, response) => {
-    if (request.method !== "POST") {
-      response.set("Allow", "POST").status(405).json({ error: "method-not-allowed" });
-      return;
-    }
-    if (!request.is("application/json")) {
-      response.status(415).json({ error: "unsupported-media-type" });
-      return;
-    }
+  async (request) => {
     try {
-      const body = request.body as unknown;
+      const uid = requireVerifiedChallengeUser(request.auth);
+      const data = request.data as unknown;
       if (
-        body === null || typeof body !== "object" || Array.isArray(body) ||
-        Object.keys(body as Record<string, unknown>).length !== 2 ||
-        typeof (body as Record<string, unknown>).sessionId !== "string" ||
-        typeof (body as Record<string, unknown>).responseToken !== "string"
+        data === null || typeof data !== "object" || Array.isArray(data) ||
+        Object.keys(data as Record<string, unknown>).length !== 2 ||
+        typeof (data as Record<string, unknown>).sessionId !== "string" ||
+        typeof (data as Record<string, unknown>).responseToken !== "string"
       ) {
         throw new SyncBackendError("invalid-argument", "The challenge completion request is invalid.");
       }
-      const { sessionId, responseToken } = body as { sessionId: string; responseToken: string };
-      await enforceChallengeRateLimit("complete", sessionId, database);
-      const context = await getChallengeVerificationContext(sessionId, database);
-      if (context.state !== "pending" || context.expiresAtMs <= Date.now()) {
-        throw new SyncBackendError("deadline-exceeded", "The challenge session has expired or is no longer pending.");
+      const { sessionId, responseToken } = data as {
+        sessionId: string;
+        responseToken: string;
+      };
+      if (responseToken.length === 0 || responseToken.length > 2048) {
+        throw new SyncBackendError("invalid-argument", "A valid Turnstile response is required.");
       }
-      if (context.appId !== challengeAppId.value() || context.action !== challengeAction.value()) {
-        throw new SyncBackendError("failed-precondition", "The challenge session configuration is invalid.");
-      }
-      const verified = await verifyTurnstileResponse(responseToken, {
-        secret: turnstileSecret.value(),
-        expectedHostname: challengeHostname.value(),
-        expectedAction: context.action,
-        expectedCdata: context.cdata
-      });
-      await completeChallengeSession(sessionId, context.cdata, database, verified.verifiedAtMs);
-      response.status(200).json({ verified: true, expiresAtMs: context.expiresAtMs });
+      return await completeAuthenticatedChallengeSession(
+        uid,
+        { sessionId, responseToken },
+        {
+          appId: challengeAppId.value(),
+          action: challengeAction.value(),
+          hostname: challengeHostname.value(),
+          secret: turnstileSecret.value()
+        },
+        database
+      );
     } catch (cause) {
-      const error = toHttpsError(cause);
-      const status = error.code === "invalid-argument" ? 400
-        : error.code === "unauthenticated" ? 401
-        : error.code === "permission-denied" ? 403
-        : error.code === "resource-exhausted" ? 429
-        : error.code === "unavailable" ? 503
-        : error.code === "deadline-exceeded" ? 410
-        : error.code === "not-found" ? 404
-        : 400;
-      response.status(status).json({ error: error.code, message: error.message });
+      throw toHttpsError(cause);
     }
   }
 );
 
 /**
- * Authenticated one-time claim. App Check token minting is intentionally a
- * later phase; this endpoint only consumes the verified challenge session.
+ * Authenticated one-time claim. App Check is not required because no App
+ * Check token has been minted yet. This consumes the session only; token
+ * minting is intentionally a later implementation slice.
  */
 export const claimAppCheckChallengeSession = onCall(
   { enforceAppCheck: false, maxInstances: 3, memory: "256MiB" },
   async (request) => {
     try {
-      if (!request.auth || typeof request.auth.uid !== "string") {
-        throw new SyncBackendError("unauthenticated", "Sign in before claiming the security challenge.");
-      }
-      if (request.auth.token?.email_verified !== true) {
-        throw new SyncBackendError("failed-precondition", "Verify your email address before claiming the security challenge.");
-      }
-      const data = request.data as Record<string, unknown>;
+      const uid = requireVerifiedChallengeUser(request.auth);
+      const data = request.data as unknown;
       if (
         data === null || typeof data !== "object" || Array.isArray(data) ||
-        Object.keys(data).length !== 2 ||
-        typeof data.sessionId !== "string" ||
-        typeof data.pollCredential !== "string"
+        Object.keys(data as Record<string, unknown>).length !== 2 ||
+        typeof (data as Record<string, unknown>).sessionId !== "string" ||
+        typeof (data as Record<string, unknown>).pollCredential !== "string"
       ) {
         throw new SyncBackendError("invalid-argument", "The challenge claim request is invalid.");
       }
-      await enforceChallengeRateLimit("claim", request.auth.uid, database);
-      return await consumeChallengeSession(
-        request.auth.uid,
-        data.sessionId,
-        data.pollCredential,
+      const { sessionId, pollCredential } = data as {
+        sessionId: string;
+        pollCredential: string;
+      };
+      return await claimAuthenticatedChallengeSession(
+        uid,
+        sessionId,
+        pollCredential,
         database
       );
     } catch (cause) {
