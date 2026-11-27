@@ -1,6 +1,6 @@
 # Phase 6.6.2E — One-time Firebase App Check token issuance
 
-**Status:** Implemented; CI verification pending  
+**Status:** Implemented and CI-verified — [run 46085254191](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46085254191)  
 **Branch:** `phase-6-6-2-turnstile-custom-provider-poc`  
 **PR:** #2 (draft; not merged)
 
@@ -62,6 +62,8 @@ Concurrent-claim tests assert that only one request can consume the session and 
 - Token issuer failure returns a sanitized error and does not reopen the session.
 - Replays are rejected.
 - Concurrent claim attempts mint at most one token.
+
+CI run 46085254191 passed: 11 Firestore Rules tests, 8 Turnstile validator tests, and 23 Firestore Emulator tests passed; Functions TypeScript build and TTL configuration validation also passed. Token issuance uses a fake issuer in tests; no live App Check token was requested.
 
 ## Explicit non-goals / remaining work
 
