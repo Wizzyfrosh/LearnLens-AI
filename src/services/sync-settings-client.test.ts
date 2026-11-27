@@ -97,6 +97,13 @@ describe("server sync consent client", () => {
     })).toThrow(/Quiz attempts can only be synced/i);
   });
 
+  it("rejects enabling cloud sync with no selected categories", () => {
+    expect(() => validateSyncSettingsRequest({
+      enabled: true,
+      categories: { lessonMetadata: false, notes: false, quizzes: false, attempts: false }
+    })).toThrow(/at least one category/i);
+  });
+
   it("rejects unknown category fields", () => {
     expect(() => validateSyncSettingsRequest({
       enabled: true,
