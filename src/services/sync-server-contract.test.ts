@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { QuizSyncDto } from "./sync-dto";
+import type { SyncPreparedPayload } from "./session-store";
 import {
   buildSyncFirestorePaths,
   canonicalizeSyncServerRequest,
@@ -402,7 +403,7 @@ describe("server-side sync mutation contract", () => {
     }, quiz)).toEqual({ kind: "reject", code: "category_not_enabled" });
     expect(validateSyncServerMutationDependencies(attemptRequest, {
       attempts: true, quizzes: true
-    }, { ...quiz, payload: { ...quizPayload, transcriptText: "not allowed" } }))
+    }, { ...quiz, payload: { ...quizPayload, transcriptText: "not allowed" } as unknown as SyncPreparedPayload }))
       .toEqual({ kind: "reject", code: "quiz_reference_mismatch" });
   });
 
