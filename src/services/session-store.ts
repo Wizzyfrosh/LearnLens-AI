@@ -1017,7 +1017,7 @@ export async function applyLocalSyncPullPage(
         // metadata snapshot. Page validation still covers every event, and the
         // checkpoint still advances through the complete scanned page.
         const latestChangeByEntity = new Map<string, (typeof page.changes)[number]>();
-        for (const change of changesToApply) {
+        for (const change of page.changes) {
           latestChangeByEntity.set(
             syncEntityKey(change.entityType, change.lessonId, change.entityId),
             change
@@ -1042,12 +1042,12 @@ export async function applyLocalSyncPullPage(
           result = { ...counts, duplicatePage: false, cursor: nextCursor };
         };
 
-        if (page.changes.length === 0) {
+        if (changesToApply.length === 0) {
           finishPage();
           return;
         }
 
-        for (const change of page.changes) {
+        for (const change of changesToApply) {
           const entityKey = syncEntityKey(change.entityType, change.lessonId, change.entityId);
           const remoteKey = syncRemoteArtifactKey(ownerUid, entityKey);
           const requests: Array<{ key: string; request: IDBRequest }> = [
