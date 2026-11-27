@@ -7,6 +7,8 @@ on:
     paths:
       - "functions/**"
       - "firestore.rules"
+      - "firebase.json"
+      - "firestore.indexes.json"
       - ".github/workflows/turnstile-poc.yml"
   pull_request:
     branches:
@@ -47,6 +49,27 @@ jobs:
       - name: Build Functions
         working-directory: functions
         run: npm run build
+
+      - name: Validate Firestore challenge TTL configuration
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const firebase = JSON.parse(fs.readFileSync("firebase.json", "utf8"));
+          const indexes = JSON.parse(fs.readFileSync("firestore.indexes.json", "utf8"));
+          if (firebase.firestore?.indexes !== "firestore.indexes.json") {
+            throw new Error("firebase.json must register firestore.indexes.json");
+          }
+          const expected = new Set([
+            "appCheckChallengeSessions:expiresAt",
+            "appCheckChallengeRateLimits:expiresAt"
+          ]);
+          for (const item of indexes.fieldOverrides ?? []) {
+            if (item.ttl === true) expected.delete(item.collectionGroup + ":" + item.fieldPath);
+          }
+          if (expected.size !== 0) {
+            throw new Error("Missing Firestore TTL policies: " + [...expected].join(", "));
+          }
+          NODE
 
       - name: Run isolated Turnstile validator tests
         working-directory: functions
