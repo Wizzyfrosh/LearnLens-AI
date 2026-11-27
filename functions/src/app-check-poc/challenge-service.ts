@@ -9,6 +9,17 @@ import {
 } from "./challenge-sessions";
 import { verifyTurnstileResponse } from "./turnstile-validation";
 
+
+/** Fail-closed deployment switch for all challenge bootstrap operations. */
+export function assertChallengeBootstrapEnabled(enabled: unknown): asserts enabled is true {
+  if (enabled !== true) {
+    throw new SyncBackendError(
+      "failed-precondition",
+      "LearnLens App Check challenge bootstrap is disabled."
+    );
+  }
+}
+
 export interface ChallengeServerConfig {
   appId: string;
   action: string;
