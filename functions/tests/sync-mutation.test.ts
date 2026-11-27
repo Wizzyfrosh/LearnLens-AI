@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { randomUUID } from "node:crypto";
-import { initializeApp, type App } from "firebase-admin/app";
+import { deleteApp, initializeApp, type App } from "firebase-admin/app";
 import { FieldValue, getFirestore, type Firestore } from "firebase-admin/firestore";
 import { applySyncMutation } from "../src/sync-mutation";
 import { saveSyncSettingsForAccount } from "../src/sync-settings";
@@ -19,7 +19,7 @@ before(() => {
 });
 
 after(async () => {
-  if (app) await app.delete();
+  if (app) await deleteApp(app);
 });
 
 function newUid(): string {
