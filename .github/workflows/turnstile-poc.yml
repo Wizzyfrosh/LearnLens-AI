@@ -1,6 +1,12 @@
 name: Turnstile POC validation
 
 on:
+  push:
+    branches:
+      - phase-6-6-2-turnstile-custom-provider-poc
+    paths:
+      - "functions/**"
+      - ".github/workflows/turnstile-poc.yml"
   pull_request:
     branches:
       - phase-6-6-app-check-poc
