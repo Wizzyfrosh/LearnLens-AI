@@ -5,6 +5,7 @@ import {
   claimSyncEntity,
   getSyncMetadata,
   deleteLearningNote,
+  exportSyncConflictSnapshot,
   getSyncConflict,
   getSyncRequest,
   listLearningNotes,
@@ -18,10 +19,12 @@ import {
   markSyncRequestInFlight,
   queueSyncOperation,
   resolveSyncConflict,
+  restoreSyncConflictAsLocalCopy,
   saveLearningNote,
   saveLearningSession,
   saveLocalSyncPreferences,
-  saveQuiz
+  saveQuiz,
+  listQuizzes
 } from "./session-store";
 import { prepareSyncRequests } from "./sync-engine";
 import { dispatchSyncRequest, getSyncTransportReadiness } from "./sync-transport";
@@ -556,6 +559,142 @@ describe("durable sync request journal", () => {
     );
     await expect(resolveSyncConflict(request.requestId, "user-a", "keep_local")).rejects.toThrow();
     expect((await getSyncRequest(request.requestId))?.status).toBe("conflicted");
+  });
+
+  it("exports the retained local snapshot without account IDs or transcript data and restores a new local-only note copy", async () => {
+    const { note, entityKey } = await createQueuedNote("recover-note", "Original local content");
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    await saveLearningNote({ ...note, title: "Latest local title", content: "Latest local recovery body", updatedAt: 300 });
+    await markSyncRequestConflicted(
+      request.requestId,
+      "user-a",
+      4,
+      "revision_conflict",
+      { title: "Remote title", content: "Remote body", createdAtMs: note.createdAt, updatedAtMs: 200 }
+    );
+    await resolveSyncConflict(request.requestId, "user-a", "keep_remote");
+
+    const exported = await exportSyncConflictSnapshot(request.requestId, "user-a");
+    const parsed = JSON.parse(exported) as Record<string, unknown>;
+    expect(parsed).toMatchObject({
+      format: "learnlens.sync-conflict-recovery",
+      schemaVersion: 1,
+      localSnapshot: {
+        source: "latest_local",
+        payload: { title: "Latest local title", content: "Latest local recovery body" }
+      }
+    });
+    expect(exported).not.toContain("user-a");
+    expect(exported).not.toContain("transcriptText");
+
+    const recovery = await restoreSyncConflictAsLocalCopy(request.requestId, "user-a");
+    expect(recovery.restoredEntityId).not.toBe(note.id);
+    expect(recovery.conflict).toMatchObject({
+      recoveredEntityId: recovery.restoredEntityId
+    });
+    const notes = await listLearningNotes("journal-lesson");
+    expect(notes).toHaveLength(2);
+    expect(notes.find((entry) => entry.id === note.id)).toMatchObject({
+      title: "Remote title",
+      content: "Remote body"
+    });
+    expect(notes.find((entry) => entry.id === recovery.restoredEntityId)).toMatchObject({
+      title: "Recovered copy: Latest local title",
+      content: "Latest local recovery body"
+    });
+    expect(await getSyncMetadata("note:journal-lesson:" + recovery.restoredEntityId)).toBeNull();
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+    expect((await getSyncConflict(request.requestId, "user-a"))?.recoveredEntityId).toBe(recovery.restoredEntityId);
+    await expect(restoreSyncConflictAsLocalCopy(request.requestId, "user-a")).rejects.toThrow(/already been created/i);
+    expect(await getSyncMetadata(entityKey)).toMatchObject({ remoteRevision: 4 });
+  });
+
+  it("restores an immutable quiz under a fresh ID without claiming it for sync", async () => {
+    const quiz = {
+      id: "recover-immutable-quiz",
+      sessionId: "journal-lesson",
+      title: "Local quiz",
+      scope: "whole_lesson" as const,
+      scopeLabel: "Whole lesson",
+      createdAt: 100,
+      questions: [
+        { id: "rq1", type: "multiple_choice" as const, prompt: "Q1", options: ["A", "B", "C"], correctAnswer: "A", explanation: "A", topic: "T", evidence: "Evidence one" },
+        { id: "rq2", type: "true_false" as const, prompt: "Q2", options: ["True", "False"], correctAnswer: "True", explanation: "True", topic: "T", evidence: "Evidence two" },
+        { id: "rq3", type: "short_answer" as const, prompt: "Q3", options: [], correctAnswer: "Three", explanation: "Three", topic: "T", evidence: "Evidence three" }
+      ]
+    };
+    await saveQuiz(quiz);
+    const entityKey = "quiz:journal-lesson:" + quiz.id;
+    await claimSyncEntity({
+      entityKey, entityType: "quiz", lessonId: "journal-lesson",
+      entityId: quiz.id, ownerUid: "user-a", syncCategory: "quizzes"
+    });
+    await queueSyncOperation(entityKey, "user-a", "upsert");
+    await saveLocalSyncPreferences("user-a", {
+      lessonMetadata: false, notes: false, quizzes: true, attempts: false
+    });
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    const remotePayload = {
+      title: "Remote quiz",
+      scope: "whole_lesson" as const,
+      scopeLabel: "Whole lesson",
+      createdAtMs: 100,
+      questions: quiz.questions
+    };
+    await markSyncRequestConflicted(
+      request.requestId, "user-a", 2, "immutable_entity_exists", remotePayload
+    );
+    await resolveSyncConflict(request.requestId, "user-a", "keep_remote");
+
+    const recovery = await restoreSyncConflictAsLocalCopy(request.requestId, "user-a");
+    const quizzes = await listQuizzes("journal-lesson");
+    expect(quizzes).toHaveLength(2);
+    expect(quizzes.find((entry) => entry.id === recovery.restoredEntityId)).toMatchObject({
+      title: "Recovered copy: Local quiz",
+      questions: quiz.questions
+    });
+    expect(await getSyncMetadata("quiz:journal-lesson:" + recovery.restoredEntityId)).toBeNull();
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+  });
+
+  it("does not restore a quiz attempt when its linked quiz is unavailable locally", async () => {
+    const attempt = {
+      id: "recover-attempt-without-quiz",
+      quizId: "missing-linked-quiz",
+      sessionId: "journal-lesson",
+      createdAt: 100,
+      results: [],
+      objectiveScore: 0,
+      objectiveTotal: 0,
+      topicsToReview: []
+    };
+    const { saveQuizAttempt } = await import("./session-store");
+    await saveQuizAttempt(attempt);
+    const entityKey = "attempt:journal-lesson:" + attempt.id;
+    await claimSyncEntity({
+      entityKey, entityType: "attempt", lessonId: "journal-lesson",
+      entityId: attempt.id, ownerUid: "user-a", syncCategory: "attempts"
+    });
+    await queueSyncOperation(entityKey, "user-a", "upsert");
+    await saveLocalSyncPreferences("user-a", {
+      lessonMetadata: false, notes: false, quizzes: false, attempts: true
+    });
+    const [request] = (await prepareSyncRequests("user-a", 10)).requests;
+    await markSyncRequestInFlight(request.requestId, "user-a");
+    const dto = {
+      quizId: attempt.quizId,
+      createdAtMs: attempt.createdAt,
+      results: attempt.results,
+      objectiveScore: attempt.objectiveScore,
+      objectiveTotal: attempt.objectiveTotal,
+      topicsToReview: attempt.topicsToReview
+    };
+    await markSyncRequestConflicted(request.requestId, "user-a", 3, "revision_conflict", dto);
+    await resolveSyncConflict(request.requestId, "user-a", "keep_remote");
+    await expect(restoreSyncConflictAsLocalCopy(request.requestId, "user-a")).rejects.toThrow(/linked quiz is not saved/i);
+    expect((await getSyncConflict(request.requestId, "user-a"))?.recoveredEntityId).toBeUndefined();
   });
 
   it("fails closed because cloud writes remain disabled pending production Auth and App Check", async () => {

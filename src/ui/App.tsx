@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Download, Search, FileText, History, Sun, Moon, CheckCircle2, XCircle, UserRound, LogIn, LogOut, Mail, ShieldCheck, RefreshCw } from "lucide-react";
+import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Download, Search, FileText, History, Sun, Moon, CheckCircle2, XCircle, UserRound, LogIn, LogOut, Mail, ShieldCheck, RefreshCw, Copy } from "lucide-react";
 import { askLearnLens, generateQuizText, isAudioTranscriptionConfigured, transcribeAudioChunk } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport, serializeSegmentsAsVtt } from "../services/transcript";
-import { deleteLearningSession, deleteLearningNote, getLatestSavedSession, getLatestSessionForVideo, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt, getLocalSyncCandidateCounts, getLocalSyncPreferences, saveLocalSyncPreferences, getLocalSyncClaimCandidates, claimSelectedLocalSyncRecords, listSyncConflicts, resolveSyncConflict } from "../services/session-store";
+import { deleteLearningSession, deleteLearningNote, getLatestSavedSession, getLatestSessionForVideo, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt, getLocalSyncCandidateCounts, getLocalSyncPreferences, saveLocalSyncPreferences, getLocalSyncClaimCandidates, claimSelectedLocalSyncRecords, listSyncConflicts, resolveSyncConflict, exportSyncConflictSnapshot, restoreSyncConflictAsLocalCopy } from "../services/session-store";
 import type { LearningNote, LearningSession, SyncCandidateCounts, SyncCategoryPreferences, SyncClaimResult, SyncClaimCandidate, SyncConflictRecord, SyncConflictResolution, SyncPreparedPayload } from "../services/session-store";
 import { getQuizFeedbackSegments, parseShortAnswerFeedback, scoreObjectiveAnswers, validateQuizResponse } from "../services/quiz";
 import type { QuizAttempt, QuizDefinition } from "../services/quiz";
@@ -159,6 +159,11 @@ export default function App() {
   const [syncClaimResult, setSyncClaimResult] = useState<SyncClaimResult | null>(null);
   const [syncClaimCandidates, setSyncClaimCandidates] = useState<SyncClaimCandidate[]>([]);
   const [syncConflicts, setSyncConflicts] = useState<SyncConflictRecord[]>([]);
+  const [resolvedSyncConflicts, setResolvedSyncConflicts] = useState<SyncConflictRecord[]>([]);
+  const [syncConflictHistoryExpanded, setSyncConflictHistoryExpanded] = useState(false);
+  const [syncRecoveryBusyId, setSyncRecoveryBusyId] = useState<string | null>(null);
+  const [syncRecoveryError, setSyncRecoveryError] = useState("");
+  const [syncRecoveryMessage, setSyncRecoveryMessage] = useState("");
   const [syncConflictsLoading, setSyncConflictsLoading] = useState(false);
   const [syncConflictBusyId, setSyncConflictBusyId] = useState<string | null>(null);
   const [syncConflictError, setSyncConflictError] = useState("");
@@ -176,6 +181,10 @@ export default function App() {
         setSyncClaimResult(null);
         setSyncCandidateCounts(null);
         setSyncConflicts([]);
+        setResolvedSyncConflicts([]);
+        setSyncConflictHistoryExpanded(false);
+        setSyncRecoveryError("");
+        setSyncRecoveryMessage("");
         setSyncConflictError("");
         setSyncConflictMessage("");
         setSyncCategories({ lessonMetadata: false, notes: false, quizzes: false, attempts: false });
@@ -194,6 +203,7 @@ export default function App() {
     if (activeTab !== "account" || !authUser?.emailVerified) {
       setSyncCandidateCounts(null);
       setSyncConflicts([]);
+      setResolvedSyncConflicts([]);
       setSyncConflictsLoading(false);
       return;
     }
@@ -204,12 +214,14 @@ export default function App() {
     Promise.all([
       getLocalSyncCandidateCounts(authUser.uid),
       getLocalSyncPreferences(authUser.uid),
-      listSyncConflicts(authUser.uid, ["open"], 100)
-    ]).then(([counts, preferences, conflicts]) => {
+      listSyncConflicts(authUser.uid, ["open"], 100),
+      listSyncConflicts(authUser.uid, ["resolved"], 25)
+    ]).then(([counts, preferences, conflicts, resolvedConflicts]) => {
       if (cancelled) return;
       setSyncCandidateCounts(counts);
       setSyncCategories(preferences.categories);
       setSyncConflicts(conflicts);
+      setResolvedSyncConflicts(resolvedConflicts);
     }).catch((cause) => {
       if (!cancelled) setSyncPreferencesError(cause instanceof Error ? cause.message : "Could not load local sync preferences.");
     }).finally(() => {
@@ -811,7 +823,12 @@ export default function App() {
     try {
       const conflict = syncConflicts.find((item) => item.conflictId === conflictId);
       await resolveSyncConflict(conflictId, authUser.uid, resolution);
-      setSyncConflicts(await listSyncConflicts(authUser.uid, ["open"], 100));
+      const [openConflicts, resolvedConflicts] = await Promise.all([
+        listSyncConflicts(authUser.uid, ["open"], 100),
+        listSyncConflicts(authUser.uid, ["resolved"], 25)
+      ]);
+      setSyncConflicts(openConflicts);
+      setResolvedSyncConflicts(resolvedConflicts);
       setSyncConflictMessage(
         resolution === "keep_remote"
           ? conflict?.entityType === "lesson" && (conflict.remoteIsDeleted || conflict.remoteRevision === 0)
@@ -823,6 +840,68 @@ export default function App() {
       setSyncConflictError(cause instanceof Error ? cause.message : "Could not resolve this sync conflict.");
     } finally {
       setSyncConflictBusyId(null);
+    }
+  }
+
+  async function copyConflictRecovery(conflictId: string) {
+    if (!authUser?.emailVerified || syncRecoveryBusyId) return;
+    setSyncRecoveryBusyId(conflictId);
+    setSyncRecoveryError("");
+    setSyncRecoveryMessage("");
+    try {
+      const json = await exportSyncConflictSnapshot(conflictId, authUser.uid);
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard access is unavailable here. Use Download JSON to save the recovery snapshot.");
+      }
+      await navigator.clipboard.writeText(json);
+      setSyncRecoveryMessage("The local recovery snapshot was copied to the clipboard.");
+    } catch (cause) {
+      setSyncRecoveryError(cause instanceof Error ? cause.message : "Could not copy the recovery snapshot.");
+    } finally {
+      setSyncRecoveryBusyId(null);
+    }
+  }
+
+  async function downloadConflictRecovery(conflictId: string) {
+    if (!authUser?.emailVerified || syncRecoveryBusyId) return;
+    setSyncRecoveryBusyId(conflictId);
+    setSyncRecoveryError("");
+    setSyncRecoveryMessage("");
+    try {
+      const json = await exportSyncConflictSnapshot(conflictId, authUser.uid);
+      const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "learnlens-conflict-recovery-" + conflictId + ".json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setSyncRecoveryMessage("The recovery JSON export was prepared as a local download.");
+    } catch (cause) {
+      setSyncRecoveryError(cause instanceof Error ? cause.message : "Could not export the recovery snapshot.");
+    } finally {
+      setSyncRecoveryBusyId(null);
+    }
+  }
+
+  async function restoreConflictRecovery(conflictId: string) {
+    if (!authUser?.emailVerified || syncRecoveryBusyId) return;
+    setSyncRecoveryBusyId(conflictId);
+    setSyncRecoveryError("");
+    setSyncRecoveryMessage("");
+    try {
+      const result = await restoreSyncConflictAsLocalCopy(conflictId, authUser.uid);
+      setResolvedSyncConflicts(await listSyncConflicts(authUser.uid, ["resolved"], 25));
+      setSyncRecoveryMessage(
+        "A new local-only " + syncConflictEntityLabel(result.conflict.entityType).toLowerCase() +
+        " copy was created. It has a new ID and was not added to cloud sync."
+      );
+    } catch (cause) {
+      setSyncRecoveryError(cause instanceof Error ? cause.message : "Could not restore the local snapshot.");
+    } finally {
+      setSyncRecoveryBusyId(null);
     }
   }
 
@@ -1622,6 +1701,94 @@ export default function App() {
                       )}
                       {syncConflictError && <p className="error-box" role="alert">{syncConflictError}</p>}
                       {syncConflictMessage && <p className="account-message" role="status">{syncConflictMessage}</p>}
+                    </section>
+                    <section className="sync-conflict-history" aria-labelledby="sync-history-heading">
+                      <div className="sync-conflict-heading">
+                        <div><History size={15} /><strong id="sync-history-heading">Resolved history</strong></div>
+                        <button
+                          className="sync-history-toggle"
+                          type="button"
+                          aria-expanded={syncConflictHistoryExpanded}
+                          onClick={() => setSyncConflictHistoryExpanded((expanded) => !expanded)}
+                        >
+                          {syncConflictHistoryExpanded ? "Hide" : "View"} {resolvedSyncConflicts.length}
+                        </button>
+                      </div>
+                      <p className="sync-conflict-intro">Resolved decisions are kept on this device. Copy or export the saved local snapshot, or restore it as a separate local-only record. Transcript text is never included.</p>
+                      {syncConflictHistoryExpanded && (
+                        syncConflictsLoading ? (
+                          <div className="account-sync-loading"><LoaderCircle className="spin" size={14} /> Loading resolved history…</div>
+                        ) : resolvedSyncConflicts.length === 0 ? (
+                          <p className="sync-conflict-empty">No resolved conflicts have been recorded on this device.</p>
+                        ) : (
+                          <div className="sync-conflict-history-list">
+                            {resolvedSyncConflicts.map((conflict) => {
+                              const payload = conflict.latestLocalPayloadSnapshot ?? conflict.localPayloadSnapshot;
+                              const hasSnapshot = Boolean(payload);
+                              const isBusy = syncRecoveryBusyId === conflict.conflictId;
+                              const canRestore = hasSnapshot &&
+                                conflict.resolution === "keep_remote" &&
+                                conflict.entityType !== "lesson" &&
+                                conflict.recoveredAtMs === undefined &&
+                                !conflict.recoveredEntityId;
+                              return (
+                                <article className="sync-conflict-card sync-conflict-history-card" key={conflict.conflictId}>
+                                  <div className="sync-conflict-card-heading">
+                                    <div>
+                                      <strong>{syncConflictEntityLabel(conflict.entityType)}</strong>
+                                      <small>{conflict.entityId} · {conflict.resolvedAtMs ? new Date(conflict.resolvedAtMs).toLocaleString() : "Resolution date unavailable"}</small>
+                                    </div>
+                                    <span>{conflict.resolution === "keep_remote" ? "KEPT REMOTE" : "KEPT LOCAL"}</span>
+                                  </div>
+                                  <div className="sync-conflict-version">
+                                    <strong>{conflict.latestLocalPayloadSnapshot ? "Latest retained local snapshot" : "Original request snapshot"}</strong>
+                                    <pre>{payload ? describeSyncConflictPayload(payload) : "No content snapshot was retained for this operation."}</pre>
+                                  </div>
+                                  {conflict.recoveredEntityId && (
+                                    <p className="sync-conflict-recovered" role="status">
+                                      Local recovery copy created: {conflict.recoveredEntityId}
+                                    </p>
+                                  )}
+                                  {conflict.entityType === "lesson" && hasSnapshot && (
+                                    <p className="sync-conflict-caution">Export only. Restoring lesson metadata alone would create an incomplete lesson without its local transcript.</p>
+                                  )}
+                                  <div className="sync-recovery-actions">
+                                    <button
+                                      className="secondary-button"
+                                      type="button"
+                                      onClick={() => void copyConflictRecovery(conflict.conflictId)}
+                                      disabled={!hasSnapshot || Boolean(syncRecoveryBusyId)}
+                                    >
+                                      {isBusy ? <LoaderCircle className="spin" size={12} /> : <Copy size={12} />}
+                                      Copy JSON
+                                    </button>
+                                    <button
+                                      className="secondary-button"
+                                      type="button"
+                                      onClick={() => void downloadConflictRecovery(conflict.conflictId)}
+                                      disabled={!hasSnapshot || Boolean(syncRecoveryBusyId)}
+                                    >
+                                      {isBusy ? <LoaderCircle className="spin" size={12} /> : <Download size={12} />}
+                                      Download JSON
+                                    </button>
+                                    <button
+                                      className="primary-button"
+                                      type="button"
+                                      onClick={() => void restoreConflictRecovery(conflict.conflictId)}
+                                      disabled={!canRestore || Boolean(syncRecoveryBusyId)}
+                                    >
+                                      {isBusy ? <LoaderCircle className="spin" size={12} /> : <RefreshCw size={12} />}
+                                      {conflict.recoveredEntityId ? "Restored" : "Restore copy"}
+                                    </button>
+                                  </div>
+                                </article>
+                              );
+                            })}
+                          </div>
+                        )
+                      )}
+                      {syncRecoveryError && <p className="error-box" role="alert">{syncRecoveryError}</p>}
+                      {syncRecoveryMessage && <p className="account-message" role="status">{syncRecoveryMessage}</p>}
                     </section>
                   </>
                 ) : null}

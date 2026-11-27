@@ -520,6 +520,9 @@ export interface SyncConflictRecord {
   status: SyncConflictStatus;
   resolution?: "keep_remote" | "keep_local";
   resolvedAtMs?: number;
+  /** A single local-only recovery copy created from this conflict's saved snapshot. */
+  recoveredAtMs?: number;
+  recoveredEntityId?: string;
   createdAtMs: number;
   updatedAtMs: number;
 }
@@ -1320,6 +1323,191 @@ export async function listSyncConflicts(
       .sort((a, b) => b.updatedAtMs - a.updatedAtMs)
       .slice(0, safeLimit));
   });
+}
+
+
+/**
+ * Serializes a resolved conflict's retained local DTO snapshot for user-owned
+ * recovery. The envelope intentionally excludes account IDs and all transcript
+ * fields; only the already allow-listed sync DTO is exported.
+ */
+export async function exportSyncConflictSnapshot(conflictId: string, ownerUid: string): Promise<string> {
+  validateSyncIdentity(ownerUid, "account ID");
+  const conflict = await getSyncConflict(conflictId, ownerUid);
+  if (!conflict || conflict.status !== "resolved") {
+    throw new Error("Only a resolved conflict can be exported from recovery history.");
+  }
+  const latestSnapshot = conflict.latestLocalPayloadSnapshot ?? null;
+  const payload = latestSnapshot ?? conflict.localPayloadSnapshot;
+  if (!payload) throw new Error("This conflict does not contain a recoverable local content snapshot.");
+  const exportRecord = {
+    format: "learnlens.sync-conflict-recovery",
+    schemaVersion: 1,
+    exportedAtMs: Date.now(),
+    conflict: {
+      conflictId: conflict.conflictId,
+      entityType: conflict.entityType,
+      lessonId: conflict.lessonId,
+      entityId: conflict.entityId,
+      baseRevision: conflict.baseRevision,
+      remoteRevision: conflict.remoteRevision,
+      conflictCode: conflict.conflictCode,
+      resolution: conflict.resolution ?? null,
+      resolvedAtMs: conflict.resolvedAtMs ?? null
+    },
+    localSnapshot: {
+      source: latestSnapshot ? "latest_local" : "original_request",
+      payload
+    }
+  };
+  return JSON.stringify(exportRecord, null, 2);
+}
+
+export interface SyncConflictRecoveryResult {
+  conflict: SyncConflictRecord;
+  restoredEntityId: string;
+}
+
+/**
+ * Restores a retained local snapshot as a brand-new local-only artifact. It
+ * never reuses the conflicted ID, never creates sync metadata/outbox work, and
+ * permits only one recovery copy per conflict. Lesson metadata is export-only:
+ * it does not contain the device-local transcript.
+ */
+export async function restoreSyncConflictAsLocalCopy(
+  conflictId: string,
+  ownerUid: string
+): Promise<SyncConflictRecoveryResult> {
+  validateSyncIdentity(ownerUid, "account ID");
+  const database = await openDatabase();
+  return new Promise<SyncConflictRecoveryResult>((resolve, reject) => {
+    const transaction = database.transaction(
+      [SYNC_CONFLICT_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE],
+      "readwrite"
+    );
+    const conflicts = transaction.objectStore(SYNC_CONFLICT_STORE);
+    let result: SyncConflictRecoveryResult | null = null;
+    let failure: Error | null = null;
+    const abortWith = (message: string) => {
+      failure = new Error(message);
+      try { transaction.abort(); } catch { reject(failure); }
+    };
+    const conflictRead = conflicts.get(conflictId);
+    conflictRead.onsuccess = () => {
+      const conflict = conflictRead.result as SyncConflictRecord | undefined;
+      if (!conflict || conflict.ownerUid !== ownerUid) {
+        abortWith("This recovery record does not belong to the signed-in account.");
+        return;
+      }
+      if (conflict.status !== "resolved" || conflict.resolution !== "keep_remote") {
+        abortWith("A local recovery copy is available only after keeping the remote version.");
+        return;
+      }
+      if (conflict.recoveredAtMs !== undefined || conflict.recoveredEntityId) {
+        abortWith("A recovery copy has already been created for this conflict.");
+        return;
+      }
+      if (conflict.entityType === "lesson") {
+        abortWith("Lesson snapshots can be exported, but cannot restore a lesson because transcripts are not part of the snapshot.");
+        return;
+      }
+      const payload = conflict.latestLocalPayloadSnapshot ?? conflict.localPayloadSnapshot;
+      if (!payload) {
+        abortWith("This conflict does not contain a recoverable local content snapshot.");
+        return;
+      }
+      const restoredEntityId = crypto.randomUUID();
+      try {
+        validateSyncServerRequest({
+          protocolVersion: 1,
+          requestId: crypto.randomUUID(),
+          deviceId: crypto.randomUUID(),
+          entityType: conflict.entityType,
+          lessonId: conflict.lessonId,
+          entityId: restoredEntityId,
+          operation: "upsert",
+          baseRevision: 0,
+          payloadSchemaVersion: 1,
+          payload
+        });
+      } catch {
+        abortWith("The retained snapshot failed validation. Export it as JSON instead of restoring it.");
+        return;
+      }
+
+      const now = Date.now();
+      if (conflict.entityType === "note") {
+        const dto = payload as NoteSyncDto;
+        const note: LearningNote = {
+          id: restoredEntityId,
+          sessionId: conflict.lessonId,
+          videoId: conflict.lessonId,
+          title: ("Recovered copy: " + dto.title).slice(0, 500),
+          content: dto.content,
+          createdAt: now,
+          updatedAt: now
+        };
+        transaction.objectStore(NOTE_STORE).add(note);
+      } else if (conflict.entityType === "quiz") {
+        const dto = payload as QuizSyncDto;
+        const quiz: QuizDefinition = {
+          id: restoredEntityId,
+          sessionId: conflict.lessonId,
+          title: ("Recovered copy: " + dto.title).slice(0, 500),
+          scope: dto.scope,
+          scopeLabel: dto.scopeLabel,
+          ...(dto.rangeStartSeconds !== undefined ? { rangeStartSeconds: dto.rangeStartSeconds } : {}),
+          ...(dto.rangeEndSeconds !== undefined ? { rangeEndSeconds: dto.rangeEndSeconds } : {}),
+          createdAt: now,
+          questions: dto.questions.map((question) => ({ ...question, options: [...question.options] }))
+        };
+        transaction.objectStore(QUIZ_STORE).add(quiz);
+      } else {
+        const dto = payload as AttemptSyncDto;
+        const quizRead = transaction.objectStore(QUIZ_STORE).get(dto.quizId);
+        quizRead.onsuccess = () => {
+          const linkedQuiz = quizRead.result as QuizDefinition | undefined;
+          if (!linkedQuiz || linkedQuiz.sessionId !== conflict.lessonId) {
+            abortWith("This attempt cannot be restored because its linked quiz is not saved on this device. Export the JSON snapshot instead.");
+            return;
+          }
+          const attempt: QuizAttempt = {
+            id: restoredEntityId,
+            quizId: dto.quizId,
+            sessionId: conflict.lessonId,
+            createdAt: now,
+            results: dto.results.map((item) => ({ ...item })),
+            objectiveScore: dto.objectiveScore,
+            objectiveTotal: dto.objectiveTotal,
+            topicsToReview: [...dto.topicsToReview]
+          };
+          transaction.objectStore(QUIZ_ATTEMPT_STORE).add(attempt);
+          const recoveredConflict: SyncConflictRecord = {
+            ...conflict,
+            recoveredAtMs: now,
+            recoveredEntityId: restoredEntityId
+          };
+          conflicts.put(recoveredConflict);
+          result = { conflict: recoveredConflict, restoredEntityId };
+        };
+        return;
+      }
+
+      const recoveredConflict: SyncConflictRecord = {
+        ...conflict,
+        recoveredAtMs: now,
+        recoveredEntityId: restoredEntityId
+      };
+      conflicts.put(recoveredConflict);
+      result = { conflict: recoveredConflict, restoredEntityId };
+    };
+    transaction.oncomplete = () => {
+      if (result) resolve(result);
+      else reject(failure ?? new Error("The local recovery copy could not be created."));
+    };
+    transaction.onerror = () => reject(failure ?? transaction.error ?? new Error("The local recovery copy could not be created."));
+    transaction.onabort = () => reject(failure ?? transaction.error ?? new Error("The local recovery copy was cancelled."));
+  }).finally(() => database.close());
 }
 
 /**
