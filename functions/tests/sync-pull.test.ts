@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { deleteApp, initializeApp, type App } from "firebase-admin/app";
 import { FieldValue, getFirestore, type Firestore } from "firebase-admin/firestore";
 import { pullSyncChanges } from "../src/sync-pull";
+import { canonicalizeSyncServerValue } from "../../src/services/sync-server-contract";
 import { SyncBackendError } from "../src/errors";
 
 let app: App;
@@ -72,7 +73,7 @@ async function seedFeed(
       revision: 1,
       isDeleted: false,
       payloadRef: String(event.sequence),
-      payloadBytes: Buffer.byteLength(JSON.stringify(payload), "utf8")
+      payloadBytes: Buffer.byteLength(canonicalizeSyncServerValue(payload), "utf8")
     });
   }
   await batch.commit();
@@ -131,7 +132,7 @@ describe("Firebase Admin category-scoped sync pull", () => {
       revision: 1,
       isDeleted: false,
       payloadRef: "206",
-      payloadBytes: Buffer.byteLength(JSON.stringify(newPayload), "utf8")
+      payloadBytes: Buffer.byteLength(canonicalizeSyncServerValue(newPayload), "utf8")
     });
     batch.set(database.doc("users/" + uid + "/syncState/changeFeed"), {
       lastSequence: 206,
@@ -163,7 +164,7 @@ describe("Firebase Admin category-scoped sync pull", () => {
 
     const first = await pullSyncChanges(uid, pullRequest(), database, cursorSecret);
     const returnedBytes = first.changes.reduce(
-      (total, change) => total + Buffer.byteLength(JSON.stringify(change.payload), "utf8"),
+      (total, change) => total + Buffer.byteLength(canonicalizeSyncServerValue(change.payload), "utf8"),
       0
     );
     assert.ok(first.changes.length > 0);
