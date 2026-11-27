@@ -1,7 +1,7 @@
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
-import { defineSecret, defineString } from "firebase-functions/params";
+import { defineBoolean, defineSecret, defineString } from "firebase-functions/params";
 import { requireVerifiedAppCaller } from "./auth-guards";
 import { SyncBackendError } from "./errors";
 import { applySyncMutation } from "./sync-mutation";
@@ -10,7 +10,8 @@ import { pullSyncChanges } from "./sync-pull";
 import {
   claimAuthenticatedChallengeSession,
   completeAuthenticatedChallengeSession,
-  createAuthenticatedChallengeSession
+  createAuthenticatedChallengeSession,
+  assertChallengeBootstrapEnabled
 } from "./app-check-poc/challenge-service";
 
 const adminApp = getApps()[0] ?? initializeApp();
@@ -20,6 +21,7 @@ const turnstileSecret = defineSecret("TURNSTILE_SECRET");
 const challengeAppId = defineString("APP_CHECK_CHALLENGE_APP_ID");
 const challengeHostname = defineString("APP_CHECK_CHALLENGE_HOSTNAME");
 const challengeAction = defineString("APP_CHECK_CHALLENGE_ACTION", { default: "learnlens_app_check" });
+const challengeBootstrapEnabled = defineBoolean("APP_CHECK_CHALLENGE_ENABLED", { default: false });
 
 function toHttpsError(cause: unknown): HttpsError {
   if (cause instanceof SyncBackendError) {
@@ -123,6 +125,7 @@ export const createAppCheckChallengeSession = onCall(
   { enforceAppCheck: false, maxInstances: 3, memory: "256MiB" },
   async (request) => {
     try {
+      assertChallengeBootstrapEnabled(challengeBootstrapEnabled.value());
       const uid = requireVerifiedChallengeUser(request.auth);
       return await createAuthenticatedChallengeSession(
         uid,
@@ -154,6 +157,7 @@ export const completeAppCheckChallenge = onCall(
   },
   async (request) => {
     try {
+      assertChallengeBootstrapEnabled(challengeBootstrapEnabled.value());
       const uid = requireVerifiedChallengeUser(request.auth);
       const data = request.data as unknown;
       if (
@@ -197,6 +201,7 @@ export const claimAppCheckChallengeSession = onCall(
   { enforceAppCheck: false, maxInstances: 3, memory: "256MiB" },
   async (request) => {
     try {
+      assertChallengeBootstrapEnabled(challengeBootstrapEnabled.value());
       const uid = requireVerifiedChallengeUser(request.auth);
       const data = request.data as unknown;
       if (
