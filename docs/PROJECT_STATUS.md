@@ -4,19 +4,19 @@
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
 **Extension version:** 0.1.0  
-**Current checkpoint:** Phases 4 and 5 are complete and user-confirmed in desktop Chrome. Phases 6.1–6.4 established the sync protocol, Functions backend, local pull/recovery foundation, and explicit consent-review client. Phase 6.5 adds authenticated persisted-consent retrieval, explicit unconfigured/withdrawn states, and a two-step account withdrawal action. Latest source CI passed on commit `231f2704c62f33f1df39379564ccec9586f3f384`. The Functions backend is not deployed. Server-consent reads/writes, cloud pull, and artifact writes remain independently hard-disabled; no live Firebase request has been made. Live Auth QA and production Chrome App Check remain release gates.
+**Current checkpoint:** Phases 4 and 5 are complete and user-confirmed in desktop Chrome. Phases 6.1–6.5 implement the sync protocol, authenticated Functions backend, local pull/recovery foundation, explicit consent review, persisted consent retrieval, and consent withdrawal. Latest verified commit is `e1b3fc21d9a1be5db3b5416f4af37cd13474878d`; CI run `46064574582` passed. The Functions backend is not deployed. Server-consent reads/writes, cloud pull, and artifact writes remain independently hard-disabled; no live Firebase request has been made. Production App Check for a Chrome extension and live Auth QA remain release gates.
 
 > Phase 4/5 behavior was manually tested by the user. Phase 6 source and emulator behavior is CI-verified only. The new Account inbox/recovery UI has not yet been manually tested in desktop Chrome, and no live Firebase or two-device sync test has been completed.
 
 ## 1. Latest verified build
 
-- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46064286669
-- **Commit:** `231f2704c62f33f1df39379564ccec9586f3f384`
+- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46064574582
+- **Commit:** `e1b3fc21d9a1be5db3b5416f4af37cd13474878d`
 - **Result:** SUCCESS.
 - **Passed:** TypeScript typecheck, 15 Vitest files / 172 unit tests, 11 Firestore Rules emulator tests, 29 Firebase Functions/Admin emulator tests, production build, Chrome extension package verification, and artifact upload.
-- **Artifact:** `learnlens-chrome-extension` (artifact ID `15230431685`).
-- **Artifact SHA-256:** `b015331f735dec580888127af52ee0abc5c17d06938683313d5ae596126c0a7e`.
-- **Artifact size:** 170,158 bytes.
+- **Artifact:** `learnlens-chrome-extension` (artifact ID `15230646330`).
+- **Artifact SHA-256:** `01ab18bef9f9b0f15d6fa85070bd4347c90a2877660359b43a2cca81dff99a20`.
+- **Artifact size:** 170,173 bytes.
 - **Package/manifest version:** 0.1.0.
 - **Important:** CI uses demo Firebase projects and the development App Check debug configuration. Passing CI does not prove a live deployment or production App Check compatibility.
 
@@ -294,7 +294,7 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - Full transcript text and the complete caption stream are excluded from sync. If Quizzes are selected, short evidence excerpts attached to quiz questions are included. Audio is excluded from sync; the separate audio-transcription feature may still send tab audio for transcription after its own explicit user action/consent.
 - Backend validation and Firestore Rules reject enabled consent with zero selected categories. Attempts still require Quiz definitions.
 - Reviewing consent does not claim records, queue uploads, or enable pull/writes. Local category choices and local first-claim behavior remain on-device only.
-- Consent status retrieval and a user-facing withdrawal/status control are still outstanding; the client orchestration supports the disabled settings shape but this UI does not yet manage an existing saved server consent.
+- Consent status retrieval and the two-step withdrawal/status control were completed in Phase 6.5. Both server-consent read and write gates remain disabled pending a production App Check decision and live Auth QA.
 - No live Firebase project is deployed. Production App Check, live Auth QA, Firebase project/region confirmation, Secret Manager cursor key setup, live consent QA, and two-device pull testing remain release gates.
 - Keep extension version 0.1.0. Do not enable server consent, cloud pull, or artifact writes until the production release gates are explicitly reviewed and approved.
 
@@ -313,3 +313,17 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - `SYNC_CLOUD_PULL_ENABLED` and `SYNC_CLOUD_WRITES_ENABLED` remain false. No live Firebase call, deployment, or two-device sync test has occurred.
 - Next gates: approve a production App Check approach for the published extension ID, complete live Auth QA, verify Firebase project/region, create the pull cursor HMAC secret, deploy after explicit review, then manually test saved consent read/withdrawal and read-only two-device pull in desktop Chrome.
 - Keep extension version 0.1.0. Do not open the read/write gates or deploy without explicit production-security approval.
+
+
+## 2026-11-27 — Phase 6.6 production App Check architecture assessment
+
+- Current implementation in `src/services/firebase-ai.ts` initializes the Firebase Web App Check SDK with a debug provider only. It is explicitly development-only and is not a production attestation strategy.
+- Firebase's documented built-in web App Check provider is reCAPTCHA Enterprise. Its setup requires a Web-type key with allowed web domains. Firebase's documentation does not explicitly establish that a `chrome-extension://<id>` origin is a supported web domain or that the built-in provider works in a Manifest V3 extension context. Do not assume compatibility without an actual proof-of-concept using the final published extension ID.
+- Chrome Manifest V3 requires extension-page executable code to be packaged with the extension and restricts extension-page script sources. Do not solve reCAPTCHA integration by injecting remotely hosted JavaScript into extension pages. A separately hosted challenge page/iframe may be evaluated, but it must be reviewed against Chrome Web Store policy and tested with extension CSP.
+- Firebase documents a custom App Check provider whose client `getToken()` exchanges proof of authenticity with a server-side token acquisition service. This is an extensibility mechanism, not proof by itself. A custom endpoint that accepts a bundled extension secret, a caller-supplied extension ID, or an unverified origin is not attestation and must not mint App Check tokens.
+- A hosted reCAPTCHA/Turnstile challenge can add bot friction, but it does not cryptographically prove that the caller is the genuine installed extension. Chrome extension IDs and request Origin headers are not secrets or sufficient standalone attestation. Treat any challenge-backed custom provider as abuse mitigation, not strong app identity.
+- Recommended security posture: keep Firebase Auth verified-UID authorization, per-account data ownership, server-side consent, schema validation, rate limits/quotas, and audit controls as the primary controls. App Check should remain an additional abuse barrier. Do not weaken or remove `enforceAppCheck:true` from sync callables merely to make the extension work.
+- No provider has been selected or enabled. No Firebase App Check console changes, production key creation, endpoint deployment, Firebase deployment, or live request has been performed.
+- Next engineering task: create a minimal isolated proof-of-concept for the final Chrome Web Store extension ID and compare (A) built-in reCAPTCHA Enterprise on the extension context, and (B) a hosted challenge + custom App Check provider with server-side verification and abuse controls. Record compatibility, CSP impact, token minting, quotas/cost, replay resistance, and Chrome Web Store policy before selecting one.
+- Keep all four cloud gates disabled: `SYNC_SERVER_CONSENT_READS_ENABLED`, `SYNC_SERVER_CONSENT_WRITES_ENABLED`, `SYNC_CLOUD_PULL_ENABLED`, and `SYNC_CLOUD_WRITES_ENABLED`. Keep extension version 0.1.0.
+- References: Firebase [App Check overview](https://firebase.google.com/docs/app-check), [Web reCAPTCHA Enterprise provider](https://firebase.google.com/docs/app-check/web/recaptcha-enterprise-provider), [custom App Check provider](https://firebase.google.com/docs/app-check/web/custom-provider), and Chrome [Manifest V3 security changes](https://developer.chrome.com/docs/extensions/develop/migrate/improve-security).
