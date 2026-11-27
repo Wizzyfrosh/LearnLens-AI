@@ -21,23 +21,31 @@ export async function enforceChallengeRateLimit(
     const value = snapshot.exists ? snapshot.data() : undefined;
     let windowStartMs = nowMs;
     let count = 0;
+
     if (value) {
       if (
+        value.schemaVersion !== 1 ||
+        value.scope !== scope ||
         !(value.windowStartedAt instanceof Timestamp) ||
+        !(value.expiresAt instanceof Timestamp) ||
         !Number.isSafeInteger(value.count) ||
         (value.count as number) < 0
       ) {
         throw new SyncBackendError("failed-precondition", "Challenge rate-limit state is invalid.");
       }
+
       const storedStart = value.windowStartedAt.toMillis();
-      if (nowMs >= storedStart && nowMs - storedStart < WINDOW_MS) {
+      // Never let a backwards clock adjustment reset the active counter.
+      if (nowMs < storedStart || nowMs - storedStart < WINDOW_MS) {
         windowStartMs = storedStart;
         count = value.count as number;
       }
     }
+
     if (count >= MAX_REQUESTS_PER_WINDOW) {
       throw new SyncBackendError("resource-exhausted", "Too many challenge requests. Please wait before trying again.");
     }
+
     transaction.set(ref, {
       schemaVersion: 1,
       scope,
