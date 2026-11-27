@@ -1737,7 +1737,7 @@ export default function App() {
                         <strong>Review your cloud-sync consent</strong>
                         <p>
                           Enabling cloud sync will allow the selected learning records to be stored under this verified account on LearnLens cloud services.
-                          Only the categories below are included. Full transcript text, the complete captured caption stream, and lesson audio remain on this device. If Quiz definitions are selected, short transcript evidence excerpts attached to quiz questions are included.
+                          Only the categories below are synchronized. Full transcript text and the complete captured caption stream are excluded. Audio is also excluded from sync; the separate audio-transcription feature has its own explicit capture consent and may send selected tab audio to Firebase for transcription. If Quiz definitions are selected, short transcript evidence excerpts attached to quiz questions are included.
                         </p>
                         <div className="sync-consent-scope">
                           <span>Categories selected for cloud storage</span>
@@ -1756,7 +1756,7 @@ export default function App() {
                             checked={syncConsentAcknowledged}
                             onChange={(event) => setSyncConsentAcknowledged(event.target.checked)}
                           />
-                          <span>I understand the selected categories may be stored in my LearnLens account, including short quiz evidence excerpts when Quizzes are selected. Full transcripts, the complete caption stream, and lesson audio are not included.</span>
+                          <span>I understand the selected categories may be stored in my LearnLens account, including short quiz evidence excerpts when Quizzes are selected. Full transcripts, the complete caption stream, and audio are excluded from sync. Audio transcription remains a separate feature with its own explicit consent.</span>
                         </label>
                         <div className="account-sync-review-actions">
                           <button className="secondary-button" type="button" onClick={() => { setSyncConsentReviewOpen(false); setSyncConsentAcknowledged(false); }} disabled={syncConsentSaving}>Cancel</button>
