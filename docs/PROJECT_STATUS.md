@@ -4,19 +4,19 @@
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
 **Extension version:** 0.1.0  
-**Current checkpoint:** Phases 4 and 5 are complete and user-confirmed in desktop Chrome. Phase 6.1 protocol, Phase 6.2 Firebase Functions backend, and Phase 6.3 local pull/remote recovery foundation are implemented and CI-verified. Phase 6.4 adds the Account consent-review UI, a separately gated client for the `updateSyncSettings` callable, and stricter server/Firestore validation. Latest source CI passed on commit `1002b6b5e8ff6353c0753d471a386df00180b148`. The Functions backend is not deployed. Cloud pull, artifact writes, and server-consent submission remain hard-disabled; no live Firebase pull, consent write, or artifact upload has occurred. Live Firebase Auth QA and production Chrome App Check remain release gates.
+**Current checkpoint:** Phases 4 and 5 are complete and user-confirmed in desktop Chrome. Phases 6.1–6.4 established the sync protocol, Functions backend, local pull/recovery foundation, and explicit consent-review client. Phase 6.5 adds authenticated persisted-consent retrieval, explicit unconfigured/withdrawn states, and a two-step account withdrawal action. Latest source CI passed on commit `231f2704c62f33f1df39379564ccec9586f3f384`. The Functions backend is not deployed. Server-consent reads/writes, cloud pull, and artifact writes remain independently hard-disabled; no live Firebase request has been made. Live Auth QA and production Chrome App Check remain release gates.
 
 > Phase 4/5 behavior was manually tested by the user. Phase 6 source and emulator behavior is CI-verified only. The new Account inbox/recovery UI has not yet been manually tested in desktop Chrome, and no live Firebase or two-device sync test has been completed.
 
 ## 1. Latest verified build
 
-- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46052131112
-- **Commit:** `1002b6b5e8ff6353c0753d471a386df00180b148`
+- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46064286669
+- **Commit:** `231f2704c62f33f1df39379564ccec9586f3f384`
 - **Result:** SUCCESS.
-- **Passed:** TypeScript typecheck, 15 Vitest files / 167 unit tests, 11 Firestore Rules emulator tests, 26 Firebase Functions/Admin emulator tests, production build, Chrome extension package verification, and artifact upload.
-- **Artifact:** `learnlens-chrome-extension` (artifact ID `15224413038`).
-- **Artifact SHA-256:** `a70f59e4cc89a6722fd5f9143c5b5a70f8bef49c47e47518cea625e13aff7e8e`.
-- **Artifact size:** 169,784 bytes.
+- **Passed:** TypeScript typecheck, 15 Vitest files / 172 unit tests, 11 Firestore Rules emulator tests, 29 Firebase Functions/Admin emulator tests, production build, Chrome extension package verification, and artifact upload.
+- **Artifact:** `learnlens-chrome-extension` (artifact ID `15230431685`).
+- **Artifact SHA-256:** `b015331f735dec580888127af52ee0abc5c17d06938683313d5ae596126c0a7e`.
+- **Artifact size:** 170,158 bytes.
 - **Package/manifest version:** 0.1.0.
 - **Important:** CI uses demo Firebase projects and the development App Check debug configuration. Passing CI does not prove a live deployment or production App Check compatibility.
 
@@ -297,3 +297,19 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - Consent status retrieval and a user-facing withdrawal/status control are still outstanding; the client orchestration supports the disabled settings shape but this UI does not yet manage an existing saved server consent.
 - No live Firebase project is deployed. Production App Check, live Auth QA, Firebase project/region confirmation, Secret Manager cursor key setup, live consent QA, and two-device pull testing remain release gates.
 - Keep extension version 0.1.0. Do not enable server consent, cloud pull, or artifact writes until the production release gates are explicitly reviewed and approved.
+
+
+## 2026-11-27 — Phase 6.5 persisted consent status and withdrawal foundation CI sign-off
+
+- Verified commit: `231f2704c62f33f1df39379564ccec9586f3f384`.
+- CI: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46064286669 — SUCCESS.
+- Extension unit tests: 15 Vitest files / 172 tests passed. Firestore Rules emulator: 11 tests passed. Firebase Functions/Admin emulator: 29 tests passed. TypeScript, production build, Chrome package verification, and artifact upload passed.
+- Added the authenticated `getSyncSettings` callable. It enforces Firebase verified Auth and App Check, derives the UID only from callable auth context, and returns only that user's persisted settings.
+- Backend status distinguishes an account with no saved setting (`configured:false`) from an explicit disabled/withdrawn setting (`configured:true, enabled:false`). Configured records include the server timestamp in milliseconds. Malformed stored consent fails closed rather than being reinterpreted.
+- The `updateSyncSettings` callable now returns the persisted status after a successful write. The client validates the response and provides `withdrawSyncSettingsForFirebase`, which disables consent and clears all category flags.
+- Withdrawal changes consent only. It blocks future sync authorization through the server settings check; it does not delete cloud records that may already have been uploaded. A separate deletion workflow would be required for that.
+- Account UI now has a persisted-consent status panel, server categories, last-updated time, and a two-step withdrawal review. It distinguishes unknown/not checked from unconfigured and withdrawn.
+- `SYNC_SERVER_CONSENT_READS_ENABLED` and `SYNC_SERVER_CONSENT_WRITES_ENABLED` are both hard-coded to `false`. The status UI therefore reports that server state is unknown in this build; it does not infer cloud consent from local category preferences. No Firebase read or write has been attempted.
+- `SYNC_CLOUD_PULL_ENABLED` and `SYNC_CLOUD_WRITES_ENABLED` remain false. No live Firebase call, deployment, or two-device sync test has occurred.
+- Next gates: approve a production App Check approach for the published extension ID, complete live Auth QA, verify Firebase project/region, create the pull cursor HMAC secret, deploy after explicit review, then manually test saved consent read/withdrawal and read-only two-device pull in desktop Chrome.
+- Keep extension version 0.1.0. Do not open the read/write gates or deploy without explicit production-security approval.

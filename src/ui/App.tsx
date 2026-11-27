@@ -882,6 +882,7 @@ export default function App() {
       setSyncServerConsentError("");
       setSyncConsentReviewOpen(false);
       setSyncConsentAcknowledged(false);
+      setSyncConsentWithdrawReviewOpen(false);
       setSyncPreferencesMessage(
         "Cloud-sync consent was saved to your account. This action did not upload learning records or enable artifact transfer."
       );
@@ -1736,13 +1737,13 @@ export default function App() {
               <div className="account-card account-sync-card">
                 <div className="account-sync-heading">
                   <div><ShieldCheck size={16} /><strong>Cloud sync preferences</strong></div>
-                  <span>{syncServerConsentStatus?.configured && syncServerConsentStatus.enabled ? "CONSENT SAVED" : "NOT ACTIVE"}</span>
+                  <span>{syncServerConsentStatus ? (syncServerConsentStatus.enabled ? "CONSENT SAVED" : syncServerConsentStatus.configured ? "WITHDRAWN" : "NOT CONFIGURED") : !SYNC_SERVER_CONSENT_READS_ENABLED ? "STATUS UNKNOWN" : syncServerConsentLoading ? "CHECKING" : "NOT CONFIGURED"}</span>
                 </div>
                 <p className="account-sync-description">Choose which categories you may want to sync later. These choices are saved only on this device; they do not claim records or upload anything.</p>
                 <section className="sync-server-consent-status" aria-label="Saved cloud-sync consent status">
                   <div className="sync-server-consent-heading">
                     <strong>Saved account consent</strong>
-                    <span>{!SYNC_SERVER_CONSENT_READS_ENABLED ? "NOT CHECKED" : syncServerConsentLoading ? "CHECKING" : syncServerConsentStatus?.configured ? (syncServerConsentStatus.enabled ? "ENABLED" : "WITHDRAWN") : "NOT CONFIGURED"}</span>
+                    <span>{syncServerConsentStatus ? (syncServerConsentStatus.enabled ? "ENABLED" : syncServerConsentStatus.configured ? "WITHDRAWN" : "NOT CONFIGURED") : !SYNC_SERVER_CONSENT_READS_ENABLED ? "STATUS UNKNOWN" : syncServerConsentLoading ? "CHECKING" : "NOT CONFIGURED"}</span>
                   </div>
                   {!SYNC_SERVER_CONSENT_READS_ENABLED ? (
                     <p>Saved account consent cannot be checked in this build. Local category choices below are not proof of server consent. No Firebase request is made.</p>
@@ -1777,8 +1778,11 @@ export default function App() {
                           onClick={() => setSyncConsentWithdrawReviewOpen(true)}
                           disabled={!SYNC_SERVER_CONSENT_WRITES_ENABLED || syncConsentWithdrawing || syncServerConsentLoading}
                         >
-                          Review consent withdrawal
+                          {SYNC_SERVER_CONSENT_WRITES_ENABLED ? "Review consent withdrawal" : "Withdrawal unavailable"}
                         </button>
+                      )}
+                      {!SYNC_SERVER_CONSENT_WRITES_ENABLED && syncServerConsentStatus.enabled && (
+                        <small>Withdrawal will become available after production Firebase Auth and App Check are approved.</small>
                       )}
                       {syncConsentWithdrawReviewOpen && syncServerConsentStatus.enabled && (
                         <div className="sync-consent-withdraw-review" role="region" aria-label="Confirm cloud-sync consent withdrawal">

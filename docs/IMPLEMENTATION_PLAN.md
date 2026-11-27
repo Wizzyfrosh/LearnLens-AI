@@ -368,3 +368,22 @@ Next exit criteria:
 - Manually test the Account consent-review UI in desktop Chrome after the release gate is ready. Then test a read-only pull with a second device before any artifact writes are considered.
 - Keep `SYNC_CLOUD_PULL_ENABLED`, `SYNC_CLOUD_WRITES_ENABLED`, and `SYNC_SERVER_CONSENT_WRITES_ENABLED` false until all production and end-to-end checks pass.
 - Keep the extension version at 0.1.0.
+
+
+## 18. Phase 6.5 — persisted cloud-consent status and withdrawal (2026-11-27)
+
+**Implemented**
+- Added an authenticated `getSyncSettings` callable guarded by verified Firebase Auth and App Check. The UID is derived from the callable context, never request data.
+- Added the server adapter for saved consent lookup. A missing settings document returns an explicit unconfigured state; a saved disabled setting remains distinguishable as an explicit withdrawal. Configured settings return the server timestamp. Corrupt or unsupported persisted settings return an internal error instead of silently defaulting.
+- The `updateSyncSettings` callable now returns the full persisted status after saving. The client verifies the exact status schema and requested category scope.
+- Added independently gated client orchestration for reading saved status and withdrawing consent. Withdrawal sets `enabled:false` and every category to false.
+- Account UI displays saved server consent state, its categories, and the last update time when status reads are approved. The withdrawal action has a review/confirmation step.
+- Withdrawal stops future sync authorization but does not remove previously stored cloud records. Any account-data deletion is a separate, explicit workflow.
+- CI on commit `231f2704c62f33f1df39379564ccec9586f3f384` passed: 15 Vitest files / 172 tests, 11 Firestore Rules tests, 29 Functions/Admin tests, typecheck, production build, package verification and artifact upload.
+
+**Still blocked**
+- `SYNC_SERVER_CONSENT_READS_ENABLED = false` and `SYNC_SERVER_CONSENT_WRITES_ENABLED = false`. The current UI therefore marks server status as unknown/not checked, and no Firebase status read or withdrawal write occurs.
+- Production App Check for the published Chrome extension ID and live Firebase Auth verification remain unapproved. The Functions backend is not deployed.
+- No live consent read/withdrawal test or desktop Chrome test of the new Account status panel has been performed.
+- Cloud pull and artifact write dispatch remain separately hard-disabled. Do not enable any gate until production App Check, Firebase project/region, Secret Manager key, live Auth, and manual safety tests are approved.
+- Extension version remains 0.1.0.
