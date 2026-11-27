@@ -46,6 +46,9 @@ export function validateSyncSettingsInput(value: unknown): SyncSettingsInput {
       cause instanceof Error ? cause.message : "Invalid sync category dependency."
     );
   }
+  if (value.enabled && !Object.values(categories).some((selected) => selected === true)) {
+    throw new SyncBackendError("failed-precondition", "Choose at least one sync category when enabling cloud sync.");
+  }
   return { enabled: value.enabled, categories: categories as Record<SyncCategory, boolean> };
 }
 
