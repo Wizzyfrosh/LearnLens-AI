@@ -1,0 +1,32 @@
+name: Turnstile POC validation
+
+on:
+  pull_request:
+    branches:
+      - phase-6-6-app-check-poc
+    paths:
+      - "functions/**"
+      - ".github/workflows/turnstile-poc.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-turnstile-core:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Functions dependencies
+        working-directory: functions
+        run: npm install --no-audit --no-fund
+
+      - name: Build and test Functions
+        working-directory: functions
+        run: npm test
