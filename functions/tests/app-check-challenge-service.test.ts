@@ -5,9 +5,9 @@ import { deleteApp, initializeApp, type App } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 import {
   assertChallengeBootstrapEnabled,
-  claimAuthenticatedChallengeSession,
   completeAuthenticatedChallengeSession,
-  createAuthenticatedChallengeSession
+  createAuthenticatedChallengeSession,
+  issueAuthenticatedAppCheckToken
 } from "../src/app-check-poc/challenge-service";
 import { SyncBackendError } from "../src/errors";
 
@@ -204,7 +204,7 @@ describe("Authenticated App Check challenge service", () => {
     assert.equal((await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data()?.state, "pending");
   });
 
-  it("claims only the authenticated account's verified session once", async () => {
+  it("issues a 30-minute App Check token only after an authenticated one-time claim", async () => {
     const uid = uniqueUid();
     const created = await createAuthenticatedChallengeSession(
       uid,
@@ -223,26 +223,181 @@ describe("Authenticated App Check challenge service", () => {
       fetchImpl
     );
 
-    const claimed = await claimAuthenticatedChallengeSession(
+    let mintCalls = 0;
+    const issuer = {
+      createToken: async (appId: string, options: { ttlMillis: number }) => {
+        mintCalls += 1;
+        assert.equal(appId, APP_ID);
+        assert.equal(options.ttlMillis, 30 * 60 * 1000);
+        return { token: "fake-app-check-token", ttlMillis: options.ttlMillis };
+      }
+    };
+
+    const issued = await issueAuthenticatedAppCheckToken(
       uid,
       created.sessionId,
       created.pollCredential,
+      APP_ID,
+      ACTION,
+      issuer,
       database,
       NOW + 20_000
     );
-    assert.equal(claimed.appId, APP_ID);
-    assert.equal(claimed.action, ACTION);
+    assert.deepEqual(issued, {
+      token: "fake-app-check-token",
+      expireTimeMillis: NOW + 20_000 + 30 * 60 * 1000
+    });
+    assert.equal(mintCalls, 1);
     assert.equal((await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data()?.state, "consumed");
 
     await assert.rejects(
-      claimAuthenticatedChallengeSession(
+      issueAuthenticatedAppCheckToken(
         uid,
         created.sessionId,
         created.pollCredential,
+        APP_ID,
+        ACTION,
+        issuer,
         database,
         NOW + 30_000
       ),
       (error: unknown) => error instanceof SyncBackendError && error.code === "failed-precondition"
     );
+    assert.equal(mintCalls, 1);
+  });
+
+  it("rejects a mismatched configured App ID before consuming the session", async () => {
+    const uid = uniqueUid();
+    const created = await createAuthenticatedChallengeSession(
+      uid,
+      { appId: APP_ID, action: ACTION },
+      database,
+      NOW
+    );
+    const stored = (await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data();
+    await completeAuthenticatedChallengeSession(
+      uid,
+      { sessionId: created.sessionId, responseToken: "valid-turnstile-response" },
+      CONFIG,
+      database,
+      NOW,
+      siteverifyFetch({ cdata: stored?.cdata })
+    );
+    let mintCalls = 0;
+    const issuer = {
+      createToken: async () => {
+        mintCalls += 1;
+        return { token: "should-not-mint", ttlMillis: 30 * 60 * 1000 };
+      }
+    };
+
+    await assert.rejects(
+      issueAuthenticatedAppCheckToken(
+        uid,
+        created.sessionId,
+        created.pollCredential,
+        "1:999999999:web:unexpected",
+        ACTION,
+        issuer,
+        database,
+        NOW + 20_000
+      ),
+      (error: unknown) => error instanceof SyncBackendError && error.code === "failed-precondition"
+    );
+    assert.equal(mintCalls, 0);
+    assert.equal((await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data()?.state, "verified");
+  });
+
+  it("does not reopen a consumed session when Firebase token minting fails", async () => {
+    const uid = uniqueUid();
+    const created = await createAuthenticatedChallengeSession(
+      uid,
+      { appId: APP_ID, action: ACTION },
+      database,
+      NOW
+    );
+    const stored = (await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data();
+    await completeAuthenticatedChallengeSession(
+      uid,
+      { sessionId: created.sessionId, responseToken: "valid-turnstile-response" },
+      CONFIG,
+      database,
+      NOW,
+      siteverifyFetch({ cdata: stored?.cdata })
+    );
+
+    let mintCalls = 0;
+    const failingIssuer = {
+      createToken: async () => {
+        mintCalls += 1;
+        throw new Error("simulated signing failure");
+      }
+    };
+    await assert.rejects(
+      issueAuthenticatedAppCheckToken(
+        uid,
+        created.sessionId,
+        created.pollCredential,
+        APP_ID,
+        ACTION,
+        failingIssuer,
+        database,
+        NOW + 20_000
+      ),
+      (error: unknown) => error instanceof SyncBackendError && error.code === "unavailable"
+    );
+    assert.equal(mintCalls, 1);
+    assert.equal((await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data()?.state, "consumed");
+
+    await assert.rejects(
+      issueAuthenticatedAppCheckToken(
+        uid,
+        created.sessionId,
+        created.pollCredential,
+        APP_ID,
+        ACTION,
+        failingIssuer,
+        database,
+        NOW + 30_000
+      ),
+      (error: unknown) => error instanceof SyncBackendError && error.code === "failed-precondition"
+    );
+    assert.equal(mintCalls, 1);
+  });
+
+  it("mints at most one App Check token under concurrent claim attempts", async () => {
+    const uid = uniqueUid();
+    const created = await createAuthenticatedChallengeSession(
+      uid,
+      { appId: APP_ID, action: ACTION },
+      database,
+      NOW
+    );
+    const stored = (await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data();
+    await completeAuthenticatedChallengeSession(
+      uid,
+      { sessionId: created.sessionId, responseToken: "valid-turnstile-response" },
+      CONFIG,
+      database,
+      NOW,
+      siteverifyFetch({ cdata: stored?.cdata })
+    );
+
+    let mintCalls = 0;
+    const issuer = {
+      createToken: async (appId: string, options: { ttlMillis: number }) => {
+        mintCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return { token: "single-use-app-check-token", ttlMillis: options.ttlMillis };
+      }
+    };
+    const attempts = await Promise.allSettled([
+      issueAuthenticatedAppCheckToken(uid, created.sessionId, created.pollCredential, APP_ID, ACTION, issuer, database, NOW + 20_000),
+      issueAuthenticatedAppCheckToken(uid, created.sessionId, created.pollCredential, APP_ID, ACTION, issuer, database, NOW + 20_000)
+    ]);
+    assert.equal(attempts.filter((attempt) => attempt.status === "fulfilled").length, 1);
+    assert.equal(attempts.filter((attempt) => attempt.status === "rejected").length, 1);
+    assert.equal(mintCalls, 1);
+    assert.equal((await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data()?.state, "consumed");
   });
 });
