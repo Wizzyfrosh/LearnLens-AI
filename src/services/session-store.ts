@@ -3,6 +3,7 @@ import type { QuizAttempt, QuizDefinition } from "./quiz";
 import { toAttemptSyncDto, toLessonMetadataDto, toNoteSyncDto, toQuizSyncDto } from "./sync-dto";
 import type { AttemptSyncDto, LessonMetadataDto, NoteSyncDto, QuizSyncDto } from "./sync-dto";
 import { validateSyncServerRequest } from "./sync-server-contract";
+import { assertSyncCategoryDependencies, normalizeSyncCategoryPreferences } from "./sync-policy";
 
 export interface LearningSession {
   id: string;
@@ -488,6 +489,7 @@ export type SyncRequestPreparationBlockReason =
   | SyncPreparationBlockReason
   | "operation_changed"
   | "category_not_enabled"
+  | "category_dependency_missing"
   | "prior_request_pending"
   | "request_terminal";
 
@@ -854,7 +856,9 @@ export async function getLocalSyncPreferences(ownerUid: string): Promise<LocalSy
     const request = store.get(ownerUid);
     request.onsuccess = () => {
       const saved = request.result as LocalSyncPreferences | undefined;
-      resolve(saved ?? { ownerUid, categories: { ...EMPTY_SYNC_CATEGORIES }, updatedAtMs: 0 });
+      resolve(saved
+        ? { ...saved, categories: normalizeSyncCategoryPreferences(saved.categories) }
+        : { ownerUid, categories: { ...EMPTY_SYNC_CATEGORIES }, updatedAtMs: 0 });
     };
   });
 }
@@ -864,9 +868,7 @@ export async function saveLocalSyncPreferences(
   categories: SyncCategoryPreferences
 ): Promise<LocalSyncPreferences> {
   validateSyncIdentity(ownerUid, "account ID");
-  for (const value of Object.values(categories)) {
-    if (typeof value !== "boolean") throw new Error("Invalid local sync category preference.");
-  }
+  assertSyncCategoryDependencies(categories);
   const preferences: LocalSyncPreferences = {
     ownerUid,
     categories: {
@@ -916,9 +918,7 @@ export async function getLocalSyncOperationSnapshots(
   limit = 25
 ): Promise<SyncOperationSnapshot[]> {
   validateSyncIdentity(ownerUid, "account ID");
-  for (const value of Object.values(categories)) {
-    if (typeof value !== "boolean") throw new Error("Invalid local sync category selection.");
-  }
+  assertSyncCategoryDependencies(categories);
   const safeLimit = Math.max(1, Math.min(100, Number.isFinite(limit) ? Math.floor(limit) : 25));
   const categoryByType: Partial<Record<string, SyncCategory>> = {
     lesson: "lessonMetadata", note: "notes", quiz: "quizzes", attempt: "attempts"
@@ -1182,6 +1182,10 @@ export async function createSyncRequestSnapshot(
       const category = categoryByType[pending.entityType];
       if (metadata.syncCategory !== category) {
         result = { request: null, blockedReason: "ownership_mismatch" };
+        return;
+      }
+      if (pending.entityType === "attempt" && !preferences?.categories.quizzes) {
+        result = { request: null, blockedReason: "category_dependency_missing" };
         return;
       }
       if (!preferences?.categories[category]) {
@@ -2248,6 +2252,7 @@ export async function getLocalSyncClaimCandidates(
   categories: SyncCategoryPreferences
 ): Promise<SyncClaimCandidate[]> {
   validateSyncIdentity(ownerUid, "account ID");
+  assertSyncCategoryDependencies(categories);
   const database = await openDatabase();
   return new Promise<SyncClaimCandidate[]>((resolve, reject) => {
     const transaction = database.transaction(
@@ -2331,9 +2336,7 @@ export async function claimSelectedLocalSyncRecords(
   reviewedEntityKeys: string[]
 ): Promise<SyncClaimResult> {
   validateSyncIdentity(ownerUid, "account ID");
-  for (const value of Object.values(categories)) {
-    if (typeof value !== "boolean") throw new Error("Invalid local sync category selection.");
-  }
+  assertSyncCategoryDependencies(categories);
   const emptyCounts = (): Record<SyncCategory, number> => ({
     lessonMetadata: 0, notes: 0, quizzes: 0, attempts: 0
   });

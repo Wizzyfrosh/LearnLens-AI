@@ -1,4 +1,5 @@
 import type { SyncEntityType, SyncOperation, SyncPreparedPayload } from "./session-store";
+import type { AttemptSyncDto } from "./sync-dto";
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -88,6 +89,85 @@ export type SyncServerDecision =
       kind: "reject";
       code: "invalid_request" | "invalid_fingerprint" | "idempotency_key_reused" | "corrupt_remote_record" | "entity_not_found";
     };
+
+
+export interface SyncServerCategorySettings {
+  attempts: boolean;
+  quizzes: boolean;
+}
+
+export interface SyncServerReferencedQuiz {
+  entityType: SyncEntityType;
+  lessonId: string;
+  entityId: string;
+  revision: number;
+  isDeleted: boolean;
+  payload: SyncPreparedPayload | null;
+}
+
+/**
+ * Attempt DTOs reference a quiz by ID. This check must run in the same
+ * Firestore transaction as the attempt write, after reading the referenced
+ * quiz from the same authenticated user's lesson path.
+ */
+export function validateSyncServerMutationDependencies(
+  request: SyncServerMutationRequest,
+  categories: SyncServerCategorySettings,
+  referencedQuiz: SyncServerReferencedQuiz | null,
+  hasActiveAttemptsForQuiz = false
+): { kind: "allow" } | {
+  kind: "reject";
+  code: "category_not_enabled" | "quiz_category_required" | "quiz_not_found" | "quiz_deleted" | "quiz_reference_mismatch" | "quiz_has_attempts";
+} {
+  let validated: SyncServerMutationRequest;
+  try {
+    validated = validateSyncServerRequest(request);
+  } catch {
+    return { kind: "reject", code: "category_not_enabled" };
+  }
+  if (
+    typeof categories.attempts !== "boolean" ||
+    typeof categories.quizzes !== "boolean"
+  ) return { kind: "reject", code: "category_not_enabled" };
+  if (validated.entityType === "quiz" && validated.operation === "delete" && hasActiveAttemptsForQuiz) {
+    return { kind: "reject", code: "quiz_has_attempts" };
+  }
+  if (validated.entityType !== "attempt") return { kind: "allow" };
+  if (!categories.attempts) return { kind: "reject", code: "category_not_enabled" };
+  if (!categories.quizzes) return { kind: "reject", code: "quiz_category_required" };
+  if (validated.operation === "delete") return { kind: "allow" };
+
+  const quizId = (validated.payload as AttemptSyncDto).quizId;
+  if (!referencedQuiz) return { kind: "reject", code: "quiz_not_found" };
+  if (referencedQuiz.isDeleted) return { kind: "reject", code: "quiz_deleted" };
+  if (
+    referencedQuiz.entityType !== "quiz" ||
+    referencedQuiz.lessonId !== validated.lessonId ||
+    referencedQuiz.entityId !== quizId ||
+    !Number.isSafeInteger(referencedQuiz.revision) ||
+    referencedQuiz.revision < 1 ||
+    referencedQuiz.payload === null
+  ) {
+    return { kind: "reject", code: "quiz_reference_mismatch" };
+  }
+  try {
+    validateSyncServerRequest({
+      protocolVersion: 1,
+      requestId: "11111111-1111-4111-8111-111111111111",
+      deviceId: "22222222-2222-4222-8222-222222222222",
+      entityType: "quiz",
+      lessonId: referencedQuiz.lessonId,
+      entityId: referencedQuiz.entityId,
+      operation: "upsert",
+      baseRevision: referencedQuiz.revision - 1,
+      payloadSchemaVersion: 1,
+      payload: referencedQuiz.payload
+    });
+  } catch {
+    return { kind: "reject", code: "quiz_reference_mismatch" };
+  }
+  return { kind: "allow" };
+}
 
 export interface SyncFirestorePaths {
   entity: string;

@@ -1551,9 +1551,14 @@ export default function App() {
                           <input
                             type="checkbox"
                             checked={syncCategories[key]}
-                            onChange={(event) => setSyncCategories((current) => ({ ...current, [key]: event.target.checked }))}
+                            disabled={key === "attempts" && !syncCategories.quizzes}
+                            onChange={(event) => setSyncCategories((current) => {
+                              const checked = event.target.checked;
+                              if (key === "quizzes" && !checked) return { ...current, quizzes: false, attempts: false };
+                              return { ...current, [key]: checked };
+                            })}
                           />
-                          <span><strong>{title}</strong><small>{description}</small></span>
+                          <span><strong>{title}</strong><small>{description}{key === "attempts" ? " Requires Quiz definitions to be selected too." : ""}</small></span>
                         </label>
                       ))}
                     </div>

@@ -363,6 +363,92 @@ describe("server-side sync mutation contract", () => {
       .toEqual({ kind: "reject", code: "idempotency_key_reused" });
   });
 
+  it("requires an active quiz in the same lesson before accepting an attempt", async () => {
+    const { validateSyncServerMutationDependencies } = await import("./sync-server-contract");
+    const attemptRequest = validateSyncServerRequest(rawRequest({
+      entityType: "attempt",
+      entityId: "attempt-1",
+      payload: {
+        quizId: "quiz-1",
+        createdAtMs: 300,
+        results: [{ questionId: "q1", answer: "ATP", correct: true, feedback: "Correct." }],
+        objectiveScore: 1,
+        objectiveTotal: 1,
+        topicsToReview: []
+      }
+    }));
+    const quiz = {
+      entityType: "quiz" as const,
+      lessonId: "lesson-1",
+      entityId: "quiz-1",
+      revision: 1,
+      isDeleted: false,
+      payload: quizPayload
+    };
+    expect(validateSyncServerMutationDependencies(attemptRequest, {
+      attempts: true, quizzes: false
+    }, quiz)).toEqual({ kind: "reject", code: "quiz_category_required" });
+    expect(validateSyncServerMutationDependencies(attemptRequest, {
+      attempts: true, quizzes: true
+    }, null)).toEqual({ kind: "reject", code: "quiz_not_found" });
+    expect(validateSyncServerMutationDependencies(attemptRequest, {
+      attempts: true, quizzes: true
+    }, { ...quiz, isDeleted: true })).toEqual({ kind: "reject", code: "quiz_deleted" });
+    expect(validateSyncServerMutationDependencies(attemptRequest, {
+      attempts: true, quizzes: true
+    }, quiz)).toEqual({ kind: "allow" });
+    expect(validateSyncServerMutationDependencies(attemptRequest, {
+      attempts: false, quizzes: true
+    }, quiz)).toEqual({ kind: "reject", code: "category_not_enabled" });
+    expect(validateSyncServerMutationDependencies(attemptRequest, {
+      attempts: true, quizzes: true
+    }, { ...quiz, payload: { ...quizPayload, transcriptText: "not allowed" } }))
+      .toEqual({ kind: "reject", code: "quiz_reference_mismatch" });
+  });
+
+  it("prevents deletion of a quiz while active attempts still reference it", async () => {
+    const { validateSyncServerMutationDependencies } = await import("./sync-server-contract");
+    const quizDelete = validateSyncServerRequest(rawRequest({
+      entityType: "quiz",
+      entityId: "quiz-1",
+      operation: "delete",
+      payload: null,
+      baseRevision: 1
+    }));
+    expect(validateSyncServerMutationDependencies(quizDelete, {
+      attempts: true, quizzes: true
+    }, null, true)).toEqual({ kind: "reject", code: "quiz_has_attempts" });
+    expect(validateSyncServerMutationDependencies(quizDelete, {
+      attempts: true, quizzes: true
+    }, null, false)).toEqual({ kind: "allow" });
+  });
+
+  it("rejects an attempt whose quiz ID points to another lesson or entity", async () => {
+    const { validateSyncServerMutationDependencies } = await import("./sync-server-contract");
+    const attemptRequest = validateSyncServerRequest(rawRequest({
+      entityType: "attempt",
+      entityId: "attempt-1",
+      payload: {
+        quizId: "quiz-1",
+        createdAtMs: 300,
+        results: [],
+        objectiveScore: 0,
+        objectiveTotal: 0,
+        topicsToReview: []
+      }
+    }));
+    expect(validateSyncServerMutationDependencies(attemptRequest, {
+      attempts: true, quizzes: true
+    }, {
+      entityType: "quiz",
+      lessonId: "another-lesson",
+      entityId: "quiz-1",
+      revision: 1,
+      isDeleted: false,
+      payload: quizPayload
+    })).toEqual({ kind: "reject", code: "quiz_reference_mismatch" });
+  });
+
   it("rejects a malformed receipt fingerprint and corrupt remote revisions", () => {
     expect(decideSyncServerMutation(parseRequest(), null, null, "bad"))
       .toEqual({ kind: "reject", code: "invalid_fingerprint" });

@@ -1,6 +1,6 @@
 # LearnLens AI — Server-Side Sync Mutation Contract
 
-**Status:** Phase 6G contract and deterministic decision logic implemented; no server endpoint is deployed and no learning-artifact cloud writes are enabled.  
+**Status:** Phase 6.1 protocol decisions and pure validation policies implemented; pull transport, Admin endpoint, and cloud artifact writes remain disabled.  
 **Protocol:** request envelope v1, DTO schema v1  
 **Authority:** this document supersedes the earlier server-transaction placeholders in CLOUD_SYNC_DATA_MODEL.md.
 
@@ -123,10 +123,10 @@ An applied request writes the entity mutation and outcome=applied receipt atomic
 1. Verify Firebase ID token, email_verified=true, and App Check token.
 2. Validate the exact request envelope, path IDs, payload schema, field allow-list, and byte limit.
 3. Canonicalize and SHA-256 the validated request server-side, then derive entity, receipt, conflict, and device paths from authenticated UID.
-4. Start a Firestore transaction. Read sync settings, the receipt, and the target entity before performing any writes.
+4. Start a Firestore transaction. Read sync settings, the receipt, and the target entity before performing any writes. For an attempt upsert, also read its referenced quiz at users/{uid}/lessons/{lessonId}/quizzes/{quizId}. For a quiz delete, check for active attempt documents that reference that quiz.
 5. Inside that same transaction, verify enabled/category consent for this UID. This prevents a concurrent opt-out from racing a request that checked settings before the transaction.
 6. If a receipt exists, verify its fingerprint and replay or reject key reuse.
-7. Otherwise call the deterministic decision function in sync-server-contract.ts.
+7. Otherwise call validateSyncServerMutationDependencies from sync-server-contract.ts using the transaction-read settings, referenced quiz snapshot, and active-attempt check. Reject dependency failures without a receipt; only then call the deterministic mutation decision function.
 8. For apply, atomically write the new entity/tombstone and receipt. For conflict, atomically write conflict and receipt. For reject, write nothing.
 9. Return a minimal typed result. Never return credentials, tokens, or unrelated user data.
 
@@ -168,3 +168,64 @@ Not implemented:
 - cloud reads/writes from the extension.
 
 No learning-artifact cloud write can occur in the current build.
+
+
+## 11. Quiz-attempt dependency policy (Phase 6.1 decision)
+
+A quiz attempt is not a standalone artifact: its DTO contains quizId and its answers refer to question IDs in that quiz. V1 therefore requires all of the following before an attempt upsert is accepted:
+
+1. Both the attempts and quizzes categories are enabled in the authenticated account's server sync settings.
+2. The referenced quiz exists under the same authenticated user's same lesson path.
+3. The referenced quiz document is active (not a tombstone), has a valid revision, and its entity ID equals the attempt DTO's quizId.
+4. The endpoint reads the settings and referenced quiz inside the same Firestore transaction as the attempt mutation. A separate preflight read would allow an opt-out or quiz deletion race.
+5. The server rejects an attempt with category_not_enabled, quiz_category_required, quiz_not_found, quiz_deleted, or quiz_reference_mismatch as applicable. A rejected attempt is not receipted as applied and must remain local until corrected.
+
+The account UI disables the Attempts choice until Quiz definitions is selected. Turning Quiz definitions off also turns Attempts off. Legacy local preferences that contain attempts=true and quizzes=false are normalized by disabling attempts; the app never silently enables quiz uploads. The client preparation and claim boundaries independently enforce the same dependency.
+
+Quiz deletion must not cascade-delete immutable attempts. The Admin adapter must reject deletion of a quiz while active attempt documents still reference it, or use an explicit future retention/deletion workflow. V1 does not silently orphan attempts.
+
+## 12. Pull protocol v1 (design contract; transport not implemented)
+
+### 12.1 Change feed and ordering
+
+Push and pull use one per-account, append-only change feed. Every accepted entity mutation (including tombstones) writes a complete, allow-listed snapshot event in the same Firestore transaction as the entity and receipt. Conflicts and rejected requests do not create entity change events.
+
+- Feed path: users/{uid}/syncChanges/{sequence}; sequence is a monotonically increasing per-account integer.
+- Counter path: users/{uid}/syncState/changeFeed; the counter increment, entity mutation, receipt, and event write are atomic.
+- A counter read/write in each mutation transaction serializes sequence allocation for one account. Firestore transaction retries handle concurrent writers; sequence gaps are not permitted.
+- Events carry sequence, entityType, lessonId, entityId, revision, isDeleted, and the full payload snapshot. Tombstone payloads are null. Events never contain transcript text, audio, UID, credentials, or App Check tokens.
+- Feed events are immutable. V1 does not TTL-prune events, tombstones, or receipts. Any future compaction must ship a separately reviewed full-snapshot bootstrap protocol; silently deleting old events would strand offline devices.
+
+### 12.2 Category-scoped opaque cursors
+
+Pull is requested separately for lessonMetadata, notes, quizzes, and attempts. Each device persists one cursor state per account and category. The server-issued cursor is opaque and authenticated; it is bound to the verified UID, device ID, category, snapshot watermark, and last scanned feed sequence. Clients must not parse, construct, or reuse it for another account/device/category.
+
+A pull page contains exactly:
+- protocolVersion = 1 and category;
+- fromSequence, matching the device's last locally committed scan watermark (zero for a first pull);
+- snapshotSequence, fixed for the complete paging session;
+- scannedThroughSequence, the feed position reached by this page;
+- up to 100 matching changes in strictly increasing sequence order, all within (fromSequence, scannedThroughSequence];
+- nextCursor, either the opaque continuation token or null when scannedThroughSequence equals snapshotSequence.
+
+The server may scan past feed entries for other categories, so change sequences need to be strictly increasing, not contiguous. A continuation page must advance scannedThroughSequence. A completed page must reach the original snapshotSequence. Pages must not silently move their snapshot watermark between requests. The page validator in src/services/sync-pull-contract.ts enforces this response shape, category isolation, DTO allow-lists, sequence bounds, and cursor continuity.
+
+Because cursors are category-scoped, disabling one category does not advance its cursor. Re-enabling that category can resume from its previously committed position. The attempts cursor is valid only while quizzes are also enabled. Cursor expiry or account/device mismatch is a hard error; v1 must not silently reset to sequence zero. A future explicit bootstrap flow must handle recovery from an invalidated cursor.
+
+### 12.3 Conflict-safe application and remote-only artifacts
+
+The client applies every page in one IndexedDB readwrite transaction. It writes the resulting local records/conflicts and that category's new cursor watermark together. If validation or any local write fails, the transaction aborts and the old cursor remains; the same page can safely be replayed.
+
+For each change:
+- Ignore a revision that is equal to or older than the locally recorded remote revision.
+- If an outbox entry exists, a prepared/in-flight/retryable request is unresolved, or an open conflict exists, do not overwrite the local record. Persist a conflict containing the local and remote snapshots and pause that entity until the learner resolves it.
+- If a remote child artifact arrives without a local lesson, store it in a distinct remote-only/Cloud library record keyed by account, entity type, lesson ID, and entity ID. Do not fabricate a LearningSession or an empty transcript. The UI must label it as remote-only/unlinked and keep it out of local transcript workflows.
+- If lesson metadata arrives but the local transcript does not, keep metadata in the remote-only library. If a matching local lesson exists, update only its metadata fields and preserve its local transcript.
+- An absent-record tombstone is an idempotent no-op. A tombstone for a clean local note/quiz/attempt removes the active local artifact and its sync claim. A remote lesson tombstone removes the cloud claim but preserves any local transcript as a local-only lesson.
+- If an attempt arrives, the quiz must already exist in the remote snapshot/order (the server enforces its parent before accepting the attempt). If the target device has not imported the quiz yet, retain the attempt as remote-only and unavailable for review until the quiz is present; never invent question records.
+
+The pure merge classifier in src/services/sync-pull-contract.ts covers stale events, dirty/conflicted local records, missing remote-only records, absent tombstones, and lesson-transcript preservation. The IndexedDB applier, remote-only store/UI, cursor store, and end-to-end two-device behavior remain Phase 6.4 implementation work.
+
+### 12.4 Deletion and recovery semantics
+
+V1 tombstones are permanent protocol records and ordinary upserts cannot resurrect them. A learner who wants a new artifact after deletion creates a new entity ID. Explicit restore of a deleted remote artifact is not supported. Existing local conflict recovery remains a separate local-only copy workflow and does not remove or rewrite a remote tombstone. A later restore-to-cloud feature must be an explicit new operation with a fresh ID or a separately versioned restore protocol.
