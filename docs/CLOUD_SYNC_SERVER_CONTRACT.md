@@ -1,6 +1,6 @@
 # LearnLens AI — Server-Side Sync Mutation Contract
 
-**Status:** Phase 6.1 protocol decisions and Phase 6.2 Firebase Admin mutation/pull callables are implemented in source. The mutation backend has passed emulator CI; signed pull and separated payload-feed CI verification is pending. No endpoint is deployed and extension cloud writes remain hard-disabled.  
+**Status:** Phase 6.1 protocol decisions and Phase 6.2 Firebase Admin mutation/pull callables are implemented and emulator-CI verified. No endpoint is deployed and extension cloud writes remain hard-disabled.  
 **Protocol:** request envelope v1, DTO schema v1  
 **Authority:** this document supersedes the earlier server-transaction placeholders in CLOUD_SYNC_DATA_MODEL.md.
 
@@ -285,3 +285,17 @@ firebase functions:secrets:set SYNC_CURSOR_HMAC_KEY
 Do not commit the secret or place it in the extension bundle. Keep it stable for v1; rotation invalidates existing cursor tokens and would require a controlled cursor reset.
 
 The pull endpoint is server-side only. The client still needs IndexedDB cursor persistence, transactional page application, conflict-safe merging, and a user-facing remote-only artifact view. Feed event metadata and payload snapshots are immutable and written atomically, so fetching the selected snapshots just after the metadata transaction does not introduce a mutable-payload race.
+
+
+## 15. Phase 6.2 CI verification
+
+Latest verified commit: `add73cb4efa55c8b68c684b51e11fd350bdcaeb0`  
+CI run: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46038659615
+
+- TypeScript: passed.
+- Extension unit tests: 13 files, 141 tests passed.
+- Firestore Rules emulator: 10 tests passed, including denial of client access to syncChangePayloads.
+- Firebase Functions/Admin emulator tests: 25 tests passed, covering Auth/App Check guards, consent settings, mutation idempotency and conflicts, quiz dependencies, concurrent feed ordering, signed pull cursors, category isolation, cursor tampering/context binding, feed-gap rejection, and response-byte pagination.
+- Production extension build, package verification and artifact upload: passed.
+- Manifest version remains 0.1.0.
+- Client sync transport remains hard-disabled. No Firebase project has been bound and no Functions or Firestore Rules have been deployed.

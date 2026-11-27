@@ -237,3 +237,16 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - Client-side pull orchestration, IndexedDB cursor persistence and merge application remain outstanding. The extension sync transport is still hard-disabled.
 
 - The change feed now separates small immutable event metadata from immutable payload snapshots. Pull scans a metadata projection, then fetches only the requested category's selected payloads in parallel, avoiding oversized Firestore reads and callable responses.
+
+
+## 2026-11-27 — Phase 6.2 server backend CI sign-off
+- Verified commit: `add73cb4efa55c8b68c684b51e11fd350bdcaeb0`.
+- CI: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46038659615 — SUCCESS.
+- Extension unit tests: 13 files / 141 tests passed.
+- Firestore Rules emulator: 10 tests passed.
+- Firebase Functions/Admin emulator: 25 tests passed.
+- TypeScript, production build, extension package verification and artifact upload passed.
+- The syncMutation endpoint applies immutable request snapshots transactionally, with SHA-256 idempotency, revision conflict preservation, device metadata and an ordered feed.
+- The syncPull endpoint provides signed UID/device/category-bound cursors, fixed snapshot pagination, metadata-only feed scans and separate immutable payload snapshots. Payload pages are capped at 4 MiB and scan at most 500 metadata records.
+- The extension version remains 0.1.0 and `SYNC_CLOUD_WRITES_ENABLED` remains false. No Firebase project is configured or deployed.
+- Remaining release blockers: verify the Firebase project ID and Firestore region; complete live email/password Auth QA in desktop Chrome; approve/test production App Check for the published extension ID; set `SYNC_CURSOR_HMAC_KEY` in Secret Manager; then implement the client pull applier/cursor persistence and two-device end-to-end tests.
