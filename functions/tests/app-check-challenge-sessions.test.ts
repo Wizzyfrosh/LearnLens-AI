@@ -127,6 +127,19 @@ describe("App Check challenge session lifecycle", () => {
     await assert.rejects(createChallengeSession(UID, "", ACTION, database, NOW), SyncBackendError);
   });
 
+  it("allows only one concurrent consumer to claim a verified session", async () => {
+    const created = await createSession();
+    await completeChallengeSession(created.sessionId, created.cdata, database, NOW + 10_000);
+
+    const attempts = await Promise.allSettled([
+      consumeChallengeSession(UID, created.sessionId, created.pollCredential, database, NOW + 20_000),
+      consumeChallengeSession(UID, created.sessionId, created.pollCredential, database, NOW + 20_000)
+    ]);
+    assert.equal(attempts.filter((attempt) => attempt.status === "fulfilled").length, 1);
+    assert.equal(attempts.filter((attempt) => attempt.status === "rejected").length, 1);
+    assert.equal((await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data()?.state, "consumed");
+  });
+
   it("does not allow completion after a session was already consumed", async () => {
     const created = await createSession();
     await completeChallengeSession(created.sessionId, created.cdata, database, NOW + 10_000);
