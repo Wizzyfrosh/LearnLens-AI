@@ -4,6 +4,7 @@ import { after, before, describe, it } from "node:test";
 import { deleteApp, initializeApp, type App } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 import {
+  assertChallengeBootstrapEnabled,
   claimAuthenticatedChallengeSession,
   completeAuthenticatedChallengeSession,
   createAuthenticatedChallengeSession
@@ -51,6 +52,18 @@ after(async () => {
 });
 
 describe("Authenticated App Check challenge service", () => {
+  it("keeps the bootstrap disabled unless an explicit true server parameter is supplied", () => {
+    assert.throws(
+      () => assertChallengeBootstrapEnabled(false),
+      (error: unknown) => error instanceof SyncBackendError && error.code === "failed-precondition"
+    );
+    assert.throws(
+      () => assertChallengeBootstrapEnabled(undefined),
+      (error: unknown) => error instanceof SyncBackendError && error.code === "failed-precondition"
+    );
+    assert.doesNotThrow(() => assertChallengeBootstrapEnabled(true));
+  });
+
   it("creates a session using server-selected App ID and action", async () => {
     const uid = uniqueUid();
     const created = await createAuthenticatedChallengeSession(
