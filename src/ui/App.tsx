@@ -1737,7 +1737,7 @@ export default function App() {
                         <strong>Review your cloud-sync consent</strong>
                         <p>
                           Enabling cloud sync will allow the selected learning records to be stored under this verified account on LearnLens cloud services.
-                          Only the categories below are included. Transcript text, captured captions, and lesson audio are excluded and remain on this device.
+                          Only the categories below are included. Full transcript text, the complete captured caption stream, and lesson audio remain on this device. If Quiz definitions are selected, short transcript evidence excerpts attached to quiz questions are included.
                         </p>
                         <div className="sync-consent-scope">
                           <span>Categories selected for cloud storage</span>
@@ -1756,7 +1756,7 @@ export default function App() {
                             checked={syncConsentAcknowledged}
                             onChange={(event) => setSyncConsentAcknowledged(event.target.checked)}
                           />
-                          <span>I understand the selected categories may be stored in my LearnLens account and that transcript text, captions, and audio are not included.</span>
+                          <span>I understand the selected categories may be stored in my LearnLens account, including short quiz evidence excerpts when Quizzes are selected. Full transcripts, the complete caption stream, and lesson audio are not included.</span>
                         </label>
                         <div className="account-sync-review-actions">
                           <button className="secondary-button" type="button" onClick={() => { setSyncConsentReviewOpen(false); setSyncConsentAcknowledged(false); }} disabled={syncConsentSaving}>Cancel</button>
