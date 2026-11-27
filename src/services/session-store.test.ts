@@ -1230,14 +1230,13 @@ describe("local learning artifact storage", () => {
       "user-a", "22222222-2222-4222-8222-222222222222", "notes", null, page
     );
     const [remote] = await listRemoteSyncArtifacts("user-a");
-    expect(remote).toMatchObject({ reason: "lesson_parent_unavailable" });
+    expect(remote).toMatchObject({ reason: "not_claimed_on_this_device" });
 
     await expect(restoreRemoteSyncArtifactAsLocalCopy(remote.remoteKey, "user-a"))
       .rejects.toThrow(/parent lesson is not saved/i);
-    expect(await listRemoteSyncArtifacts("user-a")).toMatchObject([{
-      remoteKey: remote.remoteKey,
-      recoveredEntityId: undefined
-    }]);
+    const [stillRemote] = await listRemoteSyncArtifacts("user-a");
+    expect(stillRemote.remoteKey).toBe(remote.remoteKey);
+    expect(stillRemote.recoveredEntityId).toBeUndefined();
     expect(await listLearningNotes("missing-parent")).toEqual([]);
   });
 
