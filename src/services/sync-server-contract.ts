@@ -402,17 +402,22 @@ export function validateSyncServerRequest(value: unknown): SyncServerMutationReq
   return value as unknown as SyncServerMutationRequest;
 }
 
+/** Canonical JSON shared by request fingerprints and immutable payload byte accounting. */
+export function canonicalizeSyncServerValue(value: unknown): string {
+  function canonical(item: unknown): string {
+    if (item === null || typeof item !== "object") return JSON.stringify(item);
+    if (Array.isArray(item)) return "[" + item.map(canonical).join(",") + "]";
+    const entries = Object.entries(item as Record<string, unknown>)
+      .filter(([, nested]) => nested !== undefined)
+      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
+    return "{" + entries.map(([key, nested]) => JSON.stringify(key) + ":" + canonical(nested)).join(",") + "}";
+  }
+  return canonical(value);
+}
+
 /** Stable JSON used by the server to compute SHA-256 before opening its transaction. */
 export function canonicalizeSyncServerRequest(request: SyncServerMutationRequest): string {
-  function canonical(value: unknown): string {
-    if (value === null || typeof value !== "object") return JSON.stringify(value);
-    if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, item]) => item !== undefined)
-      .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
-    return "{" + entries.map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
-  }
-  return canonical(request);
+  return canonicalizeSyncServerValue(request);
 }
 
 /** Build paths only after parsing the request and deriving uid from verified Auth claims. */

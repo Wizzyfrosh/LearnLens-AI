@@ -10,6 +10,7 @@ import type { AttemptSyncDto } from "../../src/services/sync-dto";
 import {
   buildSyncFirestorePaths,
   canonicalizeSyncServerRequest,
+  canonicalizeSyncServerValue,
   decideSyncServerMutation,
   validateSyncServerMutationDependencies,
   validateSyncServerRequest
@@ -412,6 +413,16 @@ export async function applySyncMutation(
       lastSequence: nextSequence,
       updatedAt: FieldValue.serverTimestamp()
     });
+    const payloadSnapshotId = String(nextSequence);
+    const payloadBytes = decision.payload === null
+      ? 0
+      : Buffer.byteLength(canonicalizeSyncServerValue(decision.payload), "utf8");
+    if (decision.payload !== null) {
+      transaction.create(database.doc(root + "/syncChangePayloads/" + payloadSnapshotId), {
+        sequence: nextSequence,
+        payload: decision.payload
+      });
+    }
     transaction.create(database.doc(root + "/syncChanges/" + String(nextSequence)), {
       sequence: nextSequence,
       entityType: request.entityType,
@@ -419,7 +430,8 @@ export async function applySyncMutation(
       entityId: request.entityId,
       revision: decision.nextRevision,
       isDeleted: decision.isDeleted,
-      payload: decision.payload
+      payloadRef: decision.isDeleted ? null : payloadSnapshotId,
+      payloadBytes
     });
 
     return { outcome: "applied", resultRevision: decision.nextRevision };

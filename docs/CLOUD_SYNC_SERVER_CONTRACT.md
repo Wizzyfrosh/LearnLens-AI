@@ -1,6 +1,6 @@
 # LearnLens AI — Server-Side Sync Mutation Contract
 
-**Status:** Phase 6.1 protocol decisions and the Phase 6.2 Firebase Admin callable adapter are implemented in source and emulator-tested. No endpoint is deployed and extension cloud writes remain hard-disabled.  
+**Status:** Phase 6.1 protocol decisions and Phase 6.2 Firebase Admin mutation/pull callables are implemented in source. The mutation backend has passed emulator CI; signed pull and separated payload-feed CI verification is pending. No endpoint is deployed and extension cloud writes remain hard-disabled.  
 **Protocol:** request envelope v1, DTO schema v1  
 **Authority:** this document supersedes the earlier server-transaction placeholders in CLOUD_SYNC_DATA_MODEL.md.
 
@@ -190,16 +190,17 @@ The account UI disables the Attempts choice until Quiz definitions is selected. 
 
 Quiz deletion must not cascade-delete immutable attempts. The Admin adapter must reject deletion of a quiz while active attempt documents still reference it, or use an explicit future retention/deletion workflow. V1 does not silently orphan attempts.
 
-## 12. Pull protocol v1 (design contract; transport not implemented)
+## 12. Pull protocol v1 (signed server transport implemented; client application not implemented)
 
 ### 12.1 Change feed and ordering
 
-Push and pull use one per-account, append-only change feed. Every accepted entity mutation (including tombstones) writes a complete, allow-listed snapshot event in the same Firestore transaction as the entity and receipt. Conflicts and rejected requests do not create entity change events.
+Push and pull use one per-account, append-only change feed. Every accepted entity mutation (including tombstones) writes lightweight feed metadata in the same Firestore transaction as the entity and receipt. Non-tombstone DTOs are written to immutable payload-snapshot documents in that same transaction. Conflicts and rejected requests do not create entity change events.
 
 - Feed path: users/{uid}/syncChanges/{sequence}; sequence is a monotonically increasing per-account integer.
-- Counter path: users/{uid}/syncState/changeFeed; the counter increment, entity mutation, receipt, and event write are atomic.
+- Payload path: users/{uid}/syncChangePayloads/{sequence}; only non-tombstones have an immutable allow-listed DTO snapshot.
+- Counter path: users/{uid}/syncState/changeFeed; the counter increment, entity mutation, receipt, feed metadata, and optional payload snapshot are atomic.
 - A counter read/write in each mutation transaction serializes sequence allocation for one account. Firestore transaction retries handle concurrent writers; sequence gaps are not permitted.
-- Events carry sequence, entityType, lessonId, entityId, revision, isDeleted, and the full payload snapshot. Tombstone payloads are null. Events never contain transcript text, audio, UID, credentials, or App Check tokens.
+- Feed metadata carries sequence, entityType, lessonId, entityId, revision, isDeleted, payloadRef, and payloadBytes. Metadata documents never contain learner payload. The immutable DTO snapshot is stored separately by sequence; tombstones have payloadRef=null, payloadBytes=0, and no snapshot document. payloadBytes is calculated from canonical JSON so it remains stable when Firestore returns map keys in a different order. Events never contain transcript text, audio, UID, credentials, or App Check tokens.
 - Feed events are immutable. V1 does not TTL-prune events, tombstones, or receipts. Any future compaction must ship a separately reviewed full-snapshot bootstrap protocol; silently deleting old events would strand offline devices.
 
 ### 12.2 Category-scoped opaque cursors
@@ -211,13 +212,13 @@ A pull page contains exactly:
 - fromSequence, matching the device's last locally committed scan watermark (zero for a first pull);
 - snapshotSequence, fixed for the complete paging session;
 - scannedThroughSequence, the feed position reached by this page;
-- up to 100 matching changes in strictly increasing sequence order, all within (fromSequence, scannedThroughSequence];
+- up to 100 matching changes in strictly increasing sequence order, all within (fromSequence, scannedThroughSequence], additionally capped at 4 MiB of canonical serialized payload bytes;
 - hasMore, indicating whether another page remains in this fixed snapshot;
 - nextCursor, an opaque checkpoint token that is always returned, including on the final page.
 
 The final checkpoint is not null: it is persisted and reused to begin the next bounded snapshot, preventing the client from having to submit a forgeable raw sequence number. The server recognizes a completed checkpoint and captures a new snapshot watermark on the next pull request.
 
-The server may scan past feed entries for other categories, so change sequences need to be strictly increasing, not contiguous. A continuation page must advance scannedThroughSequence. A completed page must reach the original snapshotSequence. Pages must not silently move their snapshot watermark between requests. The page validator in src/services/sync-pull-contract.ts enforces this response shape, category isolation, DTO allow-lists, sequence bounds, and cursor continuity.
+The server may scan past feed entries for other categories using a metadata-only projection, without fetching unrelated payload snapshots. It scans at most 500 feed metadata records per call. Matching payload snapshots are fetched in parallel only after the page has been bounded by payloadBytes. Change sequences need to be strictly increasing, not contiguous. A continuation page must advance scannedThroughSequence. A completed page must reach the original snapshotSequence. Pages must not silently move their snapshot watermark between requests. The page validator in src/services/sync-pull-contract.ts enforces this response shape, category isolation, DTO allow-lists, sequence bounds, and cursor continuity.
 
 Because cursors are category-scoped, disabling one category does not advance its cursor. Re-enabling that category can resume from its previously committed position. The attempts cursor is valid only while quizzes are also enabled. Cursor expiry or account/device mismatch is a hard error; v1 must not silently reset to sequence zero. A future explicit bootstrap flow must handle recovery from an invalidated cursor.
 
@@ -247,9 +248,9 @@ The separate Functions workspace is at functions/. It uses Firebase Functions v2
 Exports:
 - updateSyncSettings: requires verified Auth and App Check, validates the exact consent/category shape, and writes users/{uid}/settings/sync with a server timestamp.
 - syncMutation: requires verified Auth and App Check, derives UID exclusively from request.auth, validates the immutable request envelope, computes its SHA-256 fingerprint, and performs entity/receipt/conflict/device/feed writes inside one Firestore transaction.
-- syncPull: requires verified Auth and App Check, verifies a signed cursor bound to UID/device/category, checks server consent, and returns up to 100 ordered changes from a fixed account snapshot.
+- syncPull: requires verified Auth and App Check, verifies a signed cursor bound to UID/device/category, checks server consent, and returns up to 100 ordered changes from a fixed account snapshot, capped at 4 MiB of canonical payload bytes.
 
-Every accepted apply writes the entity, receipt, per-account feed counter, and immutable feed event atomically. Conflicts persist metadata and separate local/remote snapshot documents in the same transaction; splitting the snapshots avoids Firestore’s 1 MiB per-document ceiling. Dependency failures do not write a receipt, so a blocked local request can be retried after its missing prerequisite is available. Identical request retries replay the receipt without allocating another feed sequence. A reused request ID with another body is rejected.
+Every accepted apply writes the entity, receipt, per-account feed counter, lightweight immutable feed metadata, and (for non-tombstones) a separate immutable payload snapshot atomically. Conflicts persist metadata and separate local/remote snapshot documents in the same transaction; splitting the snapshots avoids Firestore’s 1 MiB per-document ceiling. Dependency failures do not write a receipt, so a blocked local request can be retried after its missing prerequisite is available. Identical request retries replay the receipt without allocating another feed sequence. A reused request ID with another body is rejected.
 
 Quiz attempts require an active quiz under the same UID and lesson. Every attempt result questionId must exist in that quiz. Quiz deletion is rejected while active attempt documents reference it. The Admin adapter checks the quiz or attempt collection inside the same transaction as the mutation.
 
@@ -275,7 +276,7 @@ The syncPull callable accepts only:
 
 The caller cannot submit a UID or raw sequence number. The server obtains UID from the verified callable context and signs cursors with HMAC-SHA-256 using the Secret Manager value SYNC_CURSOR_HMAC_KEY. Cursors bind the UID, device ID, category, fixed snapshot watermark, and last committed scan sequence. Signature comparison uses timingSafeEqual.
 
-Each page returns at most 100 matching category changes while scanning at most 500 ordered feed events. The cursor includes both the fixed snapshot and scan watermark. A final page returns a signed completed checkpoint; the next request uses it to capture a new snapshot. Feed gaps, malformed events, tampered cursors, context mismatch, and disabled category consent fail closed.
+Each page returns at most 100 matching category changes while scanning at most 500 ordered metadata events. The feed metadata contains no learner payload; only the requested category's immutable payload snapshots are fetched. The response is additionally capped at 4 MiB of serialized payload bytes. The cursor includes both the fixed snapshot and scan watermark. A final page returns a signed completed checkpoint; the next request uses it to capture a new snapshot. Feed gaps, malformed events, tampered cursors, context mismatch, and disabled category consent fail closed.
 
 Before deploying syncPull, set a strong random secret (at least 32 bytes) with:
 ```bash
@@ -283,4 +284,4 @@ firebase functions:secrets:set SYNC_CURSOR_HMAC_KEY
 ```
 Do not commit the secret or place it in the extension bundle. Keep it stable for v1; rotation invalidates existing cursor tokens and would require a controlled cursor reset.
 
-The pull endpoint is server-side only. The client still needs IndexedDB cursor persistence, transactional page application, conflict-safe merging, and a user-facing remote-only artifact view.
+The pull endpoint is server-side only. The client still needs IndexedDB cursor persistence, transactional page application, conflict-safe merging, and a user-facing remote-only artifact view. Feed event metadata and payload snapshots are immutable and written atomically, so fetching the selected snapshots just after the metadata transaction does not introduce a mutable-payload race.

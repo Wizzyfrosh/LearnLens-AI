@@ -232,6 +232,8 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 ## 2026-11-27 — Phase 6.2 signed pull endpoint added
 - Added the server syncPull callable. It requires verified Firebase Auth and App Check, validates server-side category consent, and reads a bounded category-scoped feed.
 - Opaque HMAC-SHA-256 cursors bind authenticated UID, device ID, category, fixed snapshot and scan position. The cursor signing key is accessed through Firebase Secret Manager only.
-- Pull pages return up to 100 matching changes while scanning at most 500 feed records. Final checkpoints are reusable for the next bounded snapshot. Gaps, malformed changes and cursor tampering are rejected.
+- Pull pages return up to 100 matching changes while scanning at most 500 metadata-only feed records. Each matching payload is stored separately and fetched only when selected; page payloads are capped at 4 MiB using canonical JSON byte accounting. Final checkpoints are reusable for the next bounded snapshot. Gaps, malformed changes and cursor tampering are rejected.
 - The endpoint is not deployed. Before deployment, the Firebase project and region must be confirmed, SYNC_CURSOR_HMAC_KEY must be created in Secret Manager, live Auth QA must pass, and production Chrome App Check must be approved.
 - Client-side pull orchestration, IndexedDB cursor persistence and merge application remain outstanding. The extension sync transport is still hard-disabled.
+
+- The change feed now separates small immutable event metadata from immutable payload snapshots. Pull scans a metadata projection, then fetches only the requested category's selected payloads in parallel, avoiding oversized Firestore reads and callable responses.

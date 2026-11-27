@@ -4,6 +4,7 @@ import type { SyncPreparedPayload } from "./session-store";
 import {
   buildSyncFirestorePaths,
   canonicalizeSyncServerRequest,
+  canonicalizeSyncServerValue,
   decideSyncServerMutation,
   validateSyncServerRequest,
   type SyncServerEntitySnapshot,
@@ -93,6 +94,15 @@ const quizPayload: QuizSyncDto = {
 };
 
 describe("server-side sync mutation contract", () => {
+  it("canonicalizes nested payload objects while preserving array order", () => {
+    expect(canonicalizeSyncServerValue({
+      z: 1,
+      a: { y: 2, x: 3 },
+      list: ["second", "first"]
+    })).toBe('{"a":{"x":3,"y":2},"list":["second","first"],"z":1}');
+  });
+
+
   it("accepts the exact request envelope and allow-listed note DTO", () => {
     expect(parseRequest()).toMatchObject({
       protocolVersion: 1,

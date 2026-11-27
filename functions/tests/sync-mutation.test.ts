@@ -163,6 +163,7 @@ describe("Firebase Admin sync mutation adapter", () => {
     const receipt = await database.doc("users/" + uid + "/syncReceipts/" + request.requestId).get();
     const counter = await database.doc("users/" + uid + "/syncState/changeFeed").get();
     const events = await database.collection("users/" + uid + "/syncChanges").get();
+    const payloadSnapshot = await database.doc("users/" + uid + "/syncChangePayloads/1").get();
 
     assert.equal(entity.data()?.revision, 1);
     assert.equal(entity.data()?.deletedAt, null);
@@ -171,6 +172,10 @@ describe("Firebase Admin sync mutation adapter", () => {
     assert.equal(counter.data()?.lastSequence, 1);
     assert.equal(events.size, 1);
     assert.equal(events.docs[0].data().sequence, 1);
+    assert.equal(events.docs[0].data().payloadRef, "1");
+    assert.ok(events.docs[0].data().payloadBytes > 0);
+    assert.equal(Object.prototype.hasOwnProperty.call(events.docs[0].data(), "payload"), false);
+    assert.equal(payloadSnapshot.data()?.payload?.content, "Mitochondria generate ATP.");
     assert.equal((await database.doc("users/" + uid + "/devices/" + deviceId).get()).exists, true);
   });
 

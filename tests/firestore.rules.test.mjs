@@ -160,6 +160,7 @@ test("clients cannot read or write any sync device, artifact, receipt, or confli
     "users/user-a/syncConflicts/request-a",
     "users/user-a/syncConflictSnapshots/request-a_local",
     "users/user-a/syncChanges/1",
+    "users/user-a/syncChangePayloads/1",
     "users/user-a/syncState/changeFeed"
   ];
 

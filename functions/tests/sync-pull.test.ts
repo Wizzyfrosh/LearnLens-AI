@@ -60,6 +60,10 @@ async function seedFeed(
       createdAtMs: event.sequence,
       updatedAtMs: event.sequence
     } : {});
+    batch.set(database.doc(root + "/syncChangePayloads/" + String(event.sequence)), {
+      sequence: event.sequence,
+      payload
+    });
     batch.set(database.doc(root + "/syncChanges/" + String(event.sequence)), {
       sequence: event.sequence,
       entityType: event.entityType,
@@ -67,7 +71,8 @@ async function seedFeed(
       entityId,
       revision: 1,
       isDeleted: false,
-      payload
+      payloadRef: String(event.sequence),
+      payloadBytes: Buffer.byteLength(JSON.stringify(payload), "utf8")
     });
   }
   await batch.commit();
@@ -108,6 +113,16 @@ describe("Firebase Admin category-scoped sync pull", () => {
     assert.equal(third.hasMore, false);
 
     const batch = database.batch();
+    const newPayload = {
+      title: "New note",
+      content: "A later note.",
+      createdAtMs: 206,
+      updatedAtMs: 206
+    };
+    batch.set(database.doc("users/" + uid + "/syncChangePayloads/206"), {
+      sequence: 206,
+      payload: newPayload
+    });
     batch.set(database.doc("users/" + uid + "/syncChanges/206"), {
       sequence: 206,
       entityType: "note",
@@ -115,12 +130,8 @@ describe("Firebase Admin category-scoped sync pull", () => {
       entityId: "artifact-206",
       revision: 1,
       isDeleted: false,
-      payload: {
-        title: "New note",
-        content: "A later note.",
-        createdAtMs: 206,
-        updatedAtMs: 206
-      }
+      payloadRef: "206",
+      payloadBytes: Buffer.byteLength(JSON.stringify(newPayload), "utf8")
     });
     batch.set(database.doc("users/" + uid + "/syncState/changeFeed"), {
       lastSequence: 206,
@@ -134,6 +145,35 @@ describe("Firebase Admin category-scoped sync pull", () => {
     assert.equal(nextSnapshot.changes.length, 1);
     assert.equal(nextSnapshot.changes[0].entityId, "artifact-206");
     assert.equal(nextSnapshot.hasMore, false);
+  });
+
+  it("caps total returned payload bytes below the callable response budget", async () => {
+    const uid = newUid();
+    const events = Array.from({ length: 20 }, (_, index) => ({
+      sequence: index + 1,
+      entityType: "note",
+      payload: {
+        title: "Large note " + (index + 1),
+        content: "x".repeat(240 * 1024),
+        createdAtMs: index + 1,
+        updatedAtMs: index + 1
+      }
+    }));
+    await seedFeed(uid, events);
+
+    const first = await pullSyncChanges(uid, pullRequest(), database, cursorSecret);
+    const returnedBytes = first.changes.reduce(
+      (total, change) => total + Buffer.byteLength(JSON.stringify(change.payload), "utf8"),
+      0
+    );
+    assert.ok(first.changes.length > 0);
+    assert.ok(first.changes.length < events.length);
+    assert.ok(returnedBytes <= 4 * 1024 * 1024);
+    assert.equal(first.hasMore, true);
+
+    const second = await pullSyncChanges(uid, pullRequest("notes", first.nextCursor), database, cursorSecret);
+    assert.equal(first.changes.length + second.changes.length, events.length);
+    assert.equal(second.hasMore, false);
   });
 
   it("scans past other categories while returning only the requested category", async () => {

@@ -4,6 +4,7 @@ import {
   type Firestore,
   type QueryDocumentSnapshot
 } from "firebase-admin/firestore";
+import { canonicalizeSyncServerValue } from "../../src/services/sync-server-contract";
 import type {
   SyncCategory,
   SyncEntityType,
@@ -18,6 +19,7 @@ import { SyncBackendError } from "./errors";
 
 const PAGE_SIZE = 100;
 const MAX_SCANNED_EVENTS = 500;
+const MAX_PULL_PAYLOAD_BYTES = 4 * 1024 * 1024;
 const MAX_CURSOR_LENGTH = 2048;
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
@@ -192,12 +194,23 @@ function verifyCursor(
   return decoded as unknown as SignedCursor;
 }
 
+interface SyncFeedEnvelope {
+  sequence: number;
+  entityType: SyncEntityType;
+  lessonId: string;
+  entityId: string;
+  revision: number;
+  isDeleted: boolean;
+  payloadRef: string | null;
+  payloadBytes: number;
+}
+
 function parseFeedDocument(
   document: QueryDocumentSnapshot,
   expectedSequence: number
-): SyncPullChangeRecord {
+): SyncFeedEnvelope {
   const value = document.data();
-  const allowed = ["sequence", "entityType", "lessonId", "entityId", "revision", "isDeleted", "payload"];
+  const allowed = ["sequence", "entityType", "lessonId", "entityId", "revision", "isDeleted", "payloadRef", "payloadBytes"];
   if (
     !isRecord(value) ||
     Object.keys(value).length !== allowed.length ||
@@ -215,7 +228,11 @@ function parseFeedDocument(
     typeof value.entityId !== "string" || !ID_PATTERN.test(value.entityId) ||
     !Number.isSafeInteger(value.revision) || (value.revision as number) < 1 ||
     typeof value.isDeleted !== "boolean" ||
-    (value.isDeleted ? value.payload !== null : !isRecord(value.payload))
+    !Number.isSafeInteger(value.payloadBytes) || (value.payloadBytes as number) < 0 ||
+    (value.payloadBytes as number) > 512 * 1024 ||
+    (value.isDeleted
+      ? value.payloadRef !== null || value.payloadBytes !== 0
+      : value.payloadRef !== String(expectedSequence) || value.payloadBytes === 0)
   ) invalidState("The account change feed contains a malformed record.");
 
   if (value.entityType === "lesson" && value.entityId !== value.lessonId) {
@@ -228,8 +245,33 @@ function parseFeedDocument(
     entityId: value.entityId,
     revision: value.revision as number,
     isDeleted: value.isDeleted,
-    payload: value.payload as SyncPreparedPayload | null
+    payloadRef: value.payloadRef as string | null,
+    payloadBytes: value.payloadBytes as number
   };
+}
+
+async function readPayloadSnapshot(
+  database: Firestore,
+  root: string,
+  envelope: SyncFeedEnvelope
+): Promise<SyncPreparedPayload> {
+  const snapshot = await database.doc(
+    root + "/syncChangePayloads/" + String(envelope.sequence)
+  ).get();
+  if (!snapshot.exists) invalidState("The account change feed is missing a payload snapshot.");
+  const value = snapshot.data();
+  if (
+    !isRecord(value) ||
+    Object.keys(value).length !== 2 ||
+    value.sequence !== envelope.sequence ||
+    !Object.prototype.hasOwnProperty.call(value, "payload") ||
+    !isRecord(value.payload)
+  ) invalidState("The account change feed payload snapshot is malformed.");
+  const actualBytes = Buffer.byteLength(canonicalizeSyncServerValue(value.payload), "utf8");
+  if (actualBytes !== envelope.payloadBytes) {
+    invalidState("The account change feed payload snapshot failed its integrity check.");
+  }
+  return value.payload as SyncPreparedPayload;
 }
 
 function readSnapshotSequence(value: unknown): number {
@@ -264,11 +306,11 @@ export async function pullSyncChanges(
   const counterRef = database.doc(root + "/syncState/changeFeed");
   const feed = database.collection(root + "/syncChanges");
 
-  return database.runTransaction(async (transaction) => {
+  const plan = await database.runTransaction(async (transaction) => {
     const settingsDocument = await transaction.get(settingsRef);
-    const settings = parseSettings(settingsDocument.data(), request.category);
+    parseSettings(settingsDocument.data(), request.category);
 
-    let fromSequence = cursor?.scannedThroughSequence ?? 0;
+    const fromSequence = cursor?.scannedThroughSequence ?? 0;
     let snapshotSequence = cursor?.snapshotSequence ?? 0;
     const cursorCompleted = cursor === null ||
       cursor.scannedThroughSequence === cursor.snapshotSequence;
@@ -284,35 +326,44 @@ export async function pullSyncChanges(
     }
 
     let scannedThroughSequence = fromSequence;
-    const changes: SyncPullChangeRecord[] = [];
+    const selectedEnvelopes: SyncFeedEnvelope[] = [];
 
     if (snapshotSequence > fromSequence) {
       const query = feed
+        .select("sequence", "entityType", "lessonId", "entityId", "revision", "isDeleted", "payloadRef", "payloadBytes")
         .where("sequence", ">", fromSequence)
         .where("sequence", "<=", snapshotSequence)
         .orderBy("sequence", "asc")
         .limit(MAX_SCANNED_EVENTS);
       const page = await transaction.get(query);
-      let reachedCategoryPageLimit = false;
+      let reachedPageLimit = false;
+      let payloadBytes = 0;
 
       for (const document of page.docs) {
         const nextSequence = scannedThroughSequence + 1;
-        const change = parseFeedDocument(document, nextSequence);
-        scannedThroughSequence = change.sequence;
-        if (change.entityType === ENTITY_BY_CATEGORY[request.category]) {
-          changes.push(change);
-          if (changes.length >= PAGE_SIZE) {
-            reachedCategoryPageLimit = true;
+        const envelope = parseFeedDocument(document, nextSequence);
+        if (envelope.entityType === ENTITY_BY_CATEGORY[request.category]) {
+          if (payloadBytes + envelope.payloadBytes > MAX_PULL_PAYLOAD_BYTES) {
+            // Do not advance past this event. The next cursor will retry it.
+            reachedPageLimit = true;
             break;
           }
+          selectedEnvelopes.push(envelope);
+          payloadBytes += envelope.payloadBytes;
+          scannedThroughSequence = envelope.sequence;
+          if (selectedEnvelopes.length >= PAGE_SIZE || payloadBytes >= MAX_PULL_PAYLOAD_BYTES) {
+            reachedPageLimit = true;
+            break;
+          }
+        } else {
+          // Other categories carry no learner payload in the feed metadata.
+          scannedThroughSequence = envelope.sequence;
         }
       }
 
-      if (!reachedCategoryPageLimit) {
-        if (page.docs.length < MAX_SCANNED_EVENTS) {
-          if (scannedThroughSequence !== snapshotSequence) {
-            invalidState("The account change feed has a missing sequence inside its snapshot.");
-          }
+      if (!reachedPageLimit && page.docs.length < MAX_SCANNED_EVENTS) {
+        if (scannedThroughSequence !== snapshotSequence) {
+          invalidState("The account change feed has a missing sequence inside its snapshot.");
         }
       }
     }
@@ -327,16 +378,45 @@ export async function pullSyncChanges(
       scannedThroughSequence
     }, cursorSecret);
 
-    const response = {
-      protocolVersion: 1 as const,
-      category: request.category,
+    return {
       fromSequence,
       snapshotSequence,
       scannedThroughSequence,
-      changes,
       hasMore,
-      nextCursor
+      nextCursor,
+      selectedEnvelopes
     };
-    return validateSyncPullPage(response, request.category, fromSequence);
   });
+
+  // Feed events and their payload snapshots are committed atomically and are
+  // immutable. Read only the selected snapshots, in parallel, after the
+  // bounded metadata transaction has chosen a payload-byte budget.
+  const payloadBySequence = new Map<number, SyncPreparedPayload>();
+  const payloadEnvelopes = plan.selectedEnvelopes.filter((item) => !item.isDeleted);
+  const payloads = await Promise.all(
+    payloadEnvelopes.map((item) => readPayloadSnapshot(database, root, item))
+  );
+  payloadEnvelopes.forEach((item, index) => payloadBySequence.set(item.sequence, payloads[index]));
+
+  const changes: SyncPullChangeRecord[] = plan.selectedEnvelopes.map((item) => ({
+    sequence: item.sequence,
+    entityType: item.entityType,
+    lessonId: item.lessonId,
+    entityId: item.entityId,
+    revision: item.revision,
+    isDeleted: item.isDeleted,
+    payload: item.isDeleted ? null : payloadBySequence.get(item.sequence) ?? null
+  }));
+
+  const response = {
+    protocolVersion: 1 as const,
+    category: request.category,
+    fromSequence: plan.fromSequence,
+    snapshotSequence: plan.snapshotSequence,
+    scannedThroughSequence: plan.scannedThroughSequence,
+    changes,
+    hasMore: plan.hasMore,
+    nextCursor: plan.nextCursor
+  };
+  return validateSyncPullPage(response, request.category, plan.fromSequence);
 }
