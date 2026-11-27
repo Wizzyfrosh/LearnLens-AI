@@ -27,7 +27,10 @@ import {
   queueSyncOperation,
   getLocalSyncCandidateCounts,
   getLocalSyncPreferences,
-  saveLocalSyncPreferences
+  saveLocalSyncPreferences,
+  applyLocalSyncPullPage,
+  getLocalSyncPullCursor,
+  listRemoteSyncArtifacts
 } from "./session-store";
 
 function deleteDatabase(): Promise<void> {
@@ -109,7 +112,7 @@ describe("local learning artifact storage", () => {
       };
       request.onerror = () => reject(request.error);
     });
-    expect(schema.version).toBe(10);
+    expect(schema.version).toBe(11);
     expect(schema.indexes).toContain("ownerUidEntityTypeQueuedAtMs");
     expect(schema.hasRequestStore).toBe(true);
   });
@@ -171,7 +174,7 @@ describe("local learning artifact storage", () => {
       };
       request.onerror = () => reject(request.error);
     });
-    expect(schema).toEqual({ version: 10, hasConflictStore: true });
+    expect(schema).toEqual({ version: 11, hasConflictStore: true });
   });
 
   it("upgrades version 5 without changing existing learning records and creates empty sync stores", async () => {
@@ -699,7 +702,7 @@ describe("local learning artifact storage", () => {
       request.onsuccess = () => { resolve(request.result.version); request.result.close(); };
       request.onerror = () => reject(request.error);
     });
-    expect(version).toBe(10);
+    expect(version).toBe(11);
   });
 
   it("requires explicit category selection, claims eligible records atomically, and isolates other accounts", async () => {
@@ -755,6 +758,433 @@ describe("local learning artifact storage", () => {
     expect(repeat.skippedOtherAccount.notes).toBe(1);
     expect(repeat.totalQueued).toBe(0);
     expect(await listSyncOutbox("user-a")).toHaveLength(1);
+  });
+
+  it("adds pull cursor and remote-only stores in the v10 migration without changing local transcripts", async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local", 10);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        const sessions = db.createObjectStore("learningSessions", { keyPath: "id" });
+        sessions.createIndex("videoId", "videoId");
+        sessions.createIndex("updatedAt", "updatedAt");
+        sessions.createIndex("platform", "platform");
+        const notes = db.createObjectStore("learningNotes", { keyPath: "id" });
+        notes.createIndex("sessionId", "sessionId");
+        notes.createIndex("videoId", "videoId");
+        notes.createIndex("updatedAt", "updatedAt");
+        const quizzes = db.createObjectStore("learningQuizzes", { keyPath: "id" });
+        quizzes.createIndex("sessionId", "sessionId");
+        quizzes.createIndex("createdAt", "createdAt");
+        const attempts = db.createObjectStore("quizAttempts", { keyPath: "id" });
+        attempts.createIndex("sessionId", "sessionId");
+        attempts.createIndex("quizId", "quizId");
+        attempts.createIndex("createdAt", "createdAt");
+        const metadata = db.createObjectStore("syncMetadata", { keyPath: "entityKey" });
+        metadata.createIndex("ownerUid", "ownerUid");
+        metadata.createIndex("lessonId", "lessonId");
+        const outbox = db.createObjectStore("syncOutbox", { keyPath: "entityKey" });
+        outbox.createIndex("ownerUid", "ownerUid");
+        outbox.createIndex("queuedAtMs", "queuedAtMs");
+        outbox.createIndex("ownerUidEntityTypeQueuedAtMs", ["ownerUid", "entityType", "queuedAtMs"]);
+        db.createObjectStore("syncDevice", { keyPath: "key" });
+        db.createObjectStore("syncPreferences", { keyPath: "ownerUid" });
+        const requests = db.createObjectStore("syncRequests", { keyPath: "requestId" });
+        requests.createIndex("ownerUid", "ownerUid");
+        requests.createIndex("entityKey", "entityKey");
+        requests.createIndex("status", "status");
+        requests.createIndex("updatedAtMs", "updatedAtMs");
+        const conflicts = db.createObjectStore("syncConflicts", { keyPath: "conflictId" });
+        conflicts.createIndex("ownerUid", "ownerUid");
+        conflicts.createIndex("entityKey", "entityKey");
+        conflicts.createIndex("status", "status");
+        conflicts.createIndex("updatedAtMs", "updatedAtMs");
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        const tx = db.transaction(["learningSessions", "syncMetadata"], "readwrite");
+        tx.objectStore("learningSessions").put({
+          id: "migration-session",
+          videoId: "actual-video-123",
+          title: "Preserved transcript",
+          url: "https://www.youtube.com/watch?v=actual-video-123",
+          platform: "youtube",
+          transcriptText: "This transcript must remain local and unchanged.",
+          transcriptFormat: "plain-text",
+          transcriptSource: "captions",
+          updatedAt: 100
+        });
+        tx.objectStore("syncMetadata").put({
+          entityKey: "lesson:migration-session:migration-session",
+          entityType: "lesson",
+          lessonId: "migration-session",
+          entityId: "migration-session",
+          ownerUid: "user-a",
+          remoteRevision: 1,
+          lastSyncedAtMs: 90,
+          syncCategory: "lessonMetadata"
+        });
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => reject(tx.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    await getLocalSyncPreferences("user-a");
+    const session = (await listLearningSessions()).find((item) => item.id === "migration-session");
+    expect(session?.transcriptText).toBe("This transcript must remain local and unchanged.");
+
+    const schema = await new Promise<{ version: number; cursorStore: boolean; remoteStore: boolean }>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local");
+      request.onsuccess = () => {
+        const db = request.result;
+        const result = {
+          version: db.version,
+          cursorStore: db.objectStoreNames.contains("syncPullCursors"),
+          remoteStore: db.objectStoreNames.contains("syncRemoteArtifacts")
+        };
+        db.close();
+        resolve(result);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    expect(schema).toEqual({ version: 11, cursorStore: true, remoteStore: true });
+    expect(await getSyncMetadata("lesson:migration-session:migration-session"))
+      .toMatchObject({ ownerUid: "user-a", remoteRevision: 1 });
+  });
+
+  it("adds pull cursor and remote-only stores in the v10 migration without changing local transcripts", async () => {
+    await new Promise<void>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local", 10);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        const sessions = db.createObjectStore("learningSessions", { keyPath: "id" });
+        sessions.createIndex("videoId", "videoId");
+        sessions.createIndex("updatedAt", "updatedAt");
+        sessions.createIndex("platform", "platform");
+        const notes = db.createObjectStore("learningNotes", { keyPath: "id" });
+        notes.createIndex("sessionId", "sessionId");
+        notes.createIndex("videoId", "videoId");
+        notes.createIndex("updatedAt", "updatedAt");
+        const quizzes = db.createObjectStore("learningQuizzes", { keyPath: "id" });
+        quizzes.createIndex("sessionId", "sessionId");
+        quizzes.createIndex("createdAt", "createdAt");
+        const attempts = db.createObjectStore("quizAttempts", { keyPath: "id" });
+        attempts.createIndex("sessionId", "sessionId");
+        attempts.createIndex("quizId", "quizId");
+        attempts.createIndex("createdAt", "createdAt");
+        const metadata = db.createObjectStore("syncMetadata", { keyPath: "entityKey" });
+        metadata.createIndex("ownerUid", "ownerUid");
+        metadata.createIndex("lessonId", "lessonId");
+        const outbox = db.createObjectStore("syncOutbox", { keyPath: "entityKey" });
+        outbox.createIndex("ownerUid", "ownerUid");
+        outbox.createIndex("queuedAtMs", "queuedAtMs");
+        outbox.createIndex("ownerUidEntityTypeQueuedAtMs", ["ownerUid", "entityType", "queuedAtMs"]);
+        db.createObjectStore("syncDevice", { keyPath: "key" });
+        db.createObjectStore("syncPreferences", { keyPath: "ownerUid" });
+        const requests = db.createObjectStore("syncRequests", { keyPath: "requestId" });
+        requests.createIndex("ownerUid", "ownerUid");
+        requests.createIndex("entityKey", "entityKey");
+        requests.createIndex("status", "status");
+        requests.createIndex("updatedAtMs", "updatedAtMs");
+        const conflicts = db.createObjectStore("syncConflicts", { keyPath: "conflictId" });
+        conflicts.createIndex("ownerUid", "ownerUid");
+        conflicts.createIndex("entityKey", "entityKey");
+        conflicts.createIndex("status", "status");
+        conflicts.createIndex("updatedAtMs", "updatedAtMs");
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        const tx = db.transaction(["learningSessions", "syncMetadata"], "readwrite");
+        tx.objectStore("learningSessions").put({
+          id: "migration-session",
+          videoId: "actual-video-123",
+          title: "Preserved transcript",
+          url: "https://www.youtube.com/watch?v=actual-video-123",
+          platform: "youtube",
+          transcriptText: "This transcript must remain local and unchanged.",
+          transcriptFormat: "plain-text",
+          transcriptSource: "captions",
+          updatedAt: 100
+        });
+        tx.objectStore("syncMetadata").put({
+          entityKey: "lesson:migration-session:migration-session",
+          entityType: "lesson",
+          lessonId: "migration-session",
+          entityId: "migration-session",
+          ownerUid: "user-a",
+          remoteRevision: 1,
+          lastSyncedAtMs: 90,
+          syncCategory: "lessonMetadata"
+        });
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => reject(tx.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    await getLocalSyncPreferences("user-a");
+    const session = (await listLearningSessions()).find((item) => item.id === "migration-session");
+    expect(session?.transcriptText).toBe("This transcript must remain local and unchanged.");
+
+    const schema = await new Promise<{ version: number; cursorStore: boolean; remoteStore: boolean }>((resolve, reject) => {
+      const request = indexedDB.open("learnlens-local");
+      request.onsuccess = () => {
+        const db = request.result;
+        const result = {
+          version: db.version,
+          cursorStore: db.objectStoreNames.contains("syncPullCursors"),
+          remoteStore: db.objectStoreNames.contains("syncRemoteArtifacts")
+        };
+        db.close();
+        resolve(result);
+      };
+      request.onerror = () => reject(request.error);
+    });
+    expect(schema).toEqual({ version: 11, cursorStore: true, remoteStore: true });
+    expect(await getSyncMetadata("lesson:migration-session:migration-session"))
+      .toMatchObject({ ownerUid: "user-a", remoteRevision: 1 });
+  });
+
+  it("applies a remote note only to a matching account-owned record and preserves its actual videoId", async () => {
+    await saveLearningSession({
+      id: "local-session-1", videoId: "real-video-123", title: "Local title",
+      url: "https://www.youtube.com/watch?v=real-video-123", platform: "youtube",
+      transcriptText: "Private local transcript.", transcriptFormat: "plain-text",
+      transcriptSource: "captions", updatedAt: 10
+    });
+    await saveLearningNote({
+      id: "local-note-1", sessionId: "local-session-1", videoId: "real-video-123",
+      title: "Old note", content: "Old local content.", createdAt: 10, updatedAt: 11
+    });
+    await claimSyncEntity({
+      entityKey: "note:local-session-1:local-note-1", entityType: "note",
+      lessonId: "local-session-1", entityId: "local-note-1",
+      ownerUid: "user-a", syncCategory: "notes"
+    });
+
+    const page = {
+      protocolVersion: 1 as const, category: "notes" as const,
+      fromSequence: 0, snapshotSequence: 1, scannedThroughSequence: 1,
+      changes: [{
+        sequence: 1, entityType: "note" as const,
+        lessonId: "local-session-1", entityId: "local-note-1",
+        revision: 2, isDeleted: false,
+        payload: { title: "Remote note", content: "Remote content.", createdAtMs: 10, updatedAtMs: 20 }
+      }],
+      hasMore: false, nextCursor: "signed-next-cursor"
+    };
+    const result = await applyLocalSyncPullPage("user-a", "22222222-2222-4222-8222-222222222222", "notes", null, page);
+
+    expect(result).toMatchObject({ applied: 1, remoteOnly: 0, duplicatePage: false });
+    expect(await listLearningNotes("local-session-1")).toMatchObject([{
+      id: "local-note-1", videoId: "real-video-123",
+      title: "Remote note", content: "Remote content.", updatedAt: 20
+    }]);
+    expect(await getSyncMetadata("note:local-session-1:local-note-1"))
+      .toMatchObject({ ownerUid: "user-a", remoteRevision: 2 });
+    expect(await getLocalSyncPullCursor("user-a", "22222222-2222-4222-8222-222222222222", "notes"))
+      .toMatchObject({ scannedThroughSequence: 1, snapshotSequence: 1, cursor: "signed-next-cursor" });
+    expect(await listRemoteSyncArtifacts("user-a")).toEqual([]);
+  });
+
+  it("keeps an unclaimed local note unchanged and stores the remote version separately", async () => {
+    await saveLearningSession({
+      id: "unclaimed-session", videoId: "youtube-456", title: "Local lesson",
+      url: "https://www.youtube.com/watch?v=youtube-456", platform: "youtube",
+      transcriptText: "Do not replace this transcript.", transcriptFormat: "plain-text",
+      transcriptSource: "captions", updatedAt: 10
+    });
+    await saveLearningNote({
+      id: "unclaimed-note", sessionId: "unclaimed-session", videoId: "youtube-456",
+      title: "My local note", content: "My unclaimed text.", createdAt: 1, updatedAt: 2
+    });
+    const page = {
+      protocolVersion: 1 as const, category: "notes" as const,
+      fromSequence: 0, snapshotSequence: 1, scannedThroughSequence: 1,
+      changes: [{
+        sequence: 1, entityType: "note" as const,
+        lessonId: "unclaimed-session", entityId: "unclaimed-note",
+        revision: 1, isDeleted: false,
+        payload: { title: "Cloud note", content: "Do not overwrite unclaimed data.", createdAtMs: 1, updatedAtMs: 3 }
+      }],
+      hasMore: false, nextCursor: "remote-only-cursor"
+    };
+    const result = await applyLocalSyncPullPage("user-a", "22222222-2222-4222-8222-222222222222", "notes", null, page);
+    expect(result).toMatchObject({ applied: 0, remoteOnly: 1 });
+    expect(await listLearningNotes("unclaimed-session")).toMatchObject([{
+      title: "My local note", content: "My unclaimed text."
+    }]);
+    expect(await listRemoteSyncArtifacts("user-a")).toMatchObject([{
+      entityId: "unclaimed-note", reason: "not_claimed_on_this_device",
+      payload: { title: "Cloud note", content: "Do not overwrite unclaimed data." }
+    }]);
+  });
+
+  it("preserves an account-owned local edit when a newer remote page arrives", async () => {
+    await saveLearningSession({
+      id: "dirty-session", videoId: "dirty-video", title: "Lesson",
+      url: "https://www.youtube.com/watch?v=dirty-video", platform: "youtube",
+      transcriptText: "Private transcript.", transcriptFormat: "plain-text",
+      transcriptSource: "captions", updatedAt: 10
+    });
+    await saveLearningNote({
+      id: "dirty-note", sessionId: "dirty-session", videoId: "dirty-video",
+      title: "Local unsent note", content: "Preserve this edit.", createdAt: 1, updatedAt: 2
+    });
+    await claimSyncEntity({
+      entityKey: "note:dirty-session:dirty-note", entityType: "note",
+      lessonId: "dirty-session", entityId: "dirty-note", ownerUid: "user-a", syncCategory: "notes"
+    });
+    await queueSyncOperation("note:dirty-session:dirty-note", "user-a", "upsert");
+
+    const page = {
+      protocolVersion: 1 as const, category: "notes" as const,
+      fromSequence: 0, snapshotSequence: 1, scannedThroughSequence: 1,
+      changes: [{
+        sequence: 1, entityType: "note" as const, lessonId: "dirty-session", entityId: "dirty-note",
+        revision: 2, isDeleted: false,
+        payload: { title: "Remote edit", content: "Do not overwrite pending local work.", createdAtMs: 1, updatedAtMs: 3 }
+      }],
+      hasMore: false, nextCursor: "dirty-cursor"
+    };
+    const result = await applyLocalSyncPullPage("user-a", "22222222-2222-4222-8222-222222222222", "notes", null, page);
+
+    expect(result).toMatchObject({ applied: 0, remoteOnly: 1, preservedLocal: 1 });
+    expect(await listLearningNotes("dirty-session")).toMatchObject([{
+      title: "Local unsent note", content: "Preserve this edit."
+    }]);
+    expect(await listRemoteSyncArtifacts("user-a")).toMatchObject([{
+      reason: "pending_local_change", payload: { title: "Remote edit" }
+    }]);
+  });
+
+  it("does not remove lesson ownership metadata belonging to another local account", async () => {
+    await saveLearningSession({
+      id: "other-owner-lesson", videoId: "other-owner-video", title: "Other account lesson",
+      url: "https://www.youtube.com/watch?v=other-owner-video", platform: "youtube",
+      transcriptText: "The other account's local transcript.", transcriptFormat: "plain-text",
+      transcriptSource: "captions", updatedAt: 10
+    });
+    await claimSyncEntity({
+      entityKey: "lesson:other-owner-lesson:other-owner-lesson", entityType: "lesson",
+      lessonId: "other-owner-lesson", entityId: "other-owner-lesson", ownerUid: "user-b",
+      syncCategory: "lessonMetadata"
+    });
+    const page = {
+      protocolVersion: 1 as const, category: "lessonMetadata" as const,
+      fromSequence: 0, snapshotSequence: 1, scannedThroughSequence: 1,
+      changes: [{
+        sequence: 1, entityType: "lesson" as const,
+        lessonId: "other-owner-lesson", entityId: "other-owner-lesson",
+        revision: 2, isDeleted: true, payload: null
+      }],
+      hasMore: false, nextCursor: "other-owner-tombstone"
+    };
+    await applyLocalSyncPullPage(
+      "user-a", "22222222-2222-4222-8222-222222222222", "lessonMetadata", null, page
+    );
+    expect(await getSyncMetadata("lesson:other-owner-lesson:other-owner-lesson"))
+      .toMatchObject({ ownerUid: "user-b", remoteRevision: 0 });
+    expect((await listLearningSessions()).find((session) => session.id === "other-owner-lesson")?.transcriptText)
+      .toBe("The other account's local transcript.");
+    expect(await listRemoteSyncArtifacts("user-a")).toMatchObject([{
+      reason: "owned_by_another_local_account", isDeleted: true
+    }]);
+  });
+
+  it("keeps a lesson transcript local-only after its remote metadata tombstone", async () => {
+    await saveLearningSession({
+      id: "deleted-lesson", videoId: "video-to-keep", title: "Lesson",
+      url: "https://www.youtube.com/watch?v=video-to-keep", platform: "youtube",
+      transcriptText: "This transcript must survive remote deletion.", transcriptFormat: "plain-text",
+      transcriptSource: "captions", updatedAt: 10
+    });
+    await claimSyncEntity({
+      entityKey: "lesson:deleted-lesson:deleted-lesson", entityType: "lesson",
+      lessonId: "deleted-lesson", entityId: "deleted-lesson", ownerUid: "user-a",
+      syncCategory: "lessonMetadata"
+    });
+    const page = {
+      protocolVersion: 1 as const, category: "lessonMetadata" as const,
+      fromSequence: 0, snapshotSequence: 1, scannedThroughSequence: 1,
+      changes: [{
+        sequence: 1, entityType: "lesson" as const, lessonId: "deleted-lesson",
+        entityId: "deleted-lesson", revision: 2, isDeleted: true, payload: null
+      }],
+      hasMore: false, nextCursor: "lesson-tombstone-cursor"
+    };
+    const result = await applyLocalSyncPullPage("user-a", "22222222-2222-4222-8222-222222222222", "lessonMetadata", null, page);
+
+    expect(result).toMatchObject({ applied: 0, remoteOnly: 1, preservedLocal: 1 });
+    expect((await listLearningSessions()).find((session) => session.id === "deleted-lesson")?.transcriptText)
+      .toBe("This transcript must survive remote deletion.");
+    expect(await getSyncMetadata("lesson:deleted-lesson:deleted-lesson")).toBeNull();
+    expect(await listRemoteSyncArtifacts("user-a")).toMatchObject([{
+      isDeleted: true, reason: "local_kept_after_remote_delete", payload: null
+    }]);
+  });
+
+  it("applies only the newest event when one page contains repeated revisions of an entity", async () => {
+    await saveLearningSession({
+      id: "dedupe-session", videoId: "dedupe-video", title: "Lesson",
+      url: "https://www.youtube.com/watch?v=dedupe-video", platform: "youtube",
+      transcriptText: "Local transcript.", transcriptFormat: "plain-text",
+      transcriptSource: "captions", updatedAt: 1
+    });
+    await saveLearningNote({
+      id: "dedupe-note", sessionId: "dedupe-session", videoId: "dedupe-video",
+      title: "Initial", content: "Initial content.", createdAt: 1, updatedAt: 1
+    });
+    await claimSyncEntity({
+      entityKey: "note:dedupe-session:dedupe-note", entityType: "note",
+      lessonId: "dedupe-session", entityId: "dedupe-note", ownerUid: "user-a", syncCategory: "notes"
+    });
+    const page = {
+      protocolVersion: 1 as const, category: "notes" as const,
+      fromSequence: 0, snapshotSequence: 2, scannedThroughSequence: 2,
+      changes: [
+        {
+          sequence: 1, entityType: "note" as const, lessonId: "dedupe-session", entityId: "dedupe-note",
+          revision: 1, isDeleted: false,
+          payload: { title: "Intermediate", content: "An older event in this page.", createdAtMs: 1, updatedAtMs: 2 }
+        },
+        {
+          sequence: 2, entityType: "note" as const, lessonId: "dedupe-session", entityId: "dedupe-note",
+          revision: 2, isDeleted: false,
+          payload: { title: "Newest", content: "The last event is authoritative.", createdAtMs: 1, updatedAtMs: 3 }
+        }
+      ],
+      hasMore: false, nextCursor: "dedupe-final-cursor"
+    };
+    const result = await applyLocalSyncPullPage(
+      "user-a", "22222222-2222-4222-8222-222222222222", "notes", null, page
+    );
+    expect(result.applied).toBe(1);
+    expect(await listLearningNotes("dedupe-session")).toMatchObject([{
+      title: "Newest", content: "The last event is authoritative."
+    }]);
+    expect(await getSyncMetadata("note:dedupe-session:dedupe-note"))
+      .toMatchObject({ remoteRevision: 2 });
+  });
+
+  it("persists pull cursors atomically and treats a repeated page as an idempotent no-op", async () => {
+    const page = {
+      protocolVersion: 1 as const, category: "notes" as const,
+      fromSequence: 0, snapshotSequence: 0, scannedThroughSequence: 0,
+      changes: [], hasMore: false, nextCursor: "empty-snapshot-cursor"
+    };
+    const deviceId = "22222222-2222-4222-8222-222222222222";
+    const first = await applyLocalSyncPullPage("user-a", deviceId, "notes", null, page);
+    const repeated = await applyLocalSyncPullPage("user-a", deviceId, "notes", null, page);
+    expect(first.duplicatePage).toBe(false);
+    expect(repeated).toMatchObject({ duplicatePage: true, applied: 0, remoteOnly: 0 });
+    await expect(applyLocalSyncPullPage("user-a", deviceId, "notes", null, {
+      ...page, nextCursor: "different-cursor"
+    })).rejects.toThrow(/locally committed cursor/i);
+    expect(await getLocalSyncPullCursor("user-a", deviceId, "notes"))
+      .toMatchObject({ cursor: "empty-snapshot-cursor", scannedThroughSequence: 0 });
+    expect(await getLocalSyncPullCursor("user-b", deviceId, "notes")).toBeNull();
   });
 
 });

@@ -4,6 +4,7 @@ import { toAttemptSyncDto, toLessonMetadataDto, toNoteSyncDto, toQuizSyncDto } f
 import type { AttemptSyncDto, LessonMetadataDto, NoteSyncDto, QuizSyncDto } from "./sync-dto";
 import { validateSyncServerRequest } from "./sync-server-contract";
 import { assertSyncCategoryDependencies, normalizeSyncCategoryPreferences } from "./sync-policy";
+import { decideSyncPullMerge, validateSyncPullPage } from "./sync-pull-contract";
 
 export interface LearningSession {
   id: string;
@@ -28,7 +29,7 @@ export interface LearningNote {
 }
 
 const DATABASE_NAME = "learnlens-local";
-const DATABASE_VERSION = 10;
+const DATABASE_VERSION = 11;
 const SESSION_STORE = "learningSessions";
 const NOTE_STORE = "learningNotes";
 const QUIZ_STORE = "learningQuizzes";
@@ -39,6 +40,8 @@ const SYNC_DEVICE_STORE = "syncDevice";
 const SYNC_PREFERENCES_STORE = "syncPreferences";
 const SYNC_REQUEST_STORE = "syncRequests";
 const SYNC_CONFLICT_STORE = "syncConflicts";
+const SYNC_PULL_CURSOR_STORE = "syncPullCursors";
+const SYNC_REMOTE_ARTIFACT_STORE = "syncRemoteArtifacts";
 
 function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -147,6 +150,23 @@ function openDatabase(): Promise<IDBDatabase> {
         store.createIndex("ownerUid", "ownerUid", { unique: false });
         store.createIndex("entityKey", "entityKey", { unique: false });
         store.createIndex("status", "status", { unique: false });
+        store.createIndex("updatedAtMs", "updatedAtMs", { unique: false });
+      }
+
+      // v11 stores server pull checkpoints and remote-only records separately
+      // from the learner's normal local lesson/artifact stores.
+      if (!database.objectStoreNames.contains(SYNC_PULL_CURSOR_STORE)) {
+        const store = database.createObjectStore(SYNC_PULL_CURSOR_STORE, {
+          keyPath: ["ownerUid", "deviceId", "category"]
+        });
+        store.createIndex("ownerUid", "ownerUid", { unique: false });
+        store.createIndex("deviceId", "deviceId", { unique: false });
+      }
+      if (!database.objectStoreNames.contains(SYNC_REMOTE_ARTIFACT_STORE)) {
+        const store = database.createObjectStore(SYNC_REMOTE_ARTIFACT_STORE, { keyPath: "remoteKey" });
+        store.createIndex("ownerUid", "ownerUid", { unique: false });
+        store.createIndex("entityKey", "entityKey", { unique: false });
+        store.createIndex("lessonId", "lessonId", { unique: false });
         store.createIndex("updatedAtMs", "updatedAtMs", { unique: false });
       }
     };
@@ -849,6 +869,433 @@ const EMPTY_SYNC_CATEGORIES: SyncCategoryPreferences = {
   quizzes: false,
   attempts: false
 };
+
+export interface SyncPullCursorRecord {
+  ownerUid: string;
+  deviceId: string;
+  category: SyncCategory;
+  cursor: string;
+  scannedThroughSequence: number;
+  snapshotSequence: number;
+  updatedAtMs: number;
+}
+
+export type SyncRemoteArtifactReason =
+  | "not_claimed_on_this_device"
+  | "owned_by_another_local_account"
+  | "local_record_missing"
+  | "lesson_parent_unavailable"
+  | "quiz_parent_unavailable"
+  | "pending_local_change"
+  | "open_local_conflict"
+  | "local_kept_after_remote_delete";
+
+export interface SyncRemoteArtifactRecord {
+  remoteKey: string;
+  ownerUid: string;
+  entityKey: string;
+  entityType: SyncEntityType;
+  lessonId: string;
+  entityId: string;
+  revision: number;
+  isDeleted: boolean;
+  payload: SyncPreparedPayload | null;
+  sequence: number;
+  reason: SyncRemoteArtifactReason;
+  updatedAtMs: number;
+}
+
+export interface SyncPullApplyResult {
+  applied: number;
+  remoteOnly: number;
+  preservedLocal: number;
+  ignoredStale: number;
+  duplicatePage: boolean;
+  cursor: SyncPullCursorRecord;
+}
+
+function syncRemoteArtifactKey(ownerUid: string, entityKey: string): string {
+  return ownerUid + ":" + entityKey;
+}
+
+function getPullEntityStore(
+  transaction: IDBTransaction,
+  entityType: SyncEntityType
+): IDBObjectStore {
+  if (entityType === "lesson") return transaction.objectStore(SESSION_STORE);
+  if (entityType === "note") return transaction.objectStore(NOTE_STORE);
+  if (entityType === "quiz") return transaction.objectStore(QUIZ_STORE);
+  return transaction.objectStore(QUIZ_ATTEMPT_STORE);
+}
+
+/**
+ * Persists the next opaque server checkpoint and applies one validated page in
+ * the same IndexedDB transaction. Local records are only overwritten when
+ * they are already claimed by this account and have no pending write/conflict.
+ * Everything else is retained in a separate remote-only inbox.
+ */
+export async function applyLocalSyncPullPage(
+  ownerUid: string,
+  deviceId: string,
+  category: SyncCategory,
+  requestCursor: string | null,
+  rawPage: unknown
+): Promise<SyncPullApplyResult> {
+  validateSyncIdentity(ownerUid, "account ID");
+  validateSyncIdentity(deviceId, "device ID");
+  assertSyncCategoryDependencies({
+    lessonMetadata: category === "lessonMetadata",
+    notes: category === "notes",
+    quizzes: category === "quizzes" || category === "attempts",
+    attempts: category === "attempts"
+  });
+
+  const database = await openDatabase();
+  return new Promise<SyncPullApplyResult>((resolve, reject) => {
+    const storeNames = [
+      SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE,
+      SYNC_METADATA_STORE, SYNC_OUTBOX_STORE, SYNC_REQUEST_STORE,
+      SYNC_CONFLICT_STORE, SYNC_PULL_CURSOR_STORE, SYNC_REMOTE_ARTIFACT_STORE
+    ];
+    const transaction = database.transaction(storeNames, "readwrite");
+    const sessions = transaction.objectStore(SESSION_STORE);
+    const notes = transaction.objectStore(NOTE_STORE);
+    const quizzes = transaction.objectStore(QUIZ_STORE);
+    const attempts = transaction.objectStore(QUIZ_ATTEMPT_STORE);
+    const metadataStore = transaction.objectStore(SYNC_METADATA_STORE);
+    const outboxStore = transaction.objectStore(SYNC_OUTBOX_STORE);
+    const requestStore = transaction.objectStore(SYNC_REQUEST_STORE);
+    const conflictStore = transaction.objectStore(SYNC_CONFLICT_STORE);
+    const cursorStore = transaction.objectStore(SYNC_PULL_CURSOR_STORE);
+    const remoteStore = transaction.objectStore(SYNC_REMOTE_ARTIFACT_STORE);
+    const cursorKey = [ownerUid, deviceId, category];
+    const cursorRequest = cursorStore.get(cursorKey);
+
+    let result: SyncPullApplyResult | null = null;
+    let failure: Error | null = null;
+    let completed = false;
+    const fail = (error: unknown) => {
+      if (failure) return;
+      failure = error instanceof Error ? error : new Error("Could not apply the sync pull page.");
+      try { transaction.abort(); } catch { /* transaction already completed */ }
+    };
+
+    cursorRequest.onsuccess = () => {
+      if (failure) return;
+      const savedCursor = cursorRequest.result as SyncPullCursorRecord | undefined;
+      const currentCursor = savedCursor?.cursor ?? null;
+      const expectedFrom = savedCursor?.scannedThroughSequence ?? 0;
+
+      try {
+        const page = validateSyncPullPage(rawPage, category, expectedFrom);
+        if (
+          savedCursor &&
+          page.nextCursor === savedCursor.cursor &&
+          page.scannedThroughSequence === savedCursor.scannedThroughSequence &&
+          page.snapshotSequence === savedCursor.snapshotSequence
+        ) {
+          result = {
+            applied: 0,
+            remoteOnly: 0,
+            preservedLocal: 0,
+            ignoredStale: 0,
+            duplicatePage: true,
+            cursor: savedCursor
+          };
+          return;
+        }
+        if (currentCursor !== requestCursor) {
+          throw new Error("The sync pull response does not match the locally committed cursor. Retry using the saved cursor.");
+        }
+
+        const now = Date.now();
+        const counts = { applied: 0, remoteOnly: 0, preservedLocal: 0, ignoredStale: 0 };
+        let remaining = page.changes.length;
+
+        const finishPage = () => {
+          if (remaining !== 0 || failure || completed) return;
+          completed = true;
+          const nextCursor: SyncPullCursorRecord = {
+            ownerUid,
+            deviceId,
+            category,
+            cursor: page.nextCursor,
+            scannedThroughSequence: page.scannedThroughSequence,
+            snapshotSequence: page.snapshotSequence,
+            updatedAtMs: now
+          };
+          cursorStore.put(nextCursor);
+          result = { ...counts, duplicatePage: false, cursor: nextCursor };
+        };
+
+        if (page.changes.length === 0) {
+          finishPage();
+          return;
+        }
+
+        for (const change of page.changes) {
+          const entityKey = syncEntityKey(change.entityType, change.lessonId, change.entityId);
+          const remoteKey = syncRemoteArtifactKey(ownerUid, entityKey);
+          const requests: Array<{ key: string; request: IDBRequest }> = [
+            { key: "metadata", request: metadataStore.get(entityKey) },
+            { key: "outbox", request: outboxStore.get(entityKey) },
+            { key: "requests", request: requestStore.index("entityKey").getAll(entityKey) },
+            { key: "conflicts", request: conflictStore.index("entityKey").getAll(entityKey) },
+            { key: "remote", request: remoteStore.get(remoteKey) }
+          ];
+
+          if (change.entityType === "lesson") {
+            requests.push({ key: "entity", request: sessions.get(change.entityId) });
+          } else {
+            requests.push({ key: "entity", request: getPullEntityStore(transaction, change.entityType).get(change.entityId) });
+            requests.push({ key: "session", request: sessions.get(change.lessonId) });
+            if (change.entityType === "attempt") {
+              const quizId = (change.payload as AttemptSyncDto | null)?.quizId;
+              if (quizId) requests.push({ key: "quiz", request: quizzes.get(quizId) });
+            }
+          }
+
+          const values: Record<string, unknown> = {};
+          let pendingReads = requests.length;
+          const finishChange = () => {
+            if (pendingReads !== 0 || failure) return;
+            try {
+              const metadata = values.metadata as SyncMetadataRecord | undefined;
+              const outbox = values.outbox as SyncOutboxRecord | undefined;
+              const relatedRequests = values.requests as SyncRequestRecord[];
+              const conflicts = values.conflicts as SyncConflictRecord[];
+              const previousRemote = values.remote as SyncRemoteArtifactRecord | undefined;
+              const localEntity = values.entity as LearningSession | LearningNote | QuizDefinition | QuizAttempt | undefined;
+              const session = values.session as LearningSession | undefined;
+              const quiz = values.quiz as QuizDefinition | undefined;
+
+              const isStale = (metadata?.ownerUid === ownerUid && change.revision <= metadata.remoteRevision) ||
+                (previousRemote?.ownerUid === ownerUid && change.revision <= previousRemote.revision);
+              if (isStale) {
+                counts.ignoredStale += 1;
+                remaining -= 1;
+                finishPage();
+                return;
+              }
+
+              const pendingWrite = Boolean(outbox?.ownerUid === ownerUid) ||
+                relatedRequests.some((request) =>
+                  request.ownerUid === ownerUid &&
+                  (request.status === "prepared" || request.status === "in_flight" ||
+                    request.status === "retryable" || request.status === "conflicted")
+                );
+              const openConflict = conflicts.some((conflict) =>
+                conflict.ownerUid === ownerUid && conflict.status === "open"
+              );
+              const metadataOwned = metadata?.ownerUid === ownerUid;
+              const metadataOther = Boolean(metadata && metadata.ownerUid !== ownerUid);
+              const localExists = Boolean(localEntity);
+              const parentAvailable = change.entityType === "lesson" || Boolean(session);
+              const attemptQuizAvailable = change.entityType !== "attempt" || Boolean(quiz);
+              const localState = {
+                exists: localExists,
+                lastRemoteRevision: metadataOwned ? metadata!.remoteRevision : null,
+                hasPendingLocalWrite: pendingWrite,
+                isConflicted: openConflict,
+                ...(change.entityType === "lesson"
+                  ? { hasLocalTranscript: Boolean((localEntity as LearningSession | undefined)?.transcriptText) }
+                  : {})
+              };
+              const mergeAction = decideSyncPullMerge(change, localState);
+
+              const storeRemote = (reason: SyncRemoteArtifactReason) => {
+                const record: SyncRemoteArtifactRecord = {
+                  remoteKey,
+                  ownerUid,
+                  entityKey,
+                  entityType: change.entityType,
+                  lessonId: change.lessonId,
+                  entityId: change.entityId,
+                  revision: change.revision,
+                  isDeleted: change.isDeleted,
+                  payload: change.payload,
+                  sequence: change.sequence,
+                  reason,
+                  updatedAtMs: now
+                };
+                remoteStore.put(record);
+                counts.remoteOnly += 1;
+              };
+
+              if (mergeAction === "ignore_stale_change") {
+                counts.ignoredStale += 1;
+              } else if (mergeAction === "preserve_local_conflict") {
+                storeRemote(openConflict ? "open_local_conflict" : "pending_local_change");
+                counts.preservedLocal += 1;
+              } else if (metadataOther || !metadataOwned) {
+                // Never remove or overwrite a record claimed by another local
+                // account. An unclaimed collision also stays fully local.
+                storeRemote(metadataOther ? "owned_by_another_local_account" : "not_claimed_on_this_device");
+              } else if (mergeAction === "keep_lesson_transcript_local_only") {
+                // The server lesson metadata tombstone must never delete a
+                // local transcript. Unclaim this account-owned record so it
+                // cannot be uploaded again as though it still existed remotely.
+                metadataStore.delete(entityKey);
+                outboxStore.delete(entityKey);
+                storeRemote("local_kept_after_remote_delete");
+                counts.preservedLocal += 1;
+              } else if (
+                mergeAction === "store_remote_only" ||
+                !parentAvailable ||
+                !attemptQuizAvailable
+              ) {
+                let reason: SyncRemoteArtifactReason = "local_record_missing";
+                if (change.entityType === "attempt" && !attemptQuizAvailable) reason = "quiz_parent_unavailable";
+                else if (change.entityType !== "lesson" && !parentAvailable) reason = "lesson_parent_unavailable";
+                storeRemote(reason);
+                metadataStore.put({ ...metadata!, remoteRevision: change.revision, lastSyncedAtMs: now });
+              } else {
+                if (!localExists) {
+                  storeRemote("local_record_missing");
+                } else if (change.isDeleted) {
+                  if (change.entityType === "note") {
+                    notes.delete(change.entityId);
+                  } else if (change.entityType === "attempt") {
+                    attempts.delete(change.entityId);
+                  } else if (change.entityType === "quiz") {
+                    // A remote quiz tombstone must not cascade-delete attempts
+                    // that may exist only on this device. Keep the whole local
+                    // quiz/attempt set as local-only and retain the remote tombstone.
+                    metadataStore.delete(entityKey);
+                    outboxStore.delete(entityKey);
+                    storeRemote("local_kept_after_remote_delete");
+                  }
+                  if (change.entityType !== "quiz") {
+                    metadataStore.put({ ...metadata!, remoteRevision: change.revision, lastSyncedAtMs: now });
+                    remoteStore.delete(remoteKey);
+                  }
+                } else if (change.entityType === "lesson") {
+                  const payload = change.payload as LessonMetadataDto;
+                  const existing = localEntity as LearningSession;
+                  sessions.put({
+                    ...existing,
+                    platform: payload.platform,
+                    videoId: payload.videoId,
+                    title: payload.title,
+                    url: payload.url
+                  });
+                  metadataStore.put({ ...metadata!, remoteRevision: change.revision, lastSyncedAtMs: now });
+                  remoteStore.delete(remoteKey);
+                  counts.applied += 1;
+                } else if (change.entityType === "note") {
+                  const payload = change.payload as NoteSyncDto;
+                  const existing = localEntity as LearningNote;
+                  notes.put({
+                    ...existing,
+                    videoId: session?.videoId ?? existing.videoId,
+                    title: payload.title,
+                    content: payload.content,
+                    createdAt: payload.createdAtMs,
+                    updatedAt: payload.updatedAtMs
+                  });
+                  metadataStore.put({ ...metadata!, remoteRevision: change.revision, lastSyncedAtMs: now });
+                  remoteStore.delete(remoteKey);
+                  counts.applied += 1;
+                } else if (change.entityType === "quiz") {
+                  const payload = change.payload as QuizSyncDto;
+                  const existing = localEntity as QuizDefinition;
+                  quizzes.put({
+                    ...existing,
+                    title: payload.title,
+                    scope: payload.scope,
+                    scopeLabel: payload.scopeLabel,
+                    rangeStartSeconds: payload.rangeStartSeconds,
+                    rangeEndSeconds: payload.rangeEndSeconds,
+                    createdAt: payload.createdAtMs,
+                    questions: payload.questions
+                  });
+                  metadataStore.put({ ...metadata!, remoteRevision: change.revision, lastSyncedAtMs: now });
+                  remoteStore.delete(remoteKey);
+                  counts.applied += 1;
+                } else {
+                  const payload = change.payload as AttemptSyncDto;
+                  const existing = localEntity as QuizAttempt;
+                  attempts.put({
+                    ...existing,
+                    quizId: payload.quizId,
+                    createdAt: payload.createdAtMs,
+                    results: payload.results,
+                    objectiveScore: payload.objectiveScore,
+                    objectiveTotal: payload.objectiveTotal,
+                    topicsToReview: payload.topicsToReview
+                  });
+                  metadataStore.put({ ...metadata!, remoteRevision: change.revision, lastSyncedAtMs: now });
+                  remoteStore.delete(remoteKey);
+                  counts.applied += 1;
+                }
+              }
+              remaining -= 1;
+              finishPage();
+            } catch (error) {
+              fail(error);
+            }
+          };
+
+          for (const entry of requests) {
+            entry.request.onsuccess = () => {
+              values[entry.key] = entry.request.result;
+              pendingReads -= 1;
+              finishChange();
+            };
+          }
+        }
+      } catch (error) {
+        fail(error);
+      }
+    };
+
+    transaction.oncomplete = () => {
+      database.close();
+      if (failure) reject(failure);
+      else if (result) resolve(result);
+      else reject(new Error("The sync pull page was not committed."));
+    };
+    transaction.onerror = () => {
+      database.close();
+      reject(failure ?? transaction.error ?? new Error("Could not apply the local sync pull page."));
+    };
+    transaction.onabort = () => {
+      database.close();
+      reject(failure ?? transaction.error ?? new Error("Applying the local sync pull page was cancelled."));
+    };
+  });
+}
+
+export async function getLocalSyncPullCursor(
+  ownerUid: string,
+  deviceId: string,
+  category: SyncCategory
+): Promise<SyncPullCursorRecord | null> {
+  validateSyncIdentity(ownerUid, "account ID");
+  validateSyncIdentity(deviceId, "device ID");
+  return runTransaction<SyncPullCursorRecord | null>(
+    SYNC_PULL_CURSOR_STORE, "readonly", (store, resolve) => {
+      const request = store.get([ownerUid, deviceId, category]);
+      request.onsuccess = () => resolve((request.result as SyncPullCursorRecord | undefined) ?? null);
+    }
+  );
+}
+
+export async function listRemoteSyncArtifacts(
+  ownerUid: string,
+  limit = 100
+): Promise<SyncRemoteArtifactRecord[]> {
+  validateSyncIdentity(ownerUid, "account ID");
+  const safeLimit = Math.max(1, Math.min(500, Math.floor(limit)));
+  return runTransaction<SyncRemoteArtifactRecord[]>(
+    SYNC_REMOTE_ARTIFACT_STORE, "readonly", (store, resolve) => {
+      const request = store.index("ownerUid").getAll(ownerUid);
+      request.onsuccess = () => resolve((request.result as SyncRemoteArtifactRecord[])
+        .sort((left, right) => right.updatedAtMs - left.updatedAtMs)
+        .slice(0, safeLimit));
+    }
+  );
+}
 
 export async function getLocalSyncPreferences(ownerUid: string): Promise<LocalSyncPreferences> {
   validateSyncIdentity(ownerUid, "account ID");
