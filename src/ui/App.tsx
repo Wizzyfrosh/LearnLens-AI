@@ -873,8 +873,12 @@ export default function App() {
         enabled: true,
         categories: syncCategories
       });
-      const { saved: _saved, ...serverStatus } = savedStatus;
-      setSyncServerConsentStatus(serverStatus);
+      setSyncServerConsentStatus({
+        configured: savedStatus.configured,
+        enabled: savedStatus.enabled,
+        categories: savedStatus.categories,
+        updatedAtMs: savedStatus.updatedAtMs
+      });
       setSyncServerConsentError("");
       setSyncConsentReviewOpen(false);
       setSyncConsentAcknowledged(false);
@@ -899,8 +903,12 @@ export default function App() {
     setSyncPreferencesMessage("");
     try {
       const withdrawnStatus = await withdrawSyncSettingsForFirebase(authUser.uid);
-      const { saved: _saved, ...serverStatus } = withdrawnStatus;
-      setSyncServerConsentStatus(serverStatus);
+      setSyncServerConsentStatus({
+        configured: withdrawnStatus.configured,
+        enabled: withdrawnStatus.enabled,
+        categories: withdrawnStatus.categories,
+        updatedAtMs: withdrawnStatus.updatedAtMs
+      });
       setSyncServerConsentError("");
       setSyncConsentWithdrawReviewOpen(false);
       setSyncPreferencesMessage(
