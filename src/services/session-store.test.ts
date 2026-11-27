@@ -30,7 +30,8 @@ import {
   saveLocalSyncPreferences,
   applyLocalSyncPullPage,
   getLocalSyncPullCursor,
-  listRemoteSyncArtifacts
+  listRemoteSyncArtifacts,
+  restoreRemoteSyncArtifactAsLocalCopy
 } from "./session-store";
 
 function deleteDatabase(): Promise<void> {
@@ -1166,6 +1167,78 @@ describe("local learning artifact storage", () => {
     }]);
     expect(await getSyncMetadata("note:dedupe-session:dedupe-note"))
       .toMatchObject({ remoteRevision: 2 });
+  });
+
+  it("restores a remote-only note as a new unclaimed local copy and keeps the source snapshot", async () => {
+    await saveLearningSession({
+      id: "restore-session", videoId: "restore-video", title: "Lesson",
+      url: "https://www.youtube.com/watch?v=restore-video", platform: "youtube",
+      transcriptText: "Keep the local transcript.", transcriptFormat: "plain-text",
+      transcriptSource: "captions", updatedAt: 10
+    });
+    const page = {
+      protocolVersion: 1 as const, category: "notes" as const,
+      fromSequence: 0, snapshotSequence: 1, scannedThroughSequence: 1,
+      changes: [{
+        sequence: 1, entityType: "note" as const,
+        lessonId: "restore-session", entityId: "remote-note",
+        revision: 1, isDeleted: false,
+        payload: { title: "Cloud note", content: "Recover this note safely.", createdAtMs: 1, updatedAtMs: 2 }
+      }],
+      hasMore: false, nextCursor: "restore-note-cursor"
+    };
+    await applyLocalSyncPullPage(
+      "user-a", "22222222-2222-4222-8222-222222222222", "notes", null, page
+    );
+    const [remote] = await listRemoteSyncArtifacts("user-a");
+    expect(remote).toMatchObject({ entityId: "remote-note", reason: "not_claimed_on_this_device" });
+
+    const restored = await restoreRemoteSyncArtifactAsLocalCopy(remote.remoteKey, "user-a");
+    expect(restored).toMatchObject({
+      entityType: "note",
+      restoredLessonId: "restore-session"
+    });
+    expect(restored.restoredEntityId).not.toBe("remote-note");
+    expect(await listLearningNotes("restore-session")).toMatchObject([
+      { id: restored.restoredEntityId, videoId: "restore-video", title: "Recovered copy: Cloud note", content: "Recover this note safely." }
+    ]);
+    expect(await getSyncMetadata("note:restore-session:" + restored.restoredEntityId)).toBeNull();
+    expect(await listSyncOutbox("user-a")).toEqual([]);
+    expect(await listRemoteSyncArtifacts("user-a")).toMatchObject([{
+      remoteKey: remote.remoteKey,
+      recoveredEntityId: restored.restoredEntityId
+    }]);
+    expect((await listLearningSessions()).find((item) => item.id === "restore-session")?.transcriptText)
+      .toBe("Keep the local transcript.");
+    await expect(restoreRemoteSyncArtifactAsLocalCopy(remote.remoteKey, "user-a"))
+      .rejects.toThrow(/already been restored/i);
+  });
+
+  it("refuses to restore a remote-only child when its parent lesson is missing", async () => {
+    const page = {
+      protocolVersion: 1 as const, category: "notes" as const,
+      fromSequence: 0, snapshotSequence: 1, scannedThroughSequence: 1,
+      changes: [{
+        sequence: 1, entityType: "note" as const,
+        lessonId: "missing-parent", entityId: "orphan-note",
+        revision: 1, isDeleted: false,
+        payload: { title: "Orphan note", content: "Needs its lesson.", createdAtMs: 1, updatedAtMs: 2 }
+      }],
+      hasMore: false, nextCursor: "orphan-note-cursor"
+    };
+    await applyLocalSyncPullPage(
+      "user-a", "22222222-2222-4222-8222-222222222222", "notes", null, page
+    );
+    const [remote] = await listRemoteSyncArtifacts("user-a");
+    expect(remote).toMatchObject({ reason: "lesson_parent_unavailable" });
+
+    await expect(restoreRemoteSyncArtifactAsLocalCopy(remote.remoteKey, "user-a"))
+      .rejects.toThrow(/parent lesson is not saved/i);
+    expect(await listRemoteSyncArtifacts("user-a")).toMatchObject([{
+      remoteKey: remote.remoteKey,
+      recoveredEntityId: undefined
+    }]);
+    expect(await listLearningNotes("missing-parent")).toEqual([]);
   });
 
   it("persists pull cursors atomically and treats a repeated page as an idempotent no-op", async () => {
