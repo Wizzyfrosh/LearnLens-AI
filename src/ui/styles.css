@@ -725,3 +725,12 @@ body:has(.shell.theme-light) { background: #f4f5f7; color: #202938; }
   .sync-conflict-card-heading{display:grid}
   .sync-recovery-actions{grid-template-columns:1fr}
 }
+
+
+/* Remote-only sync inbox: review/export without mutating local learning records. */
+.sync-remote-inbox{display:grid;gap:10px;margin:14px 0;padding-top:13px;border-top:1px solid #344255}
+.sync-remote-inbox .sync-conflict-list{max-height:360px}
+.sync-remote-inbox .sync-conflict-card{background:#172230}
+.sync-remote-inbox .sync-conflict-version pre{max-height:160px}
+.theme-light .sync-remote-inbox{border-color:#e3e8f0}
+.theme-light .sync-remote-inbox .sync-conflict-card{background:#fff;border-color:#e1e6ee}
