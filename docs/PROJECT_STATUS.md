@@ -4,21 +4,21 @@
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
 **Extension version:** 0.1.0  
-**Current checkpoint:** Phases 4 and 5 are complete. Phase 6.1 protocol decisions are implemented; Phase 6.2 Firebase Admin callable source and Firestore-emulator tests are being added. The backend is not deployed and the extension cloud transport remains disabled. Live Firebase Auth QA and production Chrome App Check remain release gates.
+**Current checkpoint:** Phases 4 and 5 are complete and user-confirmed in desktop Chrome. Phase 6.1 protocol and Phase 6.2 Firebase Functions backend (mutation and signed pull callables) are implemented and emulator-tested. Phase 6.3 now includes the local transactional pull applier, IndexedDB v11 pull cursors, remote-only artifact storage, and per-entity newest-event deduplication; this local implementation passed CI on commit `350b5d235bab0349913d36ec127f1e2c2c429058`. The backend is not deployed, the client callable transport is not implemented, and cloud writes remain hard-disabled. Live Firebase Auth QA and production Chrome App Check remain release gates.
 
-> CI and desktop Chrome runtime verification have both passed for the Phase 4 and Phase 5 scope described below.
+> The Phase 4/5 browser behavior was manually tested by the user. Phase 6 sync code is CI/emulator-verified only; no live Firebase or two-device sync test has been completed.
 
 ## 1. Latest verified build
 
-- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/45899842079
-- **Commit:** `e08c195a6e2837d266b32b93f515094c9c7ae99c`
+- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46049475428
+- **Commit:** `350b5d235bab0349913d36ec127f1e2c2c429058`
 - **Result:** SUCCESS.
-- **Passed:** TypeScript typecheck, 8 Vitest files / 67 unit tests, 8 Firestore Emulator Rules tests, production build, Chrome extension package verification, and artifact upload.
-- **Artifact:** `learnlens-chrome-extension` (artifact ID `15156045269`).
-- **Artifact SHA-256:** `e098a93b5ab42cfdbc66d5c3d72c1e5b9c1d6e614eb6f941d869f60f341c332a`.
-- **Artifact size:** 156,169 bytes.
+- **Passed:** TypeScript typecheck, 13 Vitest files / 150 unit tests, 10 Firestore Rules emulator tests, 25 Firebase Functions/Admin emulator tests, production build, Chrome extension package verification, and artifact upload.
+- **Artifact:** `learnlens-chrome-extension` (artifact ID `15222974777`).
+- **Artifact SHA-256:** `3e2e28edaae677a637e2ecfad19a7ccadcc482516e8add0a6c689bfa81de3af3`.
+- **Artifact size:** 166,618 bytes.
 - **Package/manifest version:** 0.1.0.
-- **Note:** this successful run includes the Phase 6C local sync foundation and category-preference preview.
+- **Important:** CI uses a demo Firebase project and the development App Check debug configuration. Passing CI does not prove a live deployment or production App Check compatibility.
 
 ## 2. Phase 4 — Study notes and local persistence
 
@@ -250,3 +250,18 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - The syncPull endpoint provides signed UID/device/category-bound cursors, fixed snapshot pagination, metadata-only feed scans and separate immutable payload snapshots. Payload pages are capped at 4 MiB and scan at most 500 metadata records.
 - The extension version remains 0.1.0 and `SYNC_CLOUD_WRITES_ENABLED` remains false. No Firebase project is configured or deployed.
 - Remaining release blockers: verify the Firebase project ID and Firestore region; complete live email/password Auth QA in desktop Chrome; approve/test production App Check for the published extension ID; set `SYNC_CURSOR_HMAC_KEY` in Secret Manager; then implement the client pull applier/cursor persistence and two-device end-to-end tests.
+
+
+## 2026-11-27 — Phase 6.3 local pull application CI sign-off
+
+- Verified commit: `350b5d235bab0349913d36ec127f1e2c2c429058`.
+- CI: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46049475428 — SUCCESS.
+- IndexedDB schema v11 adds `syncPullCursors` and `syncRemoteArtifacts`; the v10 migration preserves existing learning records and transcript text.
+- `applyLocalSyncPullPage` validates a page and applies its local merge decisions in one IndexedDB readwrite transaction, committing the opaque per-account/device/category checkpoint in that same transaction.
+- The applier preserves unclaimed records, records owned by another local account, pending local edits, open conflicts, and local transcripts. Missing parents and other unsafe-to-merge artifacts are retained separately in the remote-only store.
+- A page is fully validated, then repeated events for one entity are collapsed to the highest-sequence event before local application. The checkpoint still advances through the complete validated page.
+- Regression coverage includes v10-to-v11 migration, ownership isolation, pending local changes, tombstones, remote-only records, duplicate pages, and repeated revisions. All 150 unit tests pass.
+- `functions/src/sync-pull.ts` provides the server callable, but the extension has no client pull orchestrator or callable transport yet. `src/services/sync-engine.ts` prepares local mutation batches only; `src/services/sync-transport.ts` remains a fail-closed stub and `SYNC_CLOUD_WRITES_ENABLED` remains false.
+- The Account UI currently saves category preferences and first-claim selections locally only. It does not persist server-side sync consent, invoke pull/mutation callables, or expose the new remote-only artifact inbox.
+- No `.firebaserc` binding or live Functions deployment is present. `SYNC_CURSOR_HMAC_KEY` has not been configured in Secret Manager. Live email/password Auth QA, a production-compatible App Check strategy for the published extension ID, and two-device tests remain outstanding.
+- Keep the extension version at 0.1.0. Do not enable cloud reads/writes or deploy until the Firebase project/region, Auth, production App Check, secret, consent flow, and end-to-end safety gates are explicitly verified.
