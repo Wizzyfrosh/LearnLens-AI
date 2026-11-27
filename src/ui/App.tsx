@@ -3,8 +3,8 @@ import type { FormEvent } from "react";
 import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Download, Search, FileText, History, Sun, Moon, CheckCircle2, XCircle, UserRound, LogIn, LogOut, Mail, ShieldCheck, RefreshCw, Copy } from "lucide-react";
 import { askLearnLens, generateQuizText, isAudioTranscriptionConfigured, transcribeAudioChunk } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport, serializeSegmentsAsVtt } from "../services/transcript";
-import { deleteLearningSession, deleteLearningNote, getLatestSavedSession, getLatestSessionForVideo, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt, getLocalSyncCandidateCounts, getLocalSyncPreferences, saveLocalSyncPreferences, getLocalSyncClaimCandidates, claimSelectedLocalSyncRecords, listSyncConflicts, resolveSyncConflict, exportSyncConflictSnapshot, restoreSyncConflictAsLocalCopy } from "../services/session-store";
-import type { LearningNote, LearningSession, SyncCandidateCounts, SyncCategoryPreferences, SyncClaimResult, SyncClaimCandidate, SyncConflictRecord, SyncConflictResolution, SyncPreparedPayload } from "../services/session-store";
+import { deleteLearningSession, deleteLearningNote, getLatestSavedSession, getLatestSessionForVideo, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt, getLocalSyncCandidateCounts, getLocalSyncPreferences, saveLocalSyncPreferences, getLocalSyncClaimCandidates, claimSelectedLocalSyncRecords, listSyncConflicts, resolveSyncConflict, exportSyncConflictSnapshot, restoreSyncConflictAsLocalCopy, listRemoteSyncArtifacts } from "../services/session-store";
+import type { LearningNote, LearningSession, SyncCandidateCounts, SyncCategoryPreferences, SyncClaimResult, SyncClaimCandidate, SyncConflictRecord, SyncConflictResolution, SyncPreparedPayload, SyncRemoteArtifactRecord } from "../services/session-store";
 import { getQuizFeedbackSegments, parseShortAnswerFeedback, scoreObjectiveAnswers, validateQuizResponse } from "../services/quiz";
 import type { QuizAttempt, QuizDefinition } from "../services/quiz";
 import type { InferencePreference, TranscriptSegment, VideoContext } from "../shared/types";
@@ -159,6 +159,7 @@ export default function App() {
   const [syncClaimResult, setSyncClaimResult] = useState<SyncClaimResult | null>(null);
   const [syncClaimCandidates, setSyncClaimCandidates] = useState<SyncClaimCandidate[]>([]);
   const [syncConflicts, setSyncConflicts] = useState<SyncConflictRecord[]>([]);
+  const [remoteSyncArtifacts, setRemoteSyncArtifacts] = useState<SyncRemoteArtifactRecord[]>([]);
   const [resolvedSyncConflicts, setResolvedSyncConflicts] = useState<SyncConflictRecord[]>([]);
   const [syncConflictHistoryExpanded, setSyncConflictHistoryExpanded] = useState(false);
   const [syncRecoveryBusyId, setSyncRecoveryBusyId] = useState<string | null>(null);
@@ -181,6 +182,7 @@ export default function App() {
         setSyncClaimResult(null);
         setSyncCandidateCounts(null);
         setSyncConflicts([]);
+        setRemoteSyncArtifacts([]);
         setResolvedSyncConflicts([]);
         setSyncConflictHistoryExpanded(false);
         setSyncRecoveryError("");
@@ -203,6 +205,7 @@ export default function App() {
     if (activeTab !== "account" || !authUser?.emailVerified) {
       setSyncCandidateCounts(null);
       setSyncConflicts([]);
+      setRemoteSyncArtifacts([]);
       setResolvedSyncConflicts([]);
       setSyncConflictsLoading(false);
       return;
