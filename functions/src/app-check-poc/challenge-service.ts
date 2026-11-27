@@ -110,17 +110,104 @@ export async function completeAuthenticatedChallengeSession(
   return { verified: true, expiresAtMs: context.expiresAtMs };
 }
 
+export interface AppCheckTokenIssuer {
+  createToken(
+    appId: string,
+    options: { ttlMillis: number }
+  ): Promise<{ token: string; ttlMillis: number }>;
+}
+
+const APP_CHECK_TOKEN_TTL_MS = 30 * 60 * 1000;
+const APP_CHECK_TOKEN_MAX_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
- * Atomically consumes a verified session for a later App Check token-mint
- * attempt. This function does not mint or return an App Check token.
+ * Consumes one verified session and mints one Firebase App Check token.
+ *
+ * The App ID/action are compared against trusted server configuration before
+ * the irreversible consume transition. Once consumed, any minting failure
+ * requires a fresh challenge; this method never reopens or replays a session.
  */
-export async function claimAuthenticatedChallengeSession(
+export async function issueAuthenticatedAppCheckToken(
   uid: string,
   sessionId: unknown,
   pollCredential: unknown,
+  expectedAppId: string,
+  expectedAction: string,
+  tokenIssuer: AppCheckTokenIssuer,
   database: Firestore,
   nowMs = Date.now()
-) {
+): Promise<{ token: string; expireTimeMillis: number }> {
+  if (typeof uid !== "string" || uid.length === 0 || uid.length > 128) {
+    throw new SyncBackendError("unauthenticated", "Sign in before requesting an App Check token.");
+  }
+  if (
+    typeof expectedAppId !== "string" ||
+    expectedAppId.length < 8 ||
+    expectedAppId.length > 256 ||
+    typeof expectedAction !== "string" ||
+    !/^[a-z][a-z0-9_]{2,63}$/.test(expectedAction)
+  ) {
+    throw new SyncBackendError("failed-precondition", "The App Check challenge configuration is invalid.");
+  }
+
   await enforceChallengeRateLimit("claim", uid, database, nowMs);
-  return consumeChallengeSession(uid, sessionId, pollCredential, database, nowMs);
+
+  const context = await getChallengeVerificationContext(sessionId, database);
+  if (context.uid !== uid) {
+    throw new SyncBackendError("permission-denied", "The challenge session does not belong to this account.");
+  }
+  if (context.state !== "verified") {
+    throw new SyncBackendError("failed-precondition", "The challenge has not been verified or was already consumed.");
+  }
+  if (context.expiresAtMs <= nowMs) {
+    throw new SyncBackendError("deadline-exceeded", "The challenge session has expired.");
+  }
+  if (context.appId !== expectedAppId || context.action !== expectedAction) {
+    throw new SyncBackendError("failed-precondition", "The challenge session does not match the configured Firebase app.");
+  }
+
+  const consumed = await consumeChallengeSession(
+    uid,
+    sessionId,
+    pollCredential,
+    database,
+    nowMs
+  );
+  if (consumed.appId !== expectedAppId || consumed.action !== expectedAction) {
+    // Immutable session fields are checked both before and during the claim.
+    throw new SyncBackendError("failed-precondition", "The consumed challenge session configuration is invalid.");
+  }
+
+  let issued: { token: string; ttlMillis: number };
+  try {
+    issued = await tokenIssuer.createToken(consumed.appId, {
+      ttlMillis: APP_CHECK_TOKEN_TTL_MS
+    });
+  } catch {
+    // Do not log the token issuer error or any credential material.
+    throw new SyncBackendError(
+      "unavailable",
+      "Firebase could not issue the App Check token. Start a new security challenge."
+    );
+  }
+
+  if (
+    !issued ||
+    typeof issued.token !== "string" ||
+    issued.token.length === 0 ||
+    issued.token.length > 16_384 ||
+    !Number.isSafeInteger(issued.ttlMillis) ||
+    issued.ttlMillis < APP_CHECK_TOKEN_TTL_MS ||
+    issued.ttlMillis > APP_CHECK_TOKEN_MAX_TTL_MS
+  ) {
+    throw new SyncBackendError(
+      "unavailable",
+      "Firebase returned an invalid App Check token response. Start a new security challenge."
+    );
+  }
+
+  return {
+    token: issued.token,
+    expireTimeMillis: nowMs + issued.ttlMillis
+  };
 }
