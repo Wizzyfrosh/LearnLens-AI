@@ -387,6 +387,8 @@ describe("Authenticated App Check challenge service", () => {
     const issuer = {
       createToken: async (appId: string, options: { ttlMillis: number }) => {
         mintCalls += 1;
+        assert.equal(appId, APP_ID);
+        assert.equal(options.ttlMillis, 30 * 60 * 1000);
         await new Promise((resolve) => setTimeout(resolve, 25));
         return { token: "single-use-app-check-token", ttlMillis: options.ttlMillis };
       }
