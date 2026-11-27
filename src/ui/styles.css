@@ -734,3 +734,20 @@ body:has(.shell.theme-light) { background: #f4f5f7; color: #202938; }
 .sync-remote-inbox .sync-conflict-version pre{max-height:160px}
 .theme-light .sync-remote-inbox{border-color:#e3e8f0}
 .theme-light .sync-remote-inbox .sync-conflict-card{background:#fff;border-color:#e1e6ee}
+
+
+/* Explicit cloud-sync consent review. This panel is informational while the server-write gate is closed. */
+.sync-consent-review{display:grid;gap:10px}
+.sync-consent-scope{display:grid;gap:8px;padding:10px;border:1px solid #e2e8f2;border-radius:9px;background:#fff}
+.sync-consent-scope>span{font-size:9px;font-weight:800;color:#536178;letter-spacing:.04em}
+.sync-consent-scope>div{display:flex;align-items:flex-start;gap:7px;color:#344158;font-size:9px;line-height:1.45}
+.sync-consent-scope svg{flex:none;color:#4168c6;margin-top:1px}
+.sync-consent-acknowledgement{display:flex;align-items:flex-start;gap:8px;padding:10px;border:1px solid #dce4f0;border-radius:9px;background:#fff;cursor:pointer}
+.sync-consent-acknowledgement input{width:15px;height:15px;flex:none;margin:1px 0 0;accent-color:#4168c6}
+.sync-consent-acknowledgement span{font-size:9px;line-height:1.5;color:#536178}
+.sync-consent-gate{margin:0;padding:9px;border:1px solid #e6d9ae;border-radius:8px;background:#fff9e8;color:#756239;font-size:9px;line-height:1.5}
+.theme-light .sync-consent-scope{background:#fff;border-color:#e2e8f2}
+.theme-light .sync-consent-scope>span{color:#536178}
+.theme-light .sync-consent-scope>div{color:#344158}
+.theme-light .sync-consent-acknowledgement{background:#fff;border-color:#dce4f0}
+.theme-light .sync-consent-acknowledgement span{color:#536178}
