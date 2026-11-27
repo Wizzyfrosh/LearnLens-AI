@@ -1,6 +1,6 @@
 # Phase 6.6.2B — Transactional challenge-session lifecycle
 
-**Status:** Implemented as an isolated backend module; CI verification pending  
+**Status:** Implemented and CI-verified in run [46078968718](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46078968718)  
 **Branch:** `phase-6-6-2-turnstile-custom-provider-poc`  
 **Scope:** Firestore session state only. No callable/HTTP endpoint, hosted challenge page, secret, token minting or product sync integration is included.
 
