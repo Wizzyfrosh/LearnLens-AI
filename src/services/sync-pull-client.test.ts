@@ -138,9 +138,9 @@ describe("read-only sync pull pagination", () => {
       return page(sequence - 1, sequence, 10, true, "cursor-" + sequence);
     });
     const applyPage = vi.fn(async (
-      uid: string,
-      id: string,
-      selectedCategory: SyncCategory,
+      _uid: string,
+      _id: string,
+      _selectedCategory: SyncCategory,
       _requestCursor: string | null,
       nextPage: SyncPullPage
     ) => applyResult(cursor(
