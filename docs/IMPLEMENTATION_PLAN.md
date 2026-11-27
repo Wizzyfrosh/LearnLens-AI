@@ -404,3 +404,31 @@ Next exit criteria:
 - Next: build an isolated proof-of-concept for (A) built-in reCAPTCHA Enterprise in the extension context and (B) hosted challenge + custom provider. Test with the final published extension ID and document CSP, Chrome Web Store policy, token replay, verification, quotas/cost and abuse controls.
 - Keep `SYNC_SERVER_CONSENT_READS_ENABLED`, `SYNC_SERVER_CONSENT_WRITES_ENABLED`, `SYNC_CLOUD_PULL_ENABLED`, and `SYNC_CLOUD_WRITES_ENABLED` false. Keep version 0.1.0.
 - References: Firebase App Check [overview](https://firebase.google.com/docs/app-check), [reCAPTCHA Enterprise](https://firebase.google.com/docs/app-check/web/recaptcha-enterprise-provider), [custom provider](https://firebase.google.com/docs/app-check/web/custom-provider); Chrome [Manifest V3 security](https://developer.chrome.com/docs/extensions/develop/migrate/improve-security).
+
+## 20. Phase 6.6 — isolated App Check compatibility POC (2026-11-27)
+
+**Built**
+- Add a separate test-only Manifest V3 extension under `poc/app-check-extension/`.
+- Test the Firebase SDK's built-in `ReCaptchaEnterpriseProvider` from a real extension-page origin, without touching the product extension or its App Check debug setup.
+- Capture CSP violations and token-acquisition outcome, without storing or printing an App Check token.
+- Add standalone typecheck/build/package verification and CI artifact upload for the POC.
+- Document the custom-provider alternative, its server-side verification requirements, replay/rate-limit controls, and the fact that a hosted risk challenge is not cryptographic extension attestation.
+
+**Not yet verified**
+- Desktop Chrome execution of the POC.
+- Compatibility of an extension origin with the reCAPTCHA Enterprise key domain allowlist.
+- Token acquisition under the strict Manifest V3 extension-page CSP.
+- Any production provider decision or final Chrome Web Store ID test.
+
+**Manual test prerequisites**
+- Build with `npm run poc:app-check:verify`.
+- Load only `poc/app-check-extension/dist/` as a separate unpacked extension; retain the existing LearnLens extension.
+- Use a dedicated non-production Firebase Web App registration and reCAPTCHA Enterprise site key. Do not change the product app's provider.
+- Record the POC extension ID, browser version, CSP events, Firebase App Check error and Network evidence. A test on the POC ID is not final release approval.
+
+**Decision boundary**
+- The custom provider is supported by Firebase only when a trusted backend independently verifies proof before using Admin SDK `appCheck().createToken()`. A hosted challenge can reduce automated abuse but is not proof of installed extension identity. It must not trust a shared client secret, submitted UID, extension ID, or unverified Origin header.
+- Firebase documents custom token TTL from 30 minutes to 7 days. A visible/interactive challenge also needs a safe token-refresh UX; do not silently open tabs from background refresh.
+- No provider or backend is deployed. All four sync gates remain false and product extension version remains 0.1.0.
+
+**References:** Firebase [reCAPTCHA Enterprise](https://firebase.google.com/docs/app-check/web/recaptcha-enterprise-provider), [custom provider](https://firebase.google.com/docs/app-check/web/custom-provider), [custom provider server implementation](https://firebase.google.com/docs/app-check/custom-provider), [Admin SDK token API](https://firebase.google.com/docs/reference/admin/node/firebase-admin.app-check.appcheck); Chrome [MV3 security](https://developer.chrome.com/docs/extensions/develop/migrate/improve-security) and [extension CSP](https://developer.chrome.com/docs/extensions/reference/manifest/content-security-policy).
