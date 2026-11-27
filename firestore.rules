@@ -24,6 +24,7 @@ service cloud.firestore {
         && data.categories.quizzes is bool
         && data.categories.attempts is bool
         && (!data.categories.attempts || data.categories.quizzes)
+        && (!data.enabled || data.categories.lessonMetadata || data.categories.notes || data.categories.quizzes || data.categories.attempts)
         && data.updatedAt == request.time;
     }
 
