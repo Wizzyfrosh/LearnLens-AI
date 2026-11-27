@@ -51,7 +51,7 @@ Session consumption is irreversible. If Firebase token signing fails after consu
 
 This can require the user to complete Turnstile again after a transient signing/network problem, but it avoids replaying a consumed challenge or accidentally issuing multiple tokens for one session.
 
-Concurrent-claim tests assert that only one request can consume the session and call the token issuer. Tests use a fake issuer; no real Firebase App Check token is minted in CI.
+Concurrent-claim tests assert that only one request can consume the session and call the token issuer. Tests use a fake issuer; no real Firebase App Check token is minted in CI.\n\nCI run 46085254191 passed: 11 Firestore Rules tests, 8 Turnstile validator tests and 23 Firestore Emulator tests passed; Functions TypeScript build and TTL configuration validation also passed.
 
 ## Test coverage
 
