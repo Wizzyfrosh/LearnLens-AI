@@ -1010,7 +1010,21 @@ export async function applyLocalSyncPullPage(
 
         const now = Date.now();
         const counts = { applied: 0, remoteOnly: 0, preservedLocal: 0, ignoredStale: 0 };
-        let remaining = page.changes.length;
+
+        // A bounded feed page may contain several sequential events for the
+        // same artifact. Keep the last (highest-sequence) event so concurrent
+        // IndexedDB reads cannot apply multiple revisions against one stale
+        // metadata snapshot. Page validation still covers every event, and the
+        // checkpoint still advances through the complete scanned page.
+        const latestChangeByEntity = new Map<string, (typeof page.changes)[number]>();
+        for (const change of changesToApply) {
+          latestChangeByEntity.set(
+            syncEntityKey(change.entityType, change.lessonId, change.entityId),
+            change
+          );
+        }
+        const changesToApply = Array.from(latestChangeByEntity.values());
+        let remaining = changesToApply.length;
 
         const finishPage = () => {
           if (remaining !== 0 || failure || completed) return;
