@@ -267,3 +267,33 @@ export async function consumeChallengeSession(
     };
   });
 }
+
+export interface ChallengeVerificationContext {
+  uid: string;
+  appId: string;
+  action: string;
+  cdata: string;
+  expiresAtMs: number;
+  state: ChallengeSessionState;
+}
+
+/** Loads only the server-owned values required before calling Siteverify. */
+export async function getChallengeVerificationContext(
+  sessionId: unknown,
+  database: Firestore
+): Promise<ChallengeVerificationContext> {
+  assertSessionId(sessionId);
+  const snapshot = await database.doc(SESSION_COLLECTION + "/" + sessionId).get();
+  if (!snapshot.exists) {
+    throw new SyncBackendError("not-found", "The challenge session was not found.");
+  }
+  const session = parseSession(snapshot.data());
+  return {
+    uid: session.uid,
+    appId: session.appId,
+    action: session.action,
+    cdata: session.cdata,
+    expiresAtMs: session.expiresAt.toMillis(),
+    state: session.state
+  };
+}
