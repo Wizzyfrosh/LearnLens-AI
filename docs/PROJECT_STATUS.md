@@ -4,21 +4,21 @@
 **Repository:** https://github.com/Wizzyfrosh/LearnLens-AI  
 **Branch:** main  
 **Extension version:** 0.1.0  
-**Current checkpoint:** Phases 4 and 5 are complete and user-confirmed in desktop Chrome. Phase 6.1 protocol and Phase 6.2 Firebase Functions backend (mutation and signed pull callables) are implemented and emulator-tested. Phase 6.3 now includes the local transactional pull applier, IndexedDB v11 pull cursors, remote-only artifact storage, and per-entity newest-event deduplication; this local implementation passed CI on commit `350b5d235bab0349913d36ec127f1e2c2c429058`. The backend is not deployed, the client callable transport is not implemented, and cloud writes remain hard-disabled. Live Firebase Auth QA and production Chrome App Check remain release gates.
+**Current checkpoint:** Phases 4 and 5 are complete and user-confirmed in desktop Chrome. Phase 6.1 protocol and Phase 6.2 Firebase Functions backend (mutation and signed pull callables) are implemented and emulator-tested. Phase 6.3 now includes the IndexedDB v11 transactional pull applier, a gated Firebase read-only pull callable wrapper with bounded pagination, an account-scoped remote-only inbox, JSON export, and safe restore-as-new-local-copy. The latest code passed CI on commit `33ba8f5c2b02ccb3b9590bee2d79300c1c1c44c2`. The Functions backend is not deployed. Both pull and mutation cloud transport remain hard-disabled; no live Firebase pull or upload has occurred. Live Firebase Auth QA, production Chrome App Check, and server-side sync consent remain release gates.
 
-> The Phase 4/5 browser behavior was manually tested by the user. Phase 6 sync code is CI/emulator-verified only; no live Firebase or two-device sync test has been completed.
+> Phase 4/5 behavior was manually tested by the user. Phase 6 source and emulator behavior is CI-verified only. The new Account inbox/recovery UI has not yet been manually tested in desktop Chrome, and no live Firebase or two-device sync test has been completed.
 
 ## 1. Latest verified build
 
-- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46049475428
-- **Commit:** `350b5d235bab0349913d36ec127f1e2c2c429058`
+- **CI run:** https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46050902816
+- **Commit:** `33ba8f5c2b02ccb3b9590bee2d79300c1c1c44c2`
 - **Result:** SUCCESS.
-- **Passed:** TypeScript typecheck, 13 Vitest files / 150 unit tests, 10 Firestore Rules emulator tests, 25 Firebase Functions/Admin emulator tests, production build, Chrome extension package verification, and artifact upload.
-- **Artifact:** `learnlens-chrome-extension` (artifact ID `15222974777`).
-- **Artifact SHA-256:** `3e2e28edaae677a637e2ecfad19a7ccadcc482516e8add0a6c689bfa81de3af3`.
-- **Artifact size:** 166,618 bytes.
+- **Passed:** TypeScript typecheck, 14 Vitest files / 158 unit tests, 10 Firestore Rules emulator tests, 25 Firebase Functions/Admin emulator tests, production build, Chrome extension package verification, and artifact upload.
+- **Artifact:** `learnlens-chrome-extension` (artifact ID `15224292721`).
+- **Artifact SHA-256:** `728e2d0ea30713b43af50605eafd7fa4d52ade262edb7195f83d70c83f090b4e`.
+- **Artifact size:** 168,325 bytes.
 - **Package/manifest version:** 0.1.0.
-- **Important:** CI uses a demo Firebase project and the development App Check debug configuration. Passing CI does not prove a live deployment or production App Check compatibility.
+- **Important:** CI uses demo Firebase projects and the development App Check debug configuration. Passing CI does not prove a live deployment or production App Check compatibility.
 
 ## 2. Phase 4 — Study notes and local persistence
 
@@ -265,3 +265,19 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - The Account UI currently saves category preferences and first-claim selections locally only. It does not persist server-side sync consent, invoke pull/mutation callables, or expose the new remote-only artifact inbox.
 - No `.firebaserc` binding or live Functions deployment is present. `SYNC_CURSOR_HMAC_KEY` has not been configured in Secret Manager. Live email/password Auth QA, a production-compatible App Check strategy for the published extension ID, and two-device tests remain outstanding.
 - Keep the extension version at 0.1.0. Do not enable cloud reads/writes or deploy until the Firebase project/region, Auth, production App Check, secret, consent flow, and end-to-end safety gates are explicitly verified.
+
+
+## 2026-11-27 — Phase 6.3 gated pull client and remote recovery CI sign-off
+
+- Verified commit: `33ba8f5c2b02ccb3b9590bee2d79300c1c1c44c2`.
+- CI: https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46050902816 — SUCCESS.
+- Extension unit tests: 14 Vitest files / 158 tests passed. Firestore Rules emulator: 10 tests passed. Firebase Functions/Admin emulator: 25 tests passed. TypeScript, production build, Chrome package verification and artifact upload passed.
+- `src/services/sync-pull-client.ts` adds a Firebase `syncPull` callable wrapper and a transport-independent bounded page runner. It validates each response against the local scan watermark, resumes with the committed opaque cursor, and applies a page through the atomic IndexedDB applier. A run processes at most three pages by default (hard maximum 20).
+- Pull requires the currently signed-in UID to match the requested account, a verified email, and the category to be selected locally. The server independently checks verified Auth, App Check and server-side category consent.
+- `SYNC_CLOUD_PULL_ENABLED` is explicitly `false`. The callable has not been invoked against Firebase. `SYNC_CLOUD_WRITES_ENABLED` also remains `false`; mutation dispatch remains a fail-closed stub.
+- The Account workspace now displays remote-only records belonging to the signed-in account and supports copying/downloading recovery JSON.
+- `restoreRemoteSyncArtifactAsLocalCopy` restores eligible records with a new ID, without claiming ownership or queuing an upload. Notes/quizzes/attempts require the local parent lesson; attempts also require the matching local quiz. Lesson metadata restoration creates an empty-transcript local shell. The original remote-only snapshot remains in the inbox and is marked as recovered.
+- No live server consent is being written. The local category preferences and first-claim flow are still local-only; the UI must not be treated as server consent.
+- Remaining gates: wire explicit consent to `updateSyncSettings`; verify live Firebase project ID and Firestore region; complete live Auth QA; approve production App Check for the published extension ID; create `SYNC_CURSOR_HMAC_KEY` in Secret Manager; deploy only after review; then manually verify read-only pull and recovery in desktop Chrome and across two devices.
+- The new Account inbox/recovery UI has not been manually tested in desktop Chrome. CI does not substitute for that runtime verification.
+- Keep extension version 0.1.0. Do not enable either cloud gate or deploy until all production and end-to-end safety checks are explicitly approved.
