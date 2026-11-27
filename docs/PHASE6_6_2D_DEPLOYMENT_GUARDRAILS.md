@@ -1,6 +1,6 @@
 # Phase 6.6.2D — Deployment guardrails and challenge data retention
 
-**Status:** Implemented; CI verification pending  
+**Status:** Implemented and CI-verified — [run 46084981427](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46084981427)  
 **Branch:** `phase-6-6-2-turnstile-custom-provider-poc`  
 **PR:** #2 (draft; not merged)
 
@@ -60,7 +60,7 @@ The isolated workflow now:
 4. Runs Turnstile validator tests.
 5. Runs Firestore Emulator tests for session lifecycle, authenticated service and per-UID rate limits.
 
-CI result is pending for this slice.
+CI run 46084981427 passed: 11 Firestore Rules tests, 8 Turnstile validator tests, and 20 Firestore Emulator tests passed; the Functions build and TTL configuration check also passed.
 
 ## Safeguards
 
