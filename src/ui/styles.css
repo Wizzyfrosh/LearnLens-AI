@@ -751,3 +751,25 @@ body:has(.shell.theme-light) { background: #f4f5f7; color: #202938; }
 .theme-light .sync-consent-scope>div{color:#344158}
 .theme-light .sync-consent-acknowledgement{background:#fff;border-color:#dce4f0}
 .theme-light .sync-consent-acknowledgement span{color:#536178}
+
+
+/* Account-scoped server consent state and explicit withdrawal review. */
+.sync-server-consent-status{display:grid;gap:8px;padding:11px;border:1px solid #dce4f0;border-radius:10px;background:#f8faff}
+.sync-server-consent-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.sync-server-consent-heading strong{font-size:10px;color:#344158}
+.sync-server-consent-heading>span{font-size:8px;font-weight:800;letter-spacing:.06em;color:#77622e}
+.sync-server-consent-status>p{margin:0;color:#68758b;font-size:9px;line-height:1.55}
+.sync-server-consent-status>small{font-size:8px;color:#8792a3;line-height:1.45}
+.sync-server-consent-error{color:#a64235!important}
+.sync-server-consent-categories{display:flex;flex-wrap:wrap;gap:5px}
+.sync-server-consent-categories span{padding:4px 7px;border:1px solid #dce4f0;border-radius:20px;background:#fff;color:#52627b;font-size:8px}
+.sync-consent-withdraw-review{display:grid;gap:9px;padding:10px;border:1px solid #e6d9ae;border-radius:9px;background:#fff9e8}
+.sync-consent-withdraw-review>strong{font-size:10px;color:#6e5c31}
+.sync-consent-withdraw-review>p{margin:0;color:#756744;font-size:9px;line-height:1.55}
+.theme-light .sync-server-consent-status{background:#f8faff;border-color:#dce4f0}
+.theme-light .sync-server-consent-heading strong{color:#344158}
+.theme-light .sync-server-consent-status>p{color:#68758b}
+.theme-light .sync-server-consent-categories span{background:#fff;color:#52627b;border-color:#dce4f0}
+.theme-light .sync-consent-withdraw-review{background:#fff9e8;border-color:#e6d9ae}
+.theme-light .sync-consent-withdraw-review>strong{color:#6e5c31}
+.theme-light .sync-consent-withdraw-review>p{color:#756744}

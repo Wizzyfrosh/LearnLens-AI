@@ -11,7 +11,8 @@ import type { InferencePreference, TranscriptSegment, VideoContext } from "../sh
 import type { AudioCaptureStatus, CaptionCaptureStatus, ExtensionMessage } from "../shared/messages";
 import { createEmailPasswordAccount, getReadableAuthError, observeAuthState, refreshAuthUser, requestPasswordReset, resendVerificationEmail, signInWithEmailPassword, signOutCurrentUser } from "../services/firebase-auth";
 import type { AuthUser } from "../services/firebase-auth";
-import { SYNC_SERVER_CONSENT_WRITES_ENABLED, updateSyncSettingsForFirebase } from "../services/sync-settings-client";
+import { SYNC_SERVER_CONSENT_READS_ENABLED, SYNC_SERVER_CONSENT_WRITES_ENABLED, getSyncSettingsStatusForFirebase, updateSyncSettingsForFirebase, withdrawSyncSettingsForFirebase } from "../services/sync-settings-client";
+import type { SyncSettingsStatus } from "../services/sync-settings-client";
 
 const emptyContext: VideoContext = {
   videoId: "",
@@ -171,6 +172,11 @@ export default function App() {
   const [syncConsentReviewOpen, setSyncConsentReviewOpen] = useState(false);
   const [syncConsentAcknowledged, setSyncConsentAcknowledged] = useState(false);
   const [syncConsentSaving, setSyncConsentSaving] = useState(false);
+  const [syncServerConsentStatus, setSyncServerConsentStatus] = useState<SyncSettingsStatus | null>(null);
+  const [syncServerConsentLoading, setSyncServerConsentLoading] = useState(false);
+  const [syncServerConsentError, setSyncServerConsentError] = useState("");
+  const [syncConsentWithdrawReviewOpen, setSyncConsentWithdrawReviewOpen] = useState(false);
+  const [syncConsentWithdrawing, setSyncConsentWithdrawing] = useState(false);
   const [syncClaimReviewOpen, setSyncClaimReviewOpen] = useState(false);
   const [syncClaimBusy, setSyncClaimBusy] = useState(false);
   const [syncClaimResult, setSyncClaimResult] = useState<SyncClaimResult | null>(null);
@@ -198,6 +204,9 @@ export default function App() {
         setSyncClaimReviewOpen(false);
         setSyncConsentReviewOpen(false);
         setSyncConsentAcknowledged(false);
+        setSyncServerConsentStatus(null);
+        setSyncServerConsentError("");
+        setSyncConsentWithdrawReviewOpen(false);
         setSyncClaimResult(null);
         setSyncCandidateCounts(null);
         setSyncConflicts([]);
@@ -254,6 +263,36 @@ export default function App() {
         setSyncConflictsLoading(false);
       }
     });
+    return () => { cancelled = true; };
+  }, [activeTab, authUser?.uid, authUser?.emailVerified]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSyncServerConsentStatus(null);
+    setSyncServerConsentError("");
+    setSyncConsentWithdrawReviewOpen(false);
+
+    if (activeTab !== "account" || !authUser?.emailVerified || !SYNC_SERVER_CONSENT_READS_ENABLED) {
+      setSyncServerConsentLoading(false);
+      return () => { cancelled = true; };
+    }
+
+    setSyncServerConsentLoading(true);
+    getSyncSettingsStatusForFirebase(authUser.uid)
+      .then((status) => {
+        if (!cancelled) setSyncServerConsentStatus(status);
+      })
+      .catch((cause) => {
+        if (!cancelled) {
+          setSyncServerConsentError(cause instanceof Error
+            ? cause.message
+            : "Could not read saved cloud-sync consent.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSyncServerConsentLoading(false);
+      });
+
     return () => { cancelled = true; };
   }, [activeTab, authUser?.uid, authUser?.emailVerified]);
 
@@ -830,10 +869,13 @@ export default function App() {
       // Keep the on-device category selection aligned with the explicit
       // account-level consent request. No artifact payload is sent here.
       await saveLocalSyncPreferences(authUser.uid, syncCategories);
-      await updateSyncSettingsForFirebase(authUser.uid, {
+      const savedStatus = await updateSyncSettingsForFirebase(authUser.uid, {
         enabled: true,
         categories: syncCategories
       });
+      const { saved: _saved, ...serverStatus } = savedStatus;
+      setSyncServerConsentStatus(serverStatus);
+      setSyncServerConsentError("");
       setSyncConsentReviewOpen(false);
       setSyncConsentAcknowledged(false);
       setSyncPreferencesMessage(
@@ -845,6 +887,31 @@ export default function App() {
         : "Could not save cloud-sync consent.");
     } finally {
       setSyncConsentSaving(false);
+    }
+  }
+
+  async function confirmCloudSyncWithdrawal() {
+    if (!authUser?.emailVerified || !syncServerConsentStatus?.configured ||
+        !syncServerConsentStatus.enabled || !SYNC_SERVER_CONSENT_WRITES_ENABLED) return;
+
+    setSyncConsentWithdrawing(true);
+    setSyncPreferencesError("");
+    setSyncPreferencesMessage("");
+    try {
+      const withdrawnStatus = await withdrawSyncSettingsForFirebase(authUser.uid);
+      const { saved: _saved, ...serverStatus } = withdrawnStatus;
+      setSyncServerConsentStatus(serverStatus);
+      setSyncServerConsentError("");
+      setSyncConsentWithdrawReviewOpen(false);
+      setSyncPreferencesMessage(
+        "Cloud-sync consent has been withdrawn. Future sync is disabled; previously stored cloud records are not deleted by withdrawal."
+      );
+    } catch (cause) {
+      setSyncPreferencesError(cause instanceof Error
+        ? cause.message
+        : "Could not withdraw cloud-sync consent.");
+    } finally {
+      setSyncConsentWithdrawing(false);
     }
   }
 
@@ -1660,10 +1727,73 @@ export default function App() {
             {authUser?.emailVerified && (
               <div className="account-card account-sync-card">
                 <div className="account-sync-heading">
-                  <div><ShieldCheck size={16} /><strong>Future sync preferences</strong></div>
-                  <span>NOT ACTIVE</span>
+                  <div><ShieldCheck size={16} /><strong>Cloud sync preferences</strong></div>
+                  <span>{syncServerConsentStatus?.configured && syncServerConsentStatus.enabled ? "CONSENT SAVED" : "NOT ACTIVE"}</span>
                 </div>
                 <p className="account-sync-description">Choose which categories you may want to sync later. These choices are saved only on this device; they do not claim records or upload anything.</p>
+                <section className="sync-server-consent-status" aria-label="Saved cloud-sync consent status">
+                  <div className="sync-server-consent-heading">
+                    <strong>Saved account consent</strong>
+                    <span>{!SYNC_SERVER_CONSENT_READS_ENABLED ? "NOT CHECKED" : syncServerConsentLoading ? "CHECKING" : syncServerConsentStatus?.configured ? (syncServerConsentStatus.enabled ? "ENABLED" : "WITHDRAWN") : "NOT CONFIGURED"}</span>
+                  </div>
+                  {!SYNC_SERVER_CONSENT_READS_ENABLED ? (
+                    <p>Saved account consent cannot be checked in this build. Local category choices below are not proof of server consent. No Firebase request is made.</p>
+                  ) : syncServerConsentLoading ? (
+                    <div className="account-sync-loading"><LoaderCircle className="spin" size={13} /> Checking saved account consent…</div>
+                  ) : syncServerConsentError ? (
+                    <p className="sync-server-consent-error">{syncServerConsentError}</p>
+                  ) : syncServerConsentStatus?.configured ? (
+                    <>
+                      <p>{syncServerConsentStatus.enabled
+                        ? "Cloud-sync consent is saved for this account. Artifact transfer is still separately disabled in this build."
+                        : "A cloud-sync consent setting is saved, but cloud sync is currently disabled for this account."}</p>
+                      {syncServerConsentStatus.enabled && (
+                        <div className="sync-server-consent-categories">
+                          {([
+                            ["lessonMetadata", "Lesson titles and source links"],
+                            ["notes", "Study notes"],
+                            ["quizzes", "Quiz definitions"],
+                            ["attempts", "Quiz attempts"]
+                          ] as Array<[keyof SyncCategoryPreferences, string]>).filter(([key]) => syncServerConsentStatus.categories[key]).map(([key, label]) => (
+                            <span key={key}>{label}</span>
+                          ))}
+                        </div>
+                      )}
+                      <small>{syncServerConsentStatus.updatedAtMs !== null
+                        ? "Last account setting update: " + new Date(syncServerConsentStatus.updatedAtMs).toLocaleString()
+                        : "Server update time unavailable."}</small>
+                      {syncServerConsentStatus.enabled && (
+                        <button
+                          className="secondary-button sync-review-button"
+                          type="button"
+                          onClick={() => setSyncConsentWithdrawReviewOpen(true)}
+                          disabled={!SYNC_SERVER_CONSENT_WRITES_ENABLED || syncConsentWithdrawing || syncServerConsentLoading}
+                        >
+                          Review consent withdrawal
+                        </button>
+                      )}
+                      {syncConsentWithdrawReviewOpen && syncServerConsentStatus.enabled && (
+                        <div className="sync-consent-withdraw-review" role="region" aria-label="Confirm cloud-sync consent withdrawal">
+                          <strong>Withdraw cloud-sync consent?</strong>
+                          <p>This will disable the server-side sync setting and turn off all consent categories for this account. It stops future sync authorization. It does not delete records that may already exist in cloud storage; deletion requires a separate data-deletion process.</p>
+                          <div className="account-sync-review-actions">
+                            <button className="secondary-button" type="button" onClick={() => setSyncConsentWithdrawReviewOpen(false)} disabled={syncConsentWithdrawing}>Cancel</button>
+                            <button className="primary-button" type="button" onClick={() => void confirmCloudSyncWithdrawal()} disabled={!SYNC_SERVER_CONSENT_WRITES_ENABLED || syncConsentWithdrawing}>
+                              {syncConsentWithdrawing ? <LoaderCircle className="spin" size={13} /> : <ShieldCheck size={13} />}
+                              {syncConsentWithdrawing ? "Withdrawing…" : "Confirm withdrawal"}
+                            </button>
+                          </div>
+                          {!SYNC_SERVER_CONSENT_WRITES_ENABLED && <p className="sync-consent-gate">Withdrawal is unavailable until production Firebase Auth and App Check are approved. No request will be sent in this build.</p>}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p>No server-side cloud-sync consent has been saved for this account.</p>
+                  )}
+                  {SYNC_SERVER_CONSENT_READS_ENABLED && syncServerConsentError && !syncServerConsentLoading && (
+                    <small>Local category choices remain separate from the unreadable server state.</small>
+                  )}
+                </section>
                 {syncPreferencesLoading ? (
                   <div className="account-sync-loading"><LoaderCircle className="spin" size={14} /> Counting your local learning records…</div>
                 ) : syncCandidateCounts ? (
