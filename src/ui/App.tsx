@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { BookOpen, BrainCircuit, Captions, CircleHelp, FileUp, LoaderCircle, Play, Send, Sparkles, Save, Trash2, Square, Download, Search, FileText, History, Sun, Moon, CheckCircle2, XCircle, UserRound, LogIn, LogOut, Mail, ShieldCheck, RefreshCw, Copy } from "lucide-react";
 import { askLearnLens, generateQuizText, isAudioTranscriptionConfigured, transcribeAudioChunk } from "../services/firebase-ai";
 import { MAX_TRANSCRIPT_CHARS, parseTranscriptImport, serializeSegmentsAsVtt } from "../services/transcript";
-import { deleteLearningSession, deleteLearningNote, getLatestSavedSession, getLatestSessionForVideo, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt, getLocalSyncCandidateCounts, getLocalSyncPreferences, saveLocalSyncPreferences, getLocalSyncClaimCandidates, claimSelectedLocalSyncRecords, listSyncConflicts, resolveSyncConflict, exportSyncConflictSnapshot, restoreSyncConflictAsLocalCopy, listRemoteSyncArtifacts } from "../services/session-store";
+import { deleteLearningSession, deleteLearningNote, getLatestSavedSession, getLatestSessionForVideo, listLearningNotes, listLearningSessions, listQuizzes, listQuizAttempts, saveLearningNote, saveLearningSession, saveQuiz, saveQuizAttempt, getLocalSyncCandidateCounts, getLocalSyncPreferences, saveLocalSyncPreferences, getLocalSyncClaimCandidates, claimSelectedLocalSyncRecords, listSyncConflicts, resolveSyncConflict, exportSyncConflictSnapshot, restoreSyncConflictAsLocalCopy, listRemoteSyncArtifacts, restoreRemoteSyncArtifactAsLocalCopy } from "../services/session-store";
 import type { LearningNote, LearningSession, SyncCandidateCounts, SyncCategoryPreferences, SyncClaimResult, SyncClaimCandidate, SyncConflictRecord, SyncConflictResolution, SyncPreparedPayload, SyncRemoteArtifactRecord } from "../services/session-store";
 import { getQuizFeedbackSegments, parseShortAnswerFeedback, scoreObjectiveAnswers, validateQuizResponse } from "../services/quiz";
 import type { QuizAttempt, QuizDefinition } from "../services/quiz";
@@ -972,6 +972,29 @@ export default function App() {
     }
   }
 
+  async function restoreRemoteArtifactRecovery(remoteKey: string) {
+    if (!authUser?.emailVerified || syncRecoveryBusyId) return;
+    setSyncRecoveryBusyId(remoteKey);
+    setSyncRecoveryError("");
+    setSyncRecoveryMessage("");
+    try {
+      const artifact = remoteSyncArtifacts.find((item) => item.remoteKey === remoteKey);
+      if (!artifact || artifact.ownerUid !== authUser.uid) {
+        throw new Error("This remote-only record is not available to the active account.");
+      }
+      const restored = await restoreRemoteSyncArtifactAsLocalCopy(remoteKey, authUser.uid);
+      setRemoteSyncArtifacts(await listRemoteSyncArtifacts(authUser.uid, 100));
+      setSyncRecoveryMessage(
+        "A new local-only " + syncConflictEntityLabel(restored.entityType).toLowerCase() +
+        " copy was restored. It has a new ID, kept the original recovery snapshot, and was not added to cloud sync."
+      );
+    } catch (cause) {
+      setSyncRecoveryError(cause instanceof Error ? cause.message : "Could not restore the remote-only record.");
+    } finally {
+      setSyncRecoveryBusyId(null);
+    }
+  }
+
   async function submitQuestion(event: FormEvent) {
     event.preventDefault();
     if (!question.trim() || !segmentCount) return;
@@ -1723,7 +1746,12 @@ export default function App() {
                                   <button className="secondary-button" type="button" onClick={() => void downloadRemoteArtifactRecovery(artifact.remoteKey)} disabled={Boolean(syncRecoveryBusyId)}>
                                     {busy ? <LoaderCircle className="spin" size={12} /> : <Download size={12} />} Download JSON
                                   </button>
+                                  <button className="primary-button" type="button" onClick={() => void restoreRemoteArtifactRecovery(artifact.remoteKey)} disabled={Boolean(syncRecoveryBusyId) || artifact.isDeleted || Boolean(artifact.recoveredEntityId)}>
+                                    {busy ? <LoaderCircle className="spin" size={12} /> : <RefreshCw size={12} />}
+                                    {artifact.recoveredEntityId ? "Restored" : artifact.isDeleted ? "Deleted" : "Restore copy"}
+                                  </button>
                                 </div>
+                                {artifact.recoveredEntityId && <p className="sync-conflict-recovered">Restored as a local-only copy on {new Date(artifact.recoveredAtMs ?? artifact.updatedAtMs).toLocaleString()}.</p>}
                               </article>
                             );
                           })}
