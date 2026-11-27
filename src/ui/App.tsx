@@ -81,6 +81,19 @@ function syncConflictReasonLabel(conflict: SyncConflictRecord): string {
   }
 }
 
+function syncRemoteArtifactReasonLabel(reason: SyncRemoteArtifactRecord["reason"]): string {
+  switch (reason) {
+    case "not_claimed_on_this_device": return "Not claimed on this device";
+    case "owned_by_another_local_account": return "Owned by another local account";
+    case "local_record_missing": return "Matching local record is missing";
+    case "lesson_parent_unavailable": return "Parent lesson is unavailable";
+    case "quiz_parent_unavailable": return "Parent quiz is unavailable";
+    case "pending_local_change": return "A local edit is still pending";
+    case "open_local_conflict": return "An unresolved local conflict exists";
+    case "local_kept_after_remote_delete": return "Local content was kept after remote deletion";
+  }
+}
+
 export default function App() {
   const overlayMode = new URLSearchParams(window.location.search).get("overlay") === "1";
   const [activeTab, setActiveTab] = useState<"lesson" | "notes" | "quiz" | "tutor" | "history" | "account">(new URLSearchParams(window.location.search).get("workspace") === "quiz" ? "quiz" : "lesson");
@@ -218,13 +231,15 @@ export default function App() {
       getLocalSyncCandidateCounts(authUser.uid),
       getLocalSyncPreferences(authUser.uid),
       listSyncConflicts(authUser.uid, ["open"], 100),
-      listSyncConflicts(authUser.uid, ["resolved"], 25)
-    ]).then(([counts, preferences, conflicts, resolvedConflicts]) => {
+      listSyncConflicts(authUser.uid, ["resolved"], 25),
+      listRemoteSyncArtifacts(authUser.uid, 100)
+    ]).then(([counts, preferences, conflicts, resolvedConflicts, remoteArtifacts]) => {
       if (cancelled) return;
       setSyncCandidateCounts(counts);
       setSyncCategories(preferences.categories);
       setSyncConflicts(conflicts);
       setResolvedSyncConflicts(resolvedConflicts);
+      setRemoteSyncArtifacts(remoteArtifacts);
     }).catch((cause) => {
       if (!cancelled) setSyncPreferencesError(cause instanceof Error ? cause.message : "Could not load local sync preferences.");
     }).finally(() => {
@@ -903,6 +918,55 @@ export default function App() {
       );
     } catch (cause) {
       setSyncRecoveryError(cause instanceof Error ? cause.message : "Could not restore the local snapshot.");
+    } finally {
+      setSyncRecoveryBusyId(null);
+    }
+  }
+
+  async function copyRemoteArtifactRecovery(remoteKey: string) {
+    if (!authUser?.emailVerified || syncRecoveryBusyId) return;
+    setSyncRecoveryBusyId(remoteKey);
+    setSyncRecoveryError("");
+    setSyncRecoveryMessage("");
+    try {
+      const artifact = remoteSyncArtifacts.find((item) => item.remoteKey === remoteKey);
+      if (!artifact || artifact.ownerUid !== authUser.uid) {
+        throw new Error("This remote-only record is not available to the active account.");
+      }
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard access is unavailable here. Use Download JSON to save the recovery data.");
+      }
+      await navigator.clipboard.writeText(JSON.stringify(artifact, null, 2));
+      setSyncRecoveryMessage("Remote-only recovery JSON copied. The record itself remains unchanged.");
+    } catch (cause) {
+      setSyncRecoveryError(cause instanceof Error ? cause.message : "Could not copy the remote-only record.");
+    } finally {
+      setSyncRecoveryBusyId(null);
+    }
+  }
+
+  async function downloadRemoteArtifactRecovery(remoteKey: string) {
+    if (!authUser?.emailVerified || syncRecoveryBusyId) return;
+    setSyncRecoveryBusyId(remoteKey);
+    setSyncRecoveryError("");
+    setSyncRecoveryMessage("");
+    try {
+      const artifact = remoteSyncArtifacts.find((item) => item.remoteKey === remoteKey);
+      if (!artifact || artifact.ownerUid !== authUser.uid) {
+        throw new Error("This remote-only record is not available to the active account.");
+      }
+      const blob = new Blob([JSON.stringify(artifact, null, 2)], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "learnlens-remote-recovery-" + artifact.entityType + "-" + artifact.entityId + ".json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setSyncRecoveryMessage("Remote-only recovery JSON was prepared as a local download. The record itself remains unchanged.");
+    } catch (cause) {
+      setSyncRecoveryError(cause instanceof Error ? cause.message : "Could not export the remote-only record.");
     } finally {
       setSyncRecoveryBusyId(null);
     }
@@ -1624,6 +1688,48 @@ export default function App() {
                         ))}
                       </div>
                     )}
+                    <section className="sync-remote-inbox" aria-labelledby="sync-remote-heading">
+                      <div className="sync-conflict-heading">
+                        <div><Download size={15} /><strong id="sync-remote-heading">Remote-only records</strong></div>
+                        <span>{remoteSyncArtifacts.length} STORED</span>
+                      </div>
+                      <p className="sync-conflict-intro">These records were kept separate because merging them into this device was not safe. Review and export a recovery copy without changing your local lessons. Cloud pull is currently disabled.</p>
+                      {syncPreferencesLoading ? (
+                        <div className="account-sync-loading"><LoaderCircle className="spin" size={14} /> Checking remote-only records…</div>
+                      ) : remoteSyncArtifacts.length === 0 ? (
+                        <p className="sync-conflict-empty">No remote-only records are stored for this account on this device.</p>
+                      ) : (
+                        <div className="sync-conflict-list">
+                          {remoteSyncArtifacts.map((artifact) => {
+                            const title = artifact.payload && "title" in artifact.payload
+                              ? artifact.payload.title
+                              : artifact.entityType === "attempt" ? "Quiz attempt " + artifact.entityId : artifact.entityType + " " + artifact.entityId;
+                            const busy = syncRecoveryBusyId === artifact.remoteKey;
+                            return (
+                              <article className="sync-conflict-card" key={artifact.remoteKey}>
+                                <div className="sync-conflict-card-heading">
+                                  <div><strong>{title}</strong><small>{syncConflictEntityLabel(artifact.entityType)} · Lesson {artifact.lessonId}</small></div>
+                                  <span>{artifact.isDeleted ? "REMOTE DELETE" : "REVISION " + artifact.revision}</span>
+                                </div>
+                                <p className="sync-conflict-reason">{syncRemoteArtifactReasonLabel(artifact.reason)}</p>
+                                <div className="sync-conflict-version">
+                                  <strong>{artifact.isDeleted ? "Deletion marker" : "Remote content preview"}</strong>
+                                  <pre>{artifact.isDeleted ? "The remote record is deleted. Any local-only copy has been retained separately." : describeSyncConflictPayload(artifact.payload)}</pre>
+                                </div>
+                                <div className="sync-recovery-actions">
+                                  <button className="secondary-button" type="button" onClick={() => void copyRemoteArtifactRecovery(artifact.remoteKey)} disabled={Boolean(syncRecoveryBusyId)}>
+                                    {busy ? <LoaderCircle className="spin" size={12} /> : <Copy size={12} />} Copy JSON
+                                  </button>
+                                  <button className="secondary-button" type="button" onClick={() => void downloadRemoteArtifactRecovery(artifact.remoteKey)} disabled={Boolean(syncRecoveryBusyId)}>
+                                    {busy ? <LoaderCircle className="spin" size={12} /> : <Download size={12} />} Download JSON
+                                  </button>
+                                </div>
+                              </article>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
                     <section className="sync-conflict-review" aria-labelledby="sync-conflict-heading">
                       <div className="sync-conflict-heading">
                         <div><ShieldCheck size={15} /><strong id="sync-conflict-heading">Conflict review</strong></div>
