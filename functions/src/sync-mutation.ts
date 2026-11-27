@@ -306,6 +306,14 @@ export async function applySyncMutation(
       fingerprint
     );
     if (decision.kind === "reject") throw decisionError(decision.code);
+    if (decision.kind === "replay") {
+      return {
+        outcome: decision.outcome,
+        resultRevision: decision.resultRevision,
+        ...(decision.conflictCode ? { conflictCode: decision.conflictCode } : {}),
+        replayed: true
+      };
+    }
 
     const deviceData = deviceDocument.exists && isRecord(deviceDocument.data())
       ? deviceDocument.data() as Record<string, unknown>
@@ -369,10 +377,8 @@ export async function applySyncMutation(
       };
     }
 
-    const existingCounter: Record<string, unknown> =
-      counterDocument.exists && isRecord(counterDocument.data())
-        ? counterDocument.data()
-        : {};
+    const counterData = counterDocument.exists ? counterDocument.data() : undefined;
+    const existingCounter = isRecord(counterData) ? counterData : {};
     const currentSequence = counterDocument.exists
       ? existingCounter.lastSequence
       : 0;
