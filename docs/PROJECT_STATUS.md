@@ -227,3 +227,11 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - Quiz attempt writes require the referenced quiz and all referenced question IDs to exist. Quiz deletion is blocked while active attempts reference it.
 - Emulator tests cover settings consent, mutation apply/replay/key collision, conflicts, quiz dependencies and concurrent feed sequence allocation.
 - No Firebase project is bound; no Functions deployment or client cloud write is enabled. Live Auth QA, production extension App Check, Firestore region confirmation and the client pull implementation remain required.
+
+
+## 2026-11-27 — Phase 6.2 signed pull endpoint added
+- Added the server syncPull callable. It requires verified Firebase Auth and App Check, validates server-side category consent, and reads a bounded category-scoped feed.
+- Opaque HMAC-SHA-256 cursors bind authenticated UID, device ID, category, fixed snapshot and scan position. The cursor signing key is accessed through Firebase Secret Manager only.
+- Pull pages return up to 100 matching changes while scanning at most 500 feed records. Final checkpoints are reusable for the next bounded snapshot. Gaps, malformed changes and cursor tampering are rejected.
+- The endpoint is not deployed. Before deployment, the Firebase project and region must be confirmed, SYNC_CURSOR_HMAC_KEY must be created in Secret Manager, live Auth QA must pass, and production Chrome App Check must be approved.
+- Client-side pull orchestration, IndexedDB cursor persistence and merge application remain outstanding. The extension sync transport is still hard-disabled.

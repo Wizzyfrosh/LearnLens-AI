@@ -1,13 +1,16 @@
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { defineSecret } from "firebase-functions/params";
 import { requireVerifiedAppCaller } from "./auth-guards";
 import { SyncBackendError } from "./errors";
 import { applySyncMutation } from "./sync-mutation";
 import { saveSyncSettingsForAccount } from "./sync-settings";
+import { pullSyncChanges } from "./sync-pull";
 
 const adminApp = getApps()[0] ?? initializeApp();
 const database = getFirestore(adminApp);
+const syncCursorHmacKey = defineSecret("SYNC_CURSOR_HMAC_KEY");
 
 function toHttpsError(cause: unknown): HttpsError {
   if (cause instanceof SyncBackendError) {
@@ -45,6 +48,29 @@ export const syncMutation = onCall(
     try {
       const uid = requireVerifiedAppCaller(request.auth, request.app);
       return await applySyncMutation(uid, request.data, database);
+    } catch (cause) {
+      throw toHttpsError(cause);
+    }
+  }
+);
+
+
+/**
+ * Returns a bounded, category-scoped page from one fixed account feed
+ * snapshot. Signed cursor tokens are bound to UID, device and category.
+ */
+export const syncPull = onCall(
+  {
+    enforceAppCheck: true,
+    maxInstances: 5,
+    memory: "256MiB",
+    timeoutSeconds: 30,
+    secrets: [syncCursorHmacKey]
+  },
+  async (request) => {
+    try {
+      const uid = requireVerifiedAppCaller(request.auth, request.app);
+      return await pullSyncChanges(uid, request.data, database, syncCursorHmacKey.value());
     } catch (cause) {
       throw toHttpsError(cause);
     }

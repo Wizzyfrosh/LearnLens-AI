@@ -138,7 +138,7 @@ The Firestore Admin SDK bypasses Firestore Security Rules. The endpoint must not
 - Complete live Firebase Auth QA: signup, verification, forced ID-token refresh, sign-in, sign-out, account switching, and unverified-token denial in the installed Chrome extension.
 - Prove a production App Check provider with the actual published extension identity. The callable functions enforce App Check in code, but the current extension debug provider is not production attestation.
 - Verify the Firebase project ID and Firestore database region, then deploy Functions only after the owner approves the target project and production App Check configuration. No .firebaserc is committed.
-- Implement the actual pull callable/cursor signature verification and the IndexedDB pull applier/remote-only library. The pull response validator and merge policy are in place, but the pull endpoint and client cursor persistence are not.
+- Implement the IndexedDB pull applier, per-account/device/category cursor persistence, and remote-only artifact library. The signed server pull endpoint and pure merge policy are now implemented.
 - Implement end-to-end two-device tests against a dedicated Firebase test project and verify account isolation, offline replay, account switching, opt-out races, and data export/delete behavior.
 - Keep src/services/sync-transport.ts hard-disabled until these release gates and the pull implementation are complete.
 
@@ -247,6 +247,7 @@ The separate Functions workspace is at functions/. It uses Firebase Functions v2
 Exports:
 - updateSyncSettings: requires verified Auth and App Check, validates the exact consent/category shape, and writes users/{uid}/settings/sync with a server timestamp.
 - syncMutation: requires verified Auth and App Check, derives UID exclusively from request.auth, validates the immutable request envelope, computes its SHA-256 fingerprint, and performs entity/receipt/conflict/device/feed writes inside one Firestore transaction.
+- syncPull: requires verified Auth and App Check, verifies a signed cursor bound to UID/device/category, checks server consent, and returns up to 100 ordered changes from a fixed account snapshot.
 
 Every accepted apply writes the entity, receipt, per-account feed counter, and immutable feed event atomically. Conflicts persist metadata and separate local/remote snapshot documents in the same transaction; splitting the snapshots avoids Firestore’s 1 MiB per-document ceiling. Dependency failures do not write a receipt, so a blocked local request can be retried after its missing prerequisite is available. Identical request retries replay the receipt without allocating another feed sequence. A reused request ID with another body is rejected.
 
@@ -256,9 +257,30 @@ Local emulator checks:
 - npm install --prefix functions
 - npm run test:functions
 
-The root CI runs those tests against the Firestore Emulator. Do not run the Functions deploy command yet. The project has no committed .firebaserc, its Firestore region has not been confirmed, live Auth QA is outstanding, and the production extension App Check provider is not approved.
+The root CI runs those tests against the Firestore Emulator. Before deploying, set the SYNC_CURSOR_HMAC_KEY secret using Firebase Secret Manager with at least 32 random bytes. Keep that secret stable; rotating it invalidates saved opaque cursors. Do not run the Functions deploy command yet. The project has no committed .firebaserc, its Firestore region has not been confirmed, live Auth QA is outstanding, and the production extension App Check provider is not approved.
 
 Official API behavior references:
 - https://firebase.google.com/docs/functions/callable
 - https://firebase.google.com/docs/app-check/cloud-functions
 - https://firebase.google.com/docs/auth/admin/verify-id-tokens
+
+
+## 14. Phase 6.2 signed pull endpoint
+
+The syncPull callable accepts only:
+- protocolVersion: 1;
+- deviceId: installation UUID;
+- category: lessonMetadata, notes, quizzes, or attempts;
+- cursor: null for the first pull, otherwise the opaque checkpoint returned by the prior page.
+
+The caller cannot submit a UID or raw sequence number. The server obtains UID from the verified callable context and signs cursors with HMAC-SHA-256 using the Secret Manager value SYNC_CURSOR_HMAC_KEY. Cursors bind the UID, device ID, category, fixed snapshot watermark, and last committed scan sequence. Signature comparison uses timingSafeEqual.
+
+Each page returns at most 100 matching category changes while scanning at most 500 ordered feed events. The cursor includes both the fixed snapshot and scan watermark. A final page returns a signed completed checkpoint; the next request uses it to capture a new snapshot. Feed gaps, malformed events, tampered cursors, context mismatch, and disabled category consent fail closed.
+
+Before deploying syncPull, set a strong random secret (at least 32 bytes) with:
+```bash
+firebase functions:secrets:set SYNC_CURSOR_HMAC_KEY
+```
+Do not commit the secret or place it in the extension bundle. Keep it stable for v1; rotation invalidates existing cursor tokens and would require a controlled cursor reset.
+
+The pull endpoint is server-side only. The client still needs IndexedDB cursor persistence, transactional page application, conflict-safe merging, and a user-facing remote-only artifact view.
