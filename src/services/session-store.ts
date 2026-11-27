@@ -903,6 +903,9 @@ export interface SyncRemoteArtifactRecord {
   sequence: number;
   reason: SyncRemoteArtifactReason;
   updatedAtMs: number;
+  /** Set when a separate local-only copy has been restored from this inbox item. */
+  recoveredAtMs?: number;
+  recoveredEntityId?: string;
 }
 
 export interface SyncPullApplyResult {
@@ -1309,6 +1312,198 @@ export async function listRemoteSyncArtifacts(
         .slice(0, safeLimit));
     }
   );
+}
+
+export interface SyncRemoteArtifactRecoveryResult {
+  entityType: SyncEntityType;
+  restoredEntityId: string;
+  restoredLessonId: string;
+  recoveredAtMs: number;
+}
+
+/**
+ * Restores one remote-only artifact as a new local-only record. It never
+ * overwrites a local artifact, claims ownership, or creates an outbox entry.
+ * Notes/quizzes/attempts require their local parent lesson; attempts also
+ * require the matching local quiz. Lesson metadata recovery creates an empty
+ * transcript shell because transcript content is never part of the remote DTO.
+ */
+export async function restoreRemoteSyncArtifactAsLocalCopy(
+  remoteKey: string,
+  ownerUid: string
+): Promise<SyncRemoteArtifactRecoveryResult> {
+  validateSyncIdentity(ownerUid, "account ID");
+  if (typeof remoteKey !== "string" || remoteKey.length > 512) {
+    throw new Error("Invalid remote-only record identity.");
+  }
+
+  const database = await openDatabase();
+  return new Promise<SyncRemoteArtifactRecoveryResult>((resolve, reject) => {
+    const transaction = database.transaction(
+      [SYNC_REMOTE_ARTIFACT_STORE, SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE],
+      "readwrite"
+    );
+    const remoteStore = transaction.objectStore(SYNC_REMOTE_ARTIFACT_STORE);
+    const sessions = transaction.objectStore(SESSION_STORE);
+    const notes = transaction.objectStore(NOTE_STORE);
+    const quizzes = transaction.objectStore(QUIZ_STORE);
+    const attempts = transaction.objectStore(QUIZ_ATTEMPT_STORE);
+    let result: SyncRemoteArtifactRecoveryResult | null = null;
+    let failure: Error | null = null;
+
+    const abortWith = (message: string) => {
+      if (failure) return;
+      failure = new Error(message);
+      try { transaction.abort(); } catch { /* transaction already completed */ }
+    };
+
+    const request = remoteStore.get(remoteKey);
+    request.onsuccess = () => {
+      const artifact = request.result as SyncRemoteArtifactRecord | undefined;
+      if (!artifact || artifact.ownerUid !== ownerUid ||
+          artifact.remoteKey !== syncRemoteArtifactKey(ownerUid, artifact.entityKey) ||
+          artifact.entityKey !== syncEntityKey(artifact.entityType, artifact.lessonId, artifact.entityId)) {
+        abortWith("This remote-only record is not available to the active account.");
+        return;
+      }
+      if (artifact.recoveredEntityId) {
+        abortWith("This remote-only record has already been restored as a local copy.");
+        return;
+      }
+      if (artifact.isDeleted || !artifact.payload) {
+        abortWith("A remote deletion marker has no content to restore.");
+        return;
+      }
+
+      const restoredEntityId = crypto.randomUUID();
+      const restoredLessonId = artifact.entityType === "lesson" ? restoredEntityId : artifact.lessonId;
+      try {
+        validateSyncServerRequest({
+          protocolVersion: 1,
+          requestId: crypto.randomUUID(),
+          deviceId: crypto.randomUUID(),
+          entityType: artifact.entityType,
+          lessonId: restoredLessonId,
+          entityId: restoredEntityId,
+          operation: "upsert",
+          baseRevision: 0,
+          payloadSchemaVersion: 1,
+          payload: artifact.payload
+        });
+      } catch {
+        abortWith("The remote-only snapshot failed validation and cannot be restored safely.");
+        return;
+      }
+
+      const now = Date.now();
+      const markRecovered = () => {
+        remoteStore.put({
+          ...artifact,
+          recoveredAtMs: now,
+          recoveredEntityId
+        } satisfies SyncRemoteArtifactRecord);
+        result = {
+          entityType: artifact.entityType,
+          restoredEntityId,
+          restoredLessonId,
+          recoveredAtMs: now
+        };
+      };
+
+      if (artifact.entityType === "lesson") {
+        const payload = artifact.payload as LessonMetadataDto;
+        sessions.add({
+          id: restoredEntityId,
+          videoId: payload.videoId,
+          title: ("Recovered copy: " + payload.title).slice(0, 500),
+          url: payload.url,
+          platform: payload.platform,
+          transcriptText: "",
+          transcriptFormat: "plain-text",
+          transcriptSource: "Recovered lesson metadata; transcript was not synced",
+          updatedAt: now
+        } satisfies LearningSession);
+        markRecovered();
+        return;
+      }
+
+      const parentRequest = sessions.get(artifact.lessonId);
+      parentRequest.onsuccess = () => {
+        const parent = parentRequest.result as LearningSession | undefined;
+        if (!parent) {
+          abortWith("This record cannot be restored because its parent lesson is not saved on this device. Export the recovery JSON instead.");
+          return;
+        }
+
+        if (artifact.entityType === "note") {
+          const payload = artifact.payload as NoteSyncDto;
+          notes.add({
+            id: restoredEntityId,
+            sessionId: artifact.lessonId,
+            videoId: parent.videoId,
+            title: ("Recovered copy: " + payload.title).slice(0, 500),
+            content: payload.content,
+            createdAt: now,
+            updatedAt: now
+          } satisfies LearningNote);
+          markRecovered();
+          return;
+        }
+
+        if (artifact.entityType === "quiz") {
+          const payload = artifact.payload as QuizSyncDto;
+          quizzes.add({
+            id: restoredEntityId,
+            sessionId: artifact.lessonId,
+            title: ("Recovered copy: " + payload.title).slice(0, 500),
+            scope: payload.scope,
+            scopeLabel: payload.scopeLabel,
+            ...(payload.rangeStartSeconds !== undefined ? { rangeStartSeconds: payload.rangeStartSeconds } : {}),
+            ...(payload.rangeEndSeconds !== undefined ? { rangeEndSeconds: payload.rangeEndSeconds } : {}),
+            createdAt: now,
+            questions: payload.questions.map((question) => ({ ...question, options: [...question.options] }))
+          } satisfies QuizDefinition);
+          markRecovered();
+          return;
+        }
+
+        const payload = artifact.payload as AttemptSyncDto;
+        const quizRequest = quizzes.get(payload.quizId);
+        quizRequest.onsuccess = () => {
+          const linkedQuiz = quizRequest.result as QuizDefinition | undefined;
+          if (!linkedQuiz || linkedQuiz.sessionId !== artifact.lessonId) {
+            abortWith("This attempt cannot be restored because its linked quiz is not saved on this device. Export the recovery JSON instead.");
+            return;
+          }
+          attempts.add({
+            id: restoredEntityId,
+            quizId: payload.quizId,
+            sessionId: artifact.lessonId,
+            createdAt: now,
+            results: payload.results.map((item) => ({ ...item })),
+            objectiveScore: payload.objectiveScore,
+            objectiveTotal: payload.objectiveTotal,
+            topicsToReview: [...payload.topicsToReview]
+          } satisfies QuizAttempt);
+          markRecovered();
+        };
+      };
+    };
+
+    transaction.oncomplete = () => {
+      database.close();
+      if (result) resolve(result);
+      else reject(failure ?? new Error("The local recovery copy could not be created."));
+    };
+    transaction.onerror = () => {
+      database.close();
+      reject(failure ?? transaction.error ?? new Error("The local recovery copy could not be created."));
+    };
+    transaction.onabort = () => {
+      database.close();
+      reject(failure ?? transaction.error ?? new Error("The local recovery copy was cancelled."));
+    };
+  });
 }
 
 export async function getLocalSyncPreferences(ownerUid: string): Promise<LocalSyncPreferences> {
