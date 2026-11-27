@@ -6,7 +6,8 @@ export type SyncBackendErrorCode =
   | "already-exists"
   | "not-found"
   | "resource-exhausted"
-  | "internal";
+  | "internal"
+  | "unavailable";
 
 export class SyncBackendError extends Error {
   readonly code: SyncBackendErrorCode;
