@@ -11,6 +11,7 @@ import type { InferencePreference, TranscriptSegment, VideoContext } from "../sh
 import type { AudioCaptureStatus, CaptionCaptureStatus, ExtensionMessage } from "../shared/messages";
 import { createEmailPasswordAccount, getReadableAuthError, observeAuthState, refreshAuthUser, requestPasswordReset, resendVerificationEmail, signInWithEmailPassword, signOutCurrentUser } from "../services/firebase-auth";
 import type { AuthUser } from "../services/firebase-auth";
+import { SYNC_SERVER_CONSENT_WRITES_ENABLED, updateSyncSettingsForFirebase } from "../services/sync-settings-client";
 
 const emptyContext: VideoContext = {
   videoId: "",
@@ -167,6 +168,9 @@ export default function App() {
   const [syncPreferencesSaving, setSyncPreferencesSaving] = useState(false);
   const [syncPreferencesMessage, setSyncPreferencesMessage] = useState("");
   const [syncPreferencesError, setSyncPreferencesError] = useState("");
+  const [syncConsentReviewOpen, setSyncConsentReviewOpen] = useState(false);
+  const [syncConsentAcknowledged, setSyncConsentAcknowledged] = useState(false);
+  const [syncConsentSaving, setSyncConsentSaving] = useState(false);
   const [syncClaimReviewOpen, setSyncClaimReviewOpen] = useState(false);
   const [syncClaimBusy, setSyncClaimBusy] = useState(false);
   const [syncClaimResult, setSyncClaimResult] = useState<SyncClaimResult | null>(null);
@@ -807,6 +811,34 @@ export default function App() {
       setSyncPreferencesError(cause instanceof Error ? cause.message : "Could not save your sync choices.");
     } finally {
       setSyncPreferencesSaving(false);
+    }
+  }
+
+  async function submitCloudSyncConsent() {
+    if (!authUser?.emailVerified || !syncConsentAcknowledged ||
+        !Object.values(syncCategories).some(Boolean)) return;
+    setSyncConsentSaving(true);
+    setSyncPreferencesError("");
+    setSyncPreferencesMessage("");
+    try {
+      // Keep the on-device category selection aligned with the explicit
+      // account-level consent request. No artifact payload is sent here.
+      await saveLocalSyncPreferences(authUser.uid, syncCategories);
+      await updateSyncSettingsForFirebase(authUser.uid, {
+        enabled: true,
+        categories: syncCategories
+      });
+      setSyncConsentReviewOpen(false);
+      setSyncConsentAcknowledged(false);
+      setSyncPreferencesMessage(
+        "Cloud-sync consent was saved to your account. This action did not upload learning records or enable artifact transfer."
+      );
+    } catch (cause) {
+      setSyncPreferencesError(cause instanceof Error
+        ? cause.message
+        : "Could not save cloud-sync consent.");
+    } finally {
+      setSyncConsentSaving(false);
     }
   }
 
@@ -1642,11 +1674,14 @@ export default function App() {
                             type="checkbox"
                             checked={syncCategories[key]}
                             disabled={key === "attempts" && !syncCategories.quizzes}
-                            onChange={(event) => setSyncCategories((current) => {
+                            onChange={(event) => {
+                              setSyncConsentAcknowledged(false);
+                              setSyncCategories((current) => {
                               const checked = event.target.checked;
                               if (key === "quizzes" && !checked) return { ...current, quizzes: false, attempts: false };
                               return { ...current, [key]: checked };
-                            })}
+                              });
+                            }}
                           />
                           <span><strong>{title}</strong><small>{description}{key === "attempts" ? " Requires Quiz definitions to be selected too." : ""}</small></span>
                         </label>
@@ -1678,6 +1713,65 @@ export default function App() {
                     <button className="secondary-button sync-review-button" type="button" onClick={() => { setSyncClaimResult(null); setSyncClaimCandidates([]); setSyncClaimReviewOpen(true); void getLocalSyncClaimCandidates(authUser!.uid, syncCategories).then(setSyncClaimCandidates).catch((cause) => setSyncPreferencesError(cause instanceof Error ? cause.message : "Could not load claim review.")); }} disabled={syncPreferencesSaving || syncPreferencesLoading || syncClaimBusy || !Object.values(syncCategories).some(Boolean)}>
                       Review selected records for local claim
                     </button>
+                    <button
+                      className="secondary-button sync-review-button"
+                      type="button"
+                      onClick={() => {
+                        setSyncConsentAcknowledged(false);
+                        setSyncConsentReviewOpen(true);
+                        setSyncPreferencesError("");
+                        setSyncPreferencesMessage("");
+                      }}
+                      disabled={syncPreferencesSaving || syncPreferencesLoading || syncConsentSaving || !Object.values(syncCategories).some(Boolean)}
+                    >
+                      Review cloud-sync consent
+                    </button>
+                    {syncConsentReviewOpen && (
+                      <div className="account-sync-review sync-consent-review" role="region" aria-label="Review cloud-sync consent">
+                        <strong>Review your cloud-sync consent</strong>
+                        <p>
+                          Enabling cloud sync will allow the selected learning records to be stored under this verified account on LearnLens cloud services.
+                          Only the categories below are included. Transcript text, captured captions, and lesson audio are excluded and remain on this device.
+                        </p>
+                        <div className="sync-consent-scope">
+                          <span>Categories selected for cloud storage</span>
+                          {([
+                            ["lessonMetadata", "Lesson titles and source links"],
+                            ["notes", "Study notes and note content"],
+                            ["quizzes", "Quiz questions, answer keys, explanations, and evidence excerpts"],
+                            ["attempts", "Submitted answers, scores, and feedback"]
+                          ] as Array<[keyof SyncCategoryPreferences, string]>).filter(([key]) => syncCategories[key]).map(([key, label]) => (
+                            <div key={key}><CheckCircle2 size={13} /><span>{label}</span></div>
+                          ))}
+                        </div>
+                        <label className="sync-consent-acknowledgement">
+                          <input
+                            type="checkbox"
+                            checked={syncConsentAcknowledged}
+                            onChange={(event) => setSyncConsentAcknowledged(event.target.checked)}
+                          />
+                          <span>I understand the selected categories may be stored in my LearnLens account and that transcript text, captions, and audio are not included.</span>
+                        </label>
+                        <div className="account-sync-review-actions">
+                          <button className="secondary-button" type="button" onClick={() => { setSyncConsentReviewOpen(false); setSyncConsentAcknowledged(false); }} disabled={syncConsentSaving}>Cancel</button>
+                          <button
+                            className="primary-button"
+                            type="button"
+                            onClick={() => void submitCloudSyncConsent()}
+                            disabled={!syncConsentAcknowledged || syncConsentSaving || !SYNC_SERVER_CONSENT_WRITES_ENABLED}
+                          >
+                            {syncConsentSaving ? <LoaderCircle className="spin" size={14} /> : <ShieldCheck size={14} />}
+                            {syncConsentSaving ? "Saving consent…" : "Save cloud-sync consent"}
+                          </button>
+                        </div>
+                        {!SYNC_SERVER_CONSENT_WRITES_ENABLED && (
+                          <p className="sync-consent-gate">
+                            Consent submission is not available in this build. Production Firebase Auth and App Check must be configured and approved first.
+                            Reviewing this screen sends no data to Firebase.
+                          </p>
+                        )}
+                      </div>
+                    )}
                     {syncClaimReviewOpen && (
                       <div className="account-sync-review" role="region" aria-label="Review local record claim">
                         <strong>Confirm local ownership</strong>
