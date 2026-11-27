@@ -1,5 +1,6 @@
 import { getApps, initializeApp } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { getAppCheck } from "firebase-admin/app-check";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { defineBoolean, defineSecret, defineString } from "firebase-functions/params";
 import { requireVerifiedAppCaller } from "./auth-guards";
@@ -8,7 +9,7 @@ import { applySyncMutation } from "./sync-mutation";
 import { getSyncSettingsForAccount, saveSyncSettingsForAccount } from "./sync-settings";
 import { pullSyncChanges } from "./sync-pull";
 import {
-  claimAuthenticatedChallengeSession,
+  issueAuthenticatedAppCheckToken,
   completeAuthenticatedChallengeSession,
   createAuthenticatedChallengeSession,
   assertChallengeBootstrapEnabled
@@ -16,6 +17,7 @@ import {
 
 const adminApp = getApps()[0] ?? initializeApp();
 const database = getFirestore(adminApp);
+const appCheck = getAppCheck(adminApp);
 const syncCursorHmacKey = defineSecret("SYNC_CURSOR_HMAC_KEY");
 const turnstileSecret = defineSecret("TURNSTILE_SECRET");
 const challengeAppId = defineString("APP_CHECK_CHALLENGE_APP_ID");
@@ -216,10 +218,13 @@ export const claimAppCheckChallengeSession = onCall(
         sessionId: string;
         pollCredential: string;
       };
-      return await claimAuthenticatedChallengeSession(
+      return await issueAuthenticatedAppCheckToken(
         uid,
         sessionId,
         pollCredential,
+        challengeAppId.value(),
+        challengeAction.value(),
+        appCheck,
         database
       );
     } catch (cause) {
