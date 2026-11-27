@@ -1,6 +1,6 @@
 # Phase 6.6.2C — Authenticated challenge endpoint layer
 
-**Status:** Implementation and automated test coverage added; CI verification pending  
+**Status:** Implemented and CI-verified — [run 46084701021](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46084701021)  
 **Branch:** `phase-6-6-2-turnstile-custom-provider-poc`  
 **PR:** #2 (draft; not merged)
 
@@ -75,7 +75,7 @@ No Cloudflare widget/site key, production secret, Firebase parameter, deployed e
 
 ## Remaining work
 
-- Verify TypeScript and all Firestore Emulator suites in CI.
+- The Functions TypeScript build, Turnstile validator tests and all 19 Firestore Emulator tests passed in CI run 46084701021.
 - Add scheduled TTL cleanup or configure Firestore TTL for challenge and rate-limit records.
 - Add global/perimeter abuse controls suitable for multiple accounts; per-UID limits alone are not a production cost boundary.
 - Review the hosted challenge page origin, HTTPS deployment and strict extension/page messaging contract.
