@@ -5,7 +5,7 @@ import { defineSecret } from "firebase-functions/params";
 import { requireVerifiedAppCaller } from "./auth-guards";
 import { SyncBackendError } from "./errors";
 import { applySyncMutation } from "./sync-mutation";
-import { saveSyncSettingsForAccount } from "./sync-settings";
+import { getSyncSettingsForAccount, saveSyncSettingsForAccount } from "./sync-settings";
 import { pullSyncChanges } from "./sync-pull";
 
 const adminApp = getApps()[0] ?? initializeApp();
@@ -31,6 +31,22 @@ export const updateSyncSettings = onCall(
     try {
       const uid = requireVerifiedAppCaller(request.auth, request.app);
       return await saveSyncSettingsForAccount(uid, request.data, database);
+    } catch (cause) {
+      throw toHttpsError(cause);
+    }
+  }
+);
+
+/**
+ * Reads only the authenticated account's persisted sync-consent state.
+ * App Check and verified Auth are required just like consent updates.
+ */
+export const getSyncSettings = onCall(
+  { enforceAppCheck: true, maxInstances: 5, memory: "256MiB" },
+  async (request) => {
+    try {
+      const uid = requireVerifiedAppCaller(request.auth, request.app);
+      return await getSyncSettingsForAccount(uid, database);
     } catch (cause) {
       throw toHttpsError(cause);
     }

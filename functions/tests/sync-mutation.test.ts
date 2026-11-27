@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { deleteApp, initializeApp, type App } from "firebase-admin/app";
 import { FieldValue, getFirestore, type Firestore } from "firebase-admin/firestore";
 import { applySyncMutation } from "../src/sync-mutation";
-import { saveSyncSettingsForAccount } from "../src/sync-settings";
+import { getSyncSettingsForAccount, saveSyncSettingsForAccount } from "../src/sync-settings";
 import { SyncBackendError } from "../src/errors";
 
 let app: App;
@@ -135,6 +135,53 @@ describe("Firebase Admin sync settings adapter", () => {
     assert.equal(stored.data()?.schemaVersion, 1);
     assert.equal(stored.data()?.categories?.notes, true);
     assert.equal(typeof stored.data()?.updatedAt?.toMillis, "function");
+  });
+
+  it("returns an explicit unconfigured state when no server consent exists", async () => {
+    const uid = newUid();
+    assert.deepEqual(await getSyncSettingsForAccount(uid, database), {
+      configured: false,
+      enabled: false,
+      categories: { lessonMetadata: false, notes: false, quizzes: false, attempts: false },
+      updatedAtMs: null
+    });
+  });
+
+  it("returns the persisted account consent and server timestamp", async () => {
+    const uid = newUid();
+    await saveSyncSettingsForAccount(uid, {
+      enabled: true,
+      categories: { lessonMetadata: false, notes: true, quizzes: true, attempts: false }
+    }, database);
+
+    const status = await getSyncSettingsForAccount(uid, database);
+    assert.equal(status.configured, true);
+    assert.equal(status.enabled, true);
+    assert.deepEqual(status.categories, {
+      lessonMetadata: false, notes: true, quizzes: true, attempts: false
+    });
+    assert.equal(Number.isSafeInteger(status.updatedAtMs), true);
+  });
+
+  it("persists withdrawal as disabled with all categories off", async () => {
+    const uid = newUid();
+    await saveSyncSettingsForAccount(uid, {
+      enabled: true,
+      categories: { lessonMetadata: true, notes: true, quizzes: false, attempts: false }
+    }, database);
+
+    await saveSyncSettingsForAccount(uid, {
+      enabled: false,
+      categories: { lessonMetadata: false, notes: false, quizzes: false, attempts: false }
+    }, database);
+
+    const status = await getSyncSettingsForAccount(uid, database);
+    assert.equal(status.configured, true);
+    assert.equal(status.enabled, false);
+    assert.deepEqual(status.categories, {
+      lessonMetadata: false, notes: false, quizzes: false, attempts: false
+    });
+    assert.equal(Number.isSafeInteger(status.updatedAtMs), true);
   });
 
   it("rejects attempts-only cloud consent before writing settings", async () => {
