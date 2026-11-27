@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "minimum_chrome_version": "116",
+  "name": "LearnLens App Check Compatibility Lab",
+  "version": "0.0.1",
+  "description": "Isolated test harness for Firebase App Check in a Chrome Manifest V3 extension.",
+  "options_page": "index.html",
+  "host_permissions": [
+    "https://firebaseappcheck.googleapis.com/*",
+    "https://content-firebaseappcheck.googleapis.com/*",
+    "https://www.google.com/*",
+    "https://www.gstatic.com/*",
+    "https://www.recaptcha.net/*",
+    "https://recaptcha.google.com/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://firebaseappcheck.googleapis.com https://content-firebaseappcheck.googleapis.com https://www.google.com https://www.gstatic.com https://www.recaptcha.net https://recaptcha.google.com; frame-src https://www.google.com https://www.recaptcha.net https://recaptcha.google.com;"
+  }
+}

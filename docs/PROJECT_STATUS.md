@@ -327,3 +327,30 @@ See [Phase 6B Auth Setup](./PHASE6B_AUTH_SETUP.md) for the console setup and man
 - Next engineering task: create a minimal isolated proof-of-concept for the final Chrome Web Store extension ID and compare (A) built-in reCAPTCHA Enterprise on the extension context, and (B) a hosted challenge + custom App Check provider with server-side verification and abuse controls. Record compatibility, CSP impact, token minting, quotas/cost, replay resistance, and Chrome Web Store policy before selecting one.
 - Keep all four cloud gates disabled: `SYNC_SERVER_CONSENT_READS_ENABLED`, `SYNC_SERVER_CONSENT_WRITES_ENABLED`, `SYNC_CLOUD_PULL_ENABLED`, and `SYNC_CLOUD_WRITES_ENABLED`. Keep extension version 0.1.0.
 - References: Firebase [App Check overview](https://firebase.google.com/docs/app-check), [Web reCAPTCHA Enterprise provider](https://firebase.google.com/docs/app-check/web/recaptcha-enterprise-provider), [custom App Check provider](https://firebase.google.com/docs/app-check/web/custom-provider), and Chrome [Manifest V3 security changes](https://developer.chrome.com/docs/extensions/develop/migrate/improve-security).
+
+## 2026-11-27 — Phase 6.6 isolated App Check compatibility harness implemented
+
+**Implemented on branch `phase-6-6-app-check-poc`**
+- Added `poc/app-check-extension/`, a separate Manifest V3 extension that tests Firebase's built-in `ReCaptchaEnterpriseProvider` from an actual `chrome-extension://` page.
+- The harness captures Content Security Policy violations, requests a single App Check token after a manual button click, and deliberately never prints or persists the token.
+- It has a separate manifest, name, version (0.0.1), build output and extension ID. The LearnLens product manifest, App Check service, Firebase Auth, sync transport and product extension version remain unchanged.
+- Added `npm run poc:app-check:verify` for standalone typecheck, build and package/CSP verification.
+- CI now builds and uploads a separate `learnlens-app-check-poc` artifact alongside the normal LearnLens extension artifact. CI result is pending until the branch is validated by a PR run.
+
+**Current evidence / limitations**
+- Official Firebase documentation describes reCAPTCHA Enterprise Web keys with allowed web domains; it does not explicitly document a `chrome-extension://<id>` origin as a supported key domain or App Check Web runtime.
+- Chrome MV3 extension-page CSP disallows remote JavaScript sources in `script-src`. Host permissions or `connect-src` allowances do not override this restriction. The lab keeps CSP strict so the actual failure can be observed rather than hidden.
+- Firebase Authentication's permission to add a `chrome-extension://<id>` URI to its authorized-domain list is a separate feature and does not prove reCAPTCHA Enterprise domain compatibility.
+- The harness has not yet been run in desktop Chrome. A dedicated non-production Firebase Web App/App Check registration and reCAPTCHA Enterprise site key are prerequisites. No existing LearnLens App Check registration should be changed to run the test.
+- Because LearnLens is not published, this temporary test ID cannot satisfy final production verification. Repeat with the final Chrome Web Store ID before provider approval.
+
+**Custom-provider assessment**
+- Firebase supports custom App Check providers and Admin SDK token creation after server-side authenticity verification. A hosted score-based challenge remains bot friction, not proof of genuine extension identity.
+- The documented custom token TTL range is 30 minutes to 7 days; do not design around a sub-30-minute Firebase App Check token.
+- The hosted-challenge path is documented as a candidate flow only. It has not been deployed or enabled. The interactive refresh design, one-time session verification, risk/hostname/action validation, replay handling, rate limits, quota/cost controls and Chrome Web Store review remain open.
+
+**Security state**
+- No production provider selected. No Firebase Console changes, key creation, token-minting endpoint, secret, deployment, live token request, cloud sync request or two-device test occurred.
+- Keep `SYNC_SERVER_CONSENT_READS_ENABLED`, `SYNC_SERVER_CONSENT_WRITES_ENABLED`, `SYNC_CLOUD_PULL_ENABLED` and `SYNC_CLOUD_WRITES_ENABLED` false.
+- Keep LearnLens product extension version 0.1.0.
+- Detailed steps and findings: `docs/PHASE6_6_APPCHECK_POC.md` and `poc/app-check-extension/README.md`.

@@ -1,0 +1,54 @@
+name: Turnstile POC validation
+
+on:
+  push:
+    branches:
+      - phase-6-6-2-turnstile-custom-provider-poc
+    paths:
+      - "functions/**"
+      - ".github/workflows/turnstile-poc.yml"
+  pull_request:
+    branches:
+      - phase-6-6-app-check-poc
+    paths:
+      - "functions/**"
+      - ".github/workflows/turnstile-poc.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-turnstile-core:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java for Firestore Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install root dependencies
+        run: npm install --no-audit --no-fund --legacy-peer-deps
+
+      - name: Install Functions dependencies
+        working-directory: functions
+        run: npm install --no-audit --no-fund
+
+      - name: Build Functions
+        working-directory: functions
+        run: npm run build
+
+      - name: Run isolated Turnstile validator tests
+        working-directory: functions
+        run: node --test lib/functions/tests/turnstile-validation.test.js
+
+      - name: Run challenge-session Firestore emulator tests
+        run: npx firebase emulators:exec --only firestore --project demo-learnlens-functions "node --test functions/lib/functions/tests/app-check-challenge-sessions.test.js"

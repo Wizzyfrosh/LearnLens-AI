@@ -10,6 +10,9 @@
     "preview": "vite preview",
     "test": "vitest run src",
     "verify:extension": "node scripts/verify-extension-build.mjs",
+    "poc:app-check:typecheck": "tsc --project poc/app-check-extension/tsconfig.json --pretty",
+    "poc:app-check:build": "vite build --config poc/app-check-extension/vite.config.ts",
+    "poc:app-check:verify": "npm run poc:app-check:typecheck && npm run poc:app-check:build && node scripts/verify-app-check-poc.mjs",
     "test:rules": "firebase emulators:exec --only firestore --project demo-learnlens-rules \"node --test tests/firestore.rules.test.mjs\"",
     "test:functions": "firebase emulators:exec --only firestore --project demo-learnlens-functions \"npm --prefix functions test\""
   },

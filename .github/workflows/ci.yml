@@ -56,11 +56,19 @@ jobs:
         run: npm run build
       - name: Verify Chrome extension package
         run: npm run verify:extension
-
+      - name: Verify isolated App Check compatibility lab
+        run: npm run poc:app-check:verify
       - name: Upload Chrome extension build
         uses: actions/upload-artifact@v4
         with:
           name: learnlens-chrome-extension
           path: dist/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload isolated App Check POC build
+        uses: actions/upload-artifact@v4
+        with:
+          name: learnlens-app-check-poc
+          path: poc/app-check-extension/dist/
           if-no-files-found: error
           retention-days: 30

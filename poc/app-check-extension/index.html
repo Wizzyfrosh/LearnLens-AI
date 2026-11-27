@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>LearnLens App Check Compatibility Lab</title>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">LEARNLENS AI · ISOLATED EXPERIMENT</p>
+        <h1>App Check compatibility lab</h1>
+        <p class="intro">This separate Manifest V3 extension tests the Firebase reCAPTCHA Enterprise provider from a real chrome-extension:// page. It does not connect to LearnLens sync or change your existing extension.</p>
+      </header>
+
+      <section class="notice" aria-label="Safety notice">
+        <strong>Test-only configuration</strong>
+        <p>Use a dedicated non-production Firebase Web App registration. Do not change the existing LearnLens App Check registration. Never enter a service-account key, private key, or password here.</p>
+      </section>
+
+      <form id="config-form">
+        <label for="api-key">Firebase Web API key</label>
+        <input id="api-key" name="api-key" autocomplete="off" spellcheck="false" required />
+
+        <label for="project-id">Firebase project ID</label>
+        <input id="project-id" name="project-id" autocomplete="off" spellcheck="false" required />
+
+        <label for="app-id">Firebase Web App ID</label>
+        <input id="app-id" name="app-id" autocomplete="off" spellcheck="false" placeholder="1:123456789:web:abcdef" required />
+
+        <label for="site-key">reCAPTCHA Enterprise Web site key</label>
+        <input id="site-key" name="site-key" autocomplete="off" spellcheck="false" required />
+
+        <button id="run-test" type="submit">Test built-in provider</button>
+      </form>
+
+      <section class="environment">
+        <h2>Runtime context</h2>
+        <dl>
+          <dt>Page origin</dt>
+          <dd id="page-origin">Loading…</dd>
+          <dt>Manifest version</dt>
+          <dd>3</dd>
+          <dt>Test scope</dt>
+          <dd>Firebase App Check token acquisition only</dd>
+        </dl>
+      </section>
+
+      <section class="results" aria-live="polite">
+        <div class="results-heading">
+          <h2>Test log</h2>
+          <button id="clear-log" class="secondary" type="button">Clear</button>
+        </div>
+        <ol id="log" class="log"></ol>
+      </section>
+
+      <footer>
+        <p>Configuration is kept in memory only and is not written to storage. The test sends the supplied public Firebase configuration and reCAPTCHA site key to the configured Firebase/Google services.</p>
+      </footer>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
