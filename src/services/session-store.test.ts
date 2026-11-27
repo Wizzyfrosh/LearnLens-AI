@@ -381,14 +381,20 @@ describe("local learning artifact storage", () => {
       lessonMetadata: false, notes: true, quizzes: true, attempts: false
     });
     await saveLocalSyncPreferences("user-b", {
-      lessonMetadata: true, notes: false, quizzes: false, attempts: true
+      lessonMetadata: true, notes: false, quizzes: true, attempts: true
     });
     expect(await getLocalSyncPreferences("user-a")).toMatchObject({
       categories: { lessonMetadata: false, notes: true, quizzes: true, attempts: false }
     });
     expect(await getLocalSyncPreferences("user-b")).toMatchObject({
-      categories: { lessonMetadata: true, notes: false, quizzes: false, attempts: true }
+      categories: { lessonMetadata: true, notes: false, quizzes: true, attempts: true }
     });
+  });
+
+  it("rejects an attempts-only sync preference because quiz definitions are a dependency", async () => {
+    await expect(saveLocalSyncPreferences("user-a", {
+      lessonMetadata: false, notes: false, quizzes: false, attempts: true
+    })).rejects.toThrow(/Quiz definitions are also enabled/i);
   });
 
   it("previews counts by category and account ownership without returning lesson content", async () => {

@@ -691,7 +691,7 @@ describe("durable sync request journal", () => {
     });
     await queueSyncOperation(entityKey, "user-a", "upsert");
     await saveLocalSyncPreferences("user-a", {
-      lessonMetadata: false, notes: false, quizzes: false, attempts: true
+      lessonMetadata: false, notes: false, quizzes: true, attempts: true
     });
     const [request] = (await prepareSyncRequests("user-a", 10)).requests;
     await markSyncRequestInFlight(request.requestId, "user-a");

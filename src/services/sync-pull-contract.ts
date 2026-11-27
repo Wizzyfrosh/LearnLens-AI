@@ -176,7 +176,7 @@ export function validateSyncPullPage(
     throw new Error("A completed snapshot cannot advertise another page.");
   }
   if (value.hasMore && value.scannedThroughSequence === value.fromSequence) {
-    throw new Error("A continuing sync pull page must advance its scan watermark.");
+    throw new Error("Sync pull page made no progress while more snapshot records remain.");
   }
   if (value.changes.length === 0 && value.scannedThroughSequence === value.fromSequence &&
       value.snapshotSequence > value.fromSequence) {
