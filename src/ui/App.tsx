@@ -196,6 +196,8 @@ export default function App() {
       unsubscribe = observeAuthState((user) => {
         setAuthUser(user);
         setSyncClaimReviewOpen(false);
+        setSyncConsentReviewOpen(false);
+        setSyncConsentAcknowledged(false);
         setSyncClaimResult(null);
         setSyncCandidateCounts(null);
         setSyncConflicts([]);
@@ -817,6 +819,10 @@ export default function App() {
   async function submitCloudSyncConsent() {
     if (!authUser?.emailVerified || !syncConsentAcknowledged ||
         !Object.values(syncCategories).some(Boolean)) return;
+    if (!SYNC_SERVER_CONSENT_WRITES_ENABLED) {
+      setSyncPreferencesError("Cloud-sync consent is unavailable until production Firebase Auth and App Check are approved.");
+      return;
+    }
     setSyncConsentSaving(true);
     setSyncPreferencesError("");
     setSyncPreferencesMessage("");
