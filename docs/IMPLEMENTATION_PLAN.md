@@ -168,16 +168,25 @@ Exit: Phase 5 implementation, automated checks, and desktop Chrome runtime verif
 - [x] Apply each validated pull page and its next checkpoint in one IndexedDB transaction. Collapse repeated page events for the same entity to the latest sequence before application.
 - [x] Add regression tests for migrations, account ownership isolation, pending local edits, tombstones, remote-only records, duplicate pages, and repeated entity revisions. CI on commit `350b5d235bab0349913d36ec127f1e2c2c429058` passed 150 unit tests, 10 Firestore Rules tests, 25 Firebase Functions tests, typecheck, production build, and extension packaging.
 
-**Phase 6C — Remaining client integration and release gates**
+**Phase 6C — Gated read-only client foundation (implemented; cloud pull remains off)**
 
-- [ ] Implement the client callable transport for server-side consent and pull requests, with verified-auth checks, bounded pagination, retry rules, and strict response validation. Keep it read-only initially; do not enable mutation uploads.
-- [ ] Add a user-facing remote-only artifact inbox/recovery flow for records stored in `syncRemoteArtifacts`.
-- [ ] Connect the explicit sync-consent UI to the server `updateSyncSettings` callable. Local category preferences must not be presented as cloud consent.
+- [x] Implement the Firebase `syncPull` callable wrapper with same-account and verified-email checks. The callable SDK supplies Auth/App Check credentials when properly configured; the server independently enforces both.
+- [x] Add a transport-independent page runner with strict response validation, opaque-cursor continuation, local cursor resumption, and a bounded page budget (three pages per run by default; hard maximum 20).
+- [x] Apply remote pages through the existing atomic IndexedDB page applier. The cursor advances only after the local page transaction succeeds.
+- [x] Add an account-scoped remote-only artifact inbox with content previews and copy/download recovery JSON.
+- [x] Add restore-as-new-local-copy handling for eligible remote-only artifacts. It never overwrites local content or creates claims/outbox entries; child artifacts require their lesson parent, and attempts require their matching local quiz.
+- [x] Add pagination, cursor continuation, page-budget, invalid-response, restore-safety, and duplicate-restore regression tests. CI on commit `33ba8f5c2b02ccb3b9590bee2d79300c1c1c44c2` passed 158 unit tests, 10 Firestore Rules tests, 25 Firebase Functions tests, typecheck, production build, and extension packaging.
+
+**Phase 6C — Remaining release gates and live integration**
+
+- [ ] Keep `SYNC_CLOUD_PULL_ENABLED` false until the Firebase project and deployment, verified Auth, server-side consent, and production App Check are approved.
+- [ ] Connect the explicit sync-consent UI to the server `updateSyncSettings` callable. Local category preferences and local first-claim selections must not be presented as server consent.
 - [ ] Complete live Firebase Email/Password setup and desktop Chrome account creation, verification, restoration, reset, and sign-out QA.
 - [ ] Resolve and test production-compatible App Check for the published Chrome extension ID. The current debug provider is development-only.
 - [ ] Confirm the Firebase project ID and Firestore region, bind the intended project, create `SYNC_CURSOR_HMAC_KEY` in Secret Manager, and deploy only after the security review and explicit approval.
+- [ ] Manually test the Account remote-only inbox and restore/export actions in desktop Chrome.
 - [ ] Verify read-only pull end to end on two devices, including pagination, repeat/retry behavior, account switching, remote-only recovery, and local transcript preservation.
-- [ ] Only after pull is verified, implement mutation dispatch with bounded batches, idempotent retries/backoff, acknowledgement handling, and server conflict preservation. Keep the upload kill switch false until explicit release approval.
+- [ ] Only after pull is verified, implement mutation dispatch with bounded batches, idempotent retries/backoff, acknowledgement handling, and server conflict preservation. Keep `SYNC_CLOUD_WRITES_ENABLED` false until explicit release approval.
 - [ ] Complete offline/online transitions, conflict resolution, tombstone propagation, account sign-out/switch isolation, per-user export, and account-data deletion tests.
 - [ ] Use Remote Config only if it materially improves staged rollout; it is not a substitute for security rules.
 
