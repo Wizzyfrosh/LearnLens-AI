@@ -562,6 +562,17 @@ describe("durable sync request journal", () => {
   });
 
   it("exports the retained local snapshot without account IDs or transcript data and restores a new local-only note copy", async () => {
+    await saveLearningSession({
+      id: "journal-lesson",
+      videoId: "actual-video-id",
+      title: "Recovery lesson",
+      url: "https://www.youtube.com/watch?v=actual-video-id",
+      platform: "youtube",
+      transcriptText: "This transcript must not enter the recovery export.",
+      transcriptFormat: "plain-text",
+      transcriptSource: "test fixture",
+      updatedAt: 1
+    });
     const { note, entityKey } = await createQueuedNote("recover-note", "Original local content");
     const [request] = (await prepareSyncRequests("user-a", 10)).requests;
     await markSyncRequestInFlight(request.requestId, "user-a");
@@ -601,7 +612,8 @@ describe("durable sync request journal", () => {
     });
     expect(notes.find((entry) => entry.id === recovery.restoredEntityId)).toMatchObject({
       title: "Recovered copy: Latest local title",
-      content: "Latest local recovery body"
+      content: "Latest local recovery body",
+      videoId: "actual-video-id"
     });
     expect(await getSyncMetadata("note:journal-lesson:" + recovery.restoredEntityId)).toBeNull();
     expect(await listSyncOutbox("user-a")).toEqual([]);

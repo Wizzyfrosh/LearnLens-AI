@@ -1382,7 +1382,7 @@ export async function restoreSyncConflictAsLocalCopy(
   const database = await openDatabase();
   return new Promise<SyncConflictRecoveryResult>((resolve, reject) => {
     const transaction = database.transaction(
-      [SYNC_CONFLICT_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE],
+      [SYNC_CONFLICT_STORE, SESSION_STORE, NOTE_STORE, QUIZ_STORE, QUIZ_ATTEMPT_STORE],
       "readwrite"
     );
     const conflicts = transaction.objectStore(SYNC_CONFLICT_STORE);
@@ -1436,18 +1436,33 @@ export async function restoreSyncConflictAsLocalCopy(
       }
 
       const now = Date.now();
+      const recordRecovery = () => {
+        const recoveredConflict: SyncConflictRecord = {
+          ...conflict,
+          recoveredAtMs: now,
+          recoveredEntityId: restoredEntityId
+        };
+        conflicts.put(recoveredConflict);
+        result = { conflict: recoveredConflict, restoredEntityId };
+      };
       if (conflict.entityType === "note") {
         const dto = payload as NoteSyncDto;
-        const note: LearningNote = {
-          id: restoredEntityId,
-          sessionId: conflict.lessonId,
-          videoId: conflict.lessonId,
-          title: ("Recovered copy: " + dto.title).slice(0, 500),
-          content: dto.content,
-          createdAt: now,
-          updatedAt: now
+        const sessionRead = transaction.objectStore(SESSION_STORE).get(conflict.lessonId);
+        sessionRead.onsuccess = () => {
+          const session = sessionRead.result as LearningSession | undefined;
+          const note: LearningNote = {
+            id: restoredEntityId,
+            sessionId: conflict.lessonId,
+            videoId: session?.videoId ?? "",
+            title: ("Recovered copy: " + dto.title).slice(0, 500),
+            content: dto.content,
+            createdAt: now,
+            updatedAt: now
+          };
+          transaction.objectStore(NOTE_STORE).add(note);
+          recordRecovery();
         };
-        transaction.objectStore(NOTE_STORE).add(note);
+        return;
       } else if (conflict.entityType === "quiz") {
         const dto = payload as QuizSyncDto;
         const quiz: QuizDefinition = {
@@ -1462,6 +1477,8 @@ export async function restoreSyncConflictAsLocalCopy(
           questions: dto.questions.map((question) => ({ ...question, options: [...question.options] }))
         };
         transaction.objectStore(QUIZ_STORE).add(quiz);
+        recordRecovery();
+        return;
       } else {
         const dto = payload as AttemptSyncDto;
         const quizRead = transaction.objectStore(QUIZ_STORE).get(dto.quizId);
@@ -1482,24 +1499,10 @@ export async function restoreSyncConflictAsLocalCopy(
             topicsToReview: [...dto.topicsToReview]
           };
           transaction.objectStore(QUIZ_ATTEMPT_STORE).add(attempt);
-          const recoveredConflict: SyncConflictRecord = {
-            ...conflict,
-            recoveredAtMs: now,
-            recoveredEntityId: restoredEntityId
-          };
-          conflicts.put(recoveredConflict);
-          result = { conflict: recoveredConflict, restoredEntityId };
+          recordRecovery();
         };
         return;
       }
-
-      const recoveredConflict: SyncConflictRecord = {
-        ...conflict,
-        recoveredAtMs: now,
-        recoveredEntityId: restoredEntityId
-      };
-      conflicts.put(recoveredConflict);
-      result = { conflict: recoveredConflict, restoredEntityId };
     };
     transaction.oncomplete = () => {
       if (result) resolve(result);
