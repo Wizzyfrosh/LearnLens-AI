@@ -273,7 +273,7 @@ async function readPayloadSnapshot(
   if (actualBytes !== envelope.payloadBytes) {
     invalidState("The account change feed payload snapshot failed its integrity check.");
   }
-  return value.payload as SyncPreparedPayload;
+  return value.payload as unknown as SyncPreparedPayload;
 }
 
 function readSnapshotSequence(value: unknown): number {
