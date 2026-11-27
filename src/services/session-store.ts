@@ -1400,7 +1400,7 @@ export async function restoreRemoteSyncArtifactAsLocalCopy(
         remoteStore.put({
           ...artifact,
           recoveredAtMs: now,
-          recoveredEntityId
+          recoveredEntityId: restoredEntityId
         } satisfies SyncRemoteArtifactRecord);
         result = {
           entityType: artifact.entityType,
