@@ -158,14 +158,28 @@ Exit: Phase 5 implementation, automated checks, and desktop Chrome runtime verif
 
 **Phase 6B implementation checkpoint:** Code and emulator coverage are in place. Live Firebase project configuration and desktop Chrome account-flow verification remain open. See `docs/PHASE6B_AUTH_SETUP.md`. Production sync remains blocked by the App Check decision.
 
-**Phase 6C — Opt-in sync engine and user controls**
-- [ ] Add an explicit sync opt-in and clear explanation of which artifact types leave the device.
-- [ ] Keep transcript sync disabled by default; do not upload raw audio.
-- [ ] Implement bounded, batched, retryable sync with idempotent writes and backoff.
-- [ ] Handle offline edits, conflict resolution, tombstones, account sign-out, and switching accounts without leaking one account's cached data into another.
-- [ ] Add per-user export and account-data deletion workflows, including cloud and local data.
+**Phase 6C — Local sync foundation (implemented; cloud transport remains disabled)**
+
+- [x] Add the account/category-local preference model and a review/confirmation flow for explicitly claiming selected local records. This queues data locally only; it does not constitute server consent or upload.
+- [x] Add the local mutation journal/outbox, account ownership checks, DTO allow-lists, stable device ID, and request preparation.
+- [x] Implement the server-side Firebase Functions v2 callables for sync settings, transactional mutations, and bounded signed pull pages; verify them with Firestore/Functions emulator tests.
+- [x] Validate category-scoped pull pages and merge decisions, including stale events, tombstones, missing parents, and transcript-preserving behavior.
+- [x] Upgrade IndexedDB to v11 with per-account/device/category opaque pull checkpoints and a separate remote-only artifact store.
+- [x] Apply each validated pull page and its next checkpoint in one IndexedDB transaction. Collapse repeated page events for the same entity to the latest sequence before application.
+- [x] Add regression tests for migrations, account ownership isolation, pending local edits, tombstones, remote-only records, duplicate pages, and repeated entity revisions. CI on commit `350b5d235bab0349913d36ec127f1e2c2c429058` passed 150 unit tests, 10 Firestore Rules tests, 25 Firebase Functions tests, typecheck, production build, and extension packaging.
+
+**Phase 6C — Remaining client integration and release gates**
+
+- [ ] Implement the client callable transport for server-side consent and pull requests, with verified-auth checks, bounded pagination, retry rules, and strict response validation. Keep it read-only initially; do not enable mutation uploads.
+- [ ] Add a user-facing remote-only artifact inbox/recovery flow for records stored in `syncRemoteArtifacts`.
+- [ ] Connect the explicit sync-consent UI to the server `updateSyncSettings` callable. Local category preferences must not be presented as cloud consent.
+- [ ] Complete live Firebase Email/Password setup and desktop Chrome account creation, verification, restoration, reset, and sign-out QA.
+- [ ] Resolve and test production-compatible App Check for the published Chrome extension ID. The current debug provider is development-only.
+- [ ] Confirm the Firebase project ID and Firestore region, bind the intended project, create `SYNC_CURSOR_HMAC_KEY` in Secret Manager, and deploy only after the security review and explicit approval.
+- [ ] Verify read-only pull end to end on two devices, including pagination, repeat/retry behavior, account switching, remote-only recovery, and local transcript preservation.
+- [ ] Only after pull is verified, implement mutation dispatch with bounded batches, idempotent retries/backoff, acknowledgement handling, and server conflict preservation. Keep the upload kill switch false until explicit release approval.
+- [ ] Complete offline/online transitions, conflict resolution, tombstone propagation, account sign-out/switch isolation, per-user export, and account-data deletion tests.
 - [ ] Use Remote Config only if it materially improves staged rollout; it is not a substitute for security rules.
-- [ ] Test multi-device sync, offline/online transitions, duplicate retries, conflict resolution, deletion propagation, and account switching.
 
 Exit: optional sync works across devices with explicit consent, production-appropriate App Check, deny-by-default tested Firestore rules, no cross-user data exposure, and local-only use remains fully functional.
 
