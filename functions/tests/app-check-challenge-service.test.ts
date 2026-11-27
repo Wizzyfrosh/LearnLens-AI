@@ -1,0 +1,235 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { after, before, describe, it } from "node:test";
+import { deleteApp, initializeApp, type App } from "firebase-admin/app";
+import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import {
+  claimAuthenticatedChallengeSession,
+  completeAuthenticatedChallengeSession,
+  createAuthenticatedChallengeSession
+} from "../src/app-check-poc/challenge-service";
+import { SyncBackendError } from "../src/errors";
+
+let app: App;
+let database: Firestore;
+
+const NOW = Date.parse("2026-11-27T12:00:00.000Z");
+const APP_ID = "1:123456789:web:learnlenspoc";
+const ACTION = "learnlens_app_check";
+const CONFIG = {
+  appId: APP_ID,
+  action: ACTION,
+  hostname: "verify.example.test",
+  secret: "server-only-test-secret"
+};
+
+function uniqueUid(): string {
+  return "challenge-service-" + randomUUID();
+}
+
+function siteverifyFetch(overrides: Record<string, unknown> = {}): typeof fetch {
+  return (async () => new Response(JSON.stringify({
+    success: true,
+    hostname: CONFIG.hostname,
+    action: ACTION,
+    cdata: "placeholder",
+    challenge_ts: new Date(NOW - 10_000).toISOString(),
+    ...overrides
+  }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch;
+}
+
+before(() => {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    throw new Error("Challenge service tests require FIRESTORE_EMULATOR_HOST; refusing to contact a live project.");
+  }
+  app = initializeApp({ projectId: "demo-learnlens-functions" }, "learnlens-app-check-service-tests");
+  database = getFirestore(app);
+});
+
+after(async () => {
+  if (app) await deleteApp(app);
+});
+
+describe("Authenticated App Check challenge service", () => {
+  it("creates a session using server-selected App ID and action", async () => {
+    const uid = uniqueUid();
+    const created = await createAuthenticatedChallengeSession(
+      uid,
+      { appId: APP_ID, action: ACTION },
+      database,
+      NOW
+    );
+    assert.equal(created.appId, APP_ID);
+    assert.equal(created.action, ACTION);
+    assert.equal(created.expiresAtMs, NOW + 5 * 60 * 1000);
+    assert.equal((await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data()?.uid, uid);
+  });
+
+  it("completes a challenge only for the authenticated owner and server configuration", async () => {
+    const uid = uniqueUid();
+    const created = await createAuthenticatedChallengeSession(
+      uid,
+      { appId: APP_ID, action: ACTION },
+      database,
+      NOW
+    );
+    const stored = (await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data();
+    const cdata = stored?.cdata as string;
+    let called = false;
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      called = true;
+      assert.equal(String(input), "https://challenges.cloudflare.com/turnstile/v0/siteverify");
+      const body = init?.body as URLSearchParams;
+      assert.equal(body.get("secret"), CONFIG.secret);
+      assert.equal(body.get("response"), "valid-turnstile-response");
+      return new Response(JSON.stringify({
+        success: true,
+        hostname: CONFIG.hostname,
+        action: ACTION,
+        cdata,
+        challenge_ts: new Date(NOW - 10_000).toISOString()
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+
+    const result = await completeAuthenticatedChallengeSession(
+      uid,
+      { sessionId: created.sessionId, responseToken: "valid-turnstile-response" },
+      CONFIG,
+      database,
+      NOW,
+      fetchImpl
+    );
+    assert.deepEqual(result, { verified: true, expiresAtMs: created.expiresAtMs });
+    assert.equal(called, true);
+    assert.equal((await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data()?.state, "verified");
+  });
+
+  it("rejects a different authenticated account before calling Siteverify", async () => {
+    const ownerUid = uniqueUid();
+    const otherUid = uniqueUid();
+    const created = await createAuthenticatedChallengeSession(
+      ownerUid,
+      { appId: APP_ID, action: ACTION },
+      database,
+      NOW
+    );
+    let called = false;
+    const fetchImpl = (async () => {
+      called = true;
+      throw new Error("Siteverify must not be called");
+    }) as typeof fetch;
+
+    await assert.rejects(
+      completeAuthenticatedChallengeSession(
+        otherUid,
+        { sessionId: created.sessionId, responseToken: "valid-turnstile-response" },
+        CONFIG,
+        database,
+        NOW,
+        fetchImpl
+      ),
+      (error: unknown) => error instanceof SyncBackendError && error.code === "permission-denied"
+    );
+    assert.equal(called, false);
+    assert.equal((await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data()?.state, "pending");
+  });
+
+  it("rejects a configuration mismatch without contacting Siteverify", async () => {
+    const uid = uniqueUid();
+    const created = await createAuthenticatedChallengeSession(
+      uid,
+      { appId: APP_ID, action: ACTION },
+      database,
+      NOW
+    );
+    let called = false;
+    const fetchImpl = (async () => {
+      called = true;
+      throw new Error("Siteverify must not be called");
+    }) as typeof fetch;
+
+    await assert.rejects(
+      completeAuthenticatedChallengeSession(
+        uid,
+        { sessionId: created.sessionId, responseToken: "valid-turnstile-response" },
+        { ...CONFIG, appId: "1:999999999:web:anotherapp" },
+        database,
+        NOW,
+        fetchImpl
+      ),
+      (error: unknown) => error instanceof SyncBackendError && error.code === "failed-precondition"
+    );
+    assert.equal(called, false);
+    assert.equal((await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data()?.state, "pending");
+  });
+
+  it("leaves the session pending when Siteverify rejects the challenge", async () => {
+    const uid = uniqueUid();
+    const created = await createAuthenticatedChallengeSession(
+      uid,
+      { appId: APP_ID, action: ACTION },
+      database,
+      NOW
+    );
+    const stored = (await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data();
+    const fetchImpl = siteverifyFetch({
+      success: false,
+      cdata: stored?.cdata
+    });
+
+    await assert.rejects(
+      completeAuthenticatedChallengeSession(
+        uid,
+        { sessionId: created.sessionId, responseToken: "invalid-turnstile-response" },
+        CONFIG,
+        database,
+        NOW,
+        fetchImpl
+      ),
+      (error: unknown) => error instanceof SyncBackendError && error.code === "permission-denied"
+    );
+    assert.equal((await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data()?.state, "pending");
+  });
+
+  it("claims only the authenticated account's verified session once", async () => {
+    const uid = uniqueUid();
+    const created = await createAuthenticatedChallengeSession(
+      uid,
+      { appId: APP_ID, action: ACTION },
+      database,
+      NOW
+    );
+    const stored = (await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data();
+    const fetchImpl = siteverifyFetch({ cdata: stored?.cdata });
+    await completeAuthenticatedChallengeSession(
+      uid,
+      { sessionId: created.sessionId, responseToken: "valid-turnstile-response" },
+      CONFIG,
+      database,
+      NOW,
+      fetchImpl
+    );
+
+    const claimed = await claimAuthenticatedChallengeSession(
+      uid,
+      created.sessionId,
+      created.pollCredential,
+      database,
+      NOW + 20_000
+    );
+    assert.equal(claimed.appId, APP_ID);
+    assert.equal(claimed.action, ACTION);
+    assert.equal((await database.doc("appCheckChallengeSessions/" + created.sessionId).get()).data()?.state, "consumed");
+
+    await assert.rejects(
+      claimAuthenticatedChallengeSession(
+        uid,
+        created.sessionId,
+        created.pollCredential,
+        database,
+        NOW + 30_000
+      ),
+      (error: unknown) => error instanceof SyncBackendError && error.code === "failed-precondition"
+    );
+  });
+});
