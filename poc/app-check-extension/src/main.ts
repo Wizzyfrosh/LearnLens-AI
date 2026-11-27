@@ -19,6 +19,9 @@ if (!(form instanceof HTMLFormElement) ||
   throw new Error("The App Check compatibility lab UI is incomplete.");
 }
 
+// The runtime guard above validates this element before callbacks capture it.
+const logListElement = logList as HTMLOListElement;
+
 if (originElement) {
   originElement.textContent = window.location.origin;
 }
@@ -29,7 +32,7 @@ function log(message: string, kind: "info" | "success" | "warning" | "error" = "
   const item = document.createElement("li");
   item.className = `log-entry log-${kind}`;
   item.textContent = `${new Date().toLocaleTimeString()} — ${message}`;
-  logList.prepend(item);
+  logListElement.prepend(item);
 }
 
 function readInput(id: string): string {
@@ -50,7 +53,7 @@ window.addEventListener("error", (event: ErrorEvent) => {
 });
 
 clearButton.addEventListener("click", () => {
-  logList.replaceChildren();
+  logListElement.replaceChildren();
 });
 
 form.addEventListener("submit", async (event: SubmitEvent) => {
@@ -92,8 +95,9 @@ form.addEventListener("submit", async (event: SubmitEvent) => {
       return;
     }
 
-    const expiresAt = new Date(result.expireTimeMillis);
-    log(`PASS: Firebase returned an App Check token. Expiry reported as ${expiresAt.toISOString()}.`, "success");
+    // AppCheckTokenResult publicly exposes the token, not its expiry timestamp.
+    // Do not decode, print, persist, or otherwise expose the bearer token.
+    log("PASS: Firebase returned an App Check token. Expiry is not exposed by the public SDK result type.", "success");
     log("The token value was deliberately not printed or persisted.", "success");
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
