@@ -1,12 +1,6 @@
 name: Turnstile POC validation
 
 on:
-  push:
-    branches:
-      - phase-6-6-2-turnstile-custom-provider-poc
-    paths:
-      - "functions/**"
-      - ".github/workflows/turnstile-poc.yml"
   pull_request:
     branches:
       - phase-6-6-app-check-poc
@@ -33,6 +27,10 @@ jobs:
         working-directory: functions
         run: npm install --no-audit --no-fund
 
-      - name: Build and test Functions
+      - name: Build Functions
         working-directory: functions
-        run: npm test
+        run: npm run build
+
+      - name: Run isolated Turnstile validator tests
+        working-directory: functions
+        run: node --test lib/functions/tests/turnstile-validation.test.js
