@@ -178,6 +178,40 @@ describe("Hosted Turnstile iframe presenter", () => {
     expect(h.overlay.removed).toBe(true);
   });
 
+  it("accepts valid Turnstile site keys longer than 32 characters", async () => {
+    const h = harness();
+    // The presenter should allow a normal long public site key and pass it to
+    // the hosted page without truncating or otherwise rewriting it.
+    const longSiteKey = "0x4AAAAAAA" + "A".repeat(60);
+    const presenter = new IframeTurnstilePresenter({
+      hostedPageUrl: "https://verify.example/turnstile/",
+      windowObject: h.fakeWindow as unknown as Window,
+      documentObject: {
+        body: h.fakeBody,
+        createElement: () => new FakeElement()
+      } as unknown as Document
+    });
+    const pending = presenter.getResponse({
+      siteKey: longSiteKey,
+      action: "learnlens_app_check",
+      cdata: "A".repeat(43)
+    });
+    const overlay = h.fakeBody.children[h.fakeBody.children.length - 1];
+    const iframe = overlay.children[1];
+    const frameWindow = new FakeContentWindow();
+    iframe.contentWindow = frameWindow;
+    h.send({ type: "LEARNLENS_TURNSTILE_READY", version: TURNSTILE_MESSAGE_VERSION }, { source: frameWindow });
+    expect((frameWindow.messages[0].data as Record<string, unknown>).siteKey).toBe(longSiteKey);
+    const init = frameWindow.messages[0].data as Record<string, unknown>;
+    h.send({
+      type: "LEARNLENS_TURNSTILE_TOKEN",
+      version: TURNSTILE_MESSAGE_VERSION,
+      requestId: init.requestId,
+      token: "turnstile-response-token"
+    }, { source: frameWindow });
+    await expect(pending).resolves.toBe("turnstile-response-token");
+  });
+
   it("rejects non-HTTPS, query-bearing or credential-bearing hosted page URLs", () => {
     const fakeWindow = new FakeWindow() as unknown as Window;
     const fakeDocument = { body: new FakeElement(), createElement: () => new FakeElement() } as unknown as Document;
