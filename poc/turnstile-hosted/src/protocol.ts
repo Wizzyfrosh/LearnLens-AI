@@ -83,7 +83,11 @@ export function parseTurnstileControlMessage(
 ): "reset" | "cancel" | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const data = value as Record<string, unknown>;
+  const expectedKeys = ["type", "version", "requestId"];
   if (
+    Object.keys(data).length !== expectedKeys.length ||
+    Object.keys(data).some((key) => !expectedKeys.includes(key)) ||
+    expectedKeys.some((key) => !Object.prototype.hasOwnProperty.call(data, key)) ||
     data.version !== TURNSTILE_MESSAGE_VERSION ||
     data.requestId !== activeRequestId
   ) return null;
