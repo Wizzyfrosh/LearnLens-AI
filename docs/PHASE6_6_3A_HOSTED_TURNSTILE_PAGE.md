@@ -1,6 +1,6 @@
 # Phase 6.6.3A — Hosted Turnstile challenge page
 
-**Status:** Implemented; dedicated CI verification pending  
+**Status:** Implemented and CI-verified — [run 46131641231](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46131641231)  
 **Branch:** `phase-6-6-2-turnstile-custom-provider-poc`  
 **PR:** #2 (draft; not merged)
 
@@ -68,7 +68,7 @@ The extension integration must validate:
 - `npm run poc:turnstile-hosted:build`
 - `npm run poc:turnstile-hosted:verify`
 
-The isolated workflow now runs the hosted page verification when its source or supporting package script changes.
+The isolated workflow now runs the hosted page verification when its source or supporting package script changes. CI run 46131641231 passed all six hosted-page protocol tests, the Vite build and static bundle verification.
 
 ## Deployment blockers
 
