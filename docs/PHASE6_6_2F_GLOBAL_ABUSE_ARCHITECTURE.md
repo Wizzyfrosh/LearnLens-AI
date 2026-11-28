@@ -8,7 +8,7 @@
 
 Do not add a Cloudflare Worker or a single global Durable Object to the current Firebase HTTPS bootstrap path yet.
 
-Keep Firebase callable functions as the only challenge/token endpoints for the current POC. Retain the transactional per-UID limits already implemented. Add a bounded, sharded Firestore global budget before any live enablement. The first implementation is now in the isolated POC branch.
+Keep Firebase Functions HTTPS `onRequest` handlers as the challenge/token endpoints for the current POC; existing sync operations remain callable functions. Retain the transactional per-UID limits already implemented. A bounded, sharded Firestore global budget is now implemented in the isolated POC branch and must remain disabled until a non-production rollout is explicitly approved.
 
 ## Why not a Cloudflare Rate Limiting binding as the strict global cap?
 
@@ -35,7 +35,7 @@ Official docs:
 - https://developers.cloudflare.com/durable-objects/platform/pricing/
 - https://developers.cloudflare.com/durable-objects/best-practices/
 
-## Proposed next control: sharded global daily budget in Firestore
+## Implemented control: sharded global daily budget in Firestore
 
 Keep the existing per-UID per-scope 60-second limit. Add a second independent global daily budget before expensive operations:
 - Before Turnstile Siteverify calls.
@@ -48,7 +48,7 @@ The implementation uses 64 server-randomized shards with a hard ceiling of 100 o
 
 Each request should consume the global budget before calling Cloudflare or Firebase token minting. A failed upstream request still consumes budget because the upstream work/cost may already have occurred. No automatic refund is allowed unless an operation is provably not attempted.
 
-The global budget is a coarse service-wide circuit breaker, not a user quota. Keep per-UID throttling independently. Each request consumes one unit before Siteverify or token minting; failed upstream attempts are not refunded. Session creation also consumes a unit when the global budget switch is enabled.
+The global budget is a coarse service-wide circuit breaker, not a user quota. Keep per-UID throttling independently. Session creation consumes one unit before creating the session. Completion consumes one unit before Siteverify. Token issuance first validates and atomically consumes the session using its polling credential, then consumes one unit before calling Firebase Admin to mint the App Check token. Invalid/guessed polling credentials cannot burn global capacity. A valid session can be consumed even when the global budget has just become exhausted; that session cannot be reopened.
 
 ## Network/IP controls
 
@@ -82,7 +82,7 @@ References:
 
 ## Exit criteria before live enablement
 
-1. Implement and test a sharded global daily budget.
+1. Verify the sharded global daily budget in the latest current-branch CI and a dedicated non-production deployment.
 2. Add abuse telemetry without logging user content, Turnstile responses, poll credentials or App Check tokens.
 3. Complete the hosted challenge page and extension messaging contract.
 4. Integrate Firebase `CustomProvider` behind an independent local/test flag.
@@ -110,11 +110,11 @@ References:
 - Firestore transactions enforce each shard's 100-operation ceiling under concurrency.
 - UTC day is part of the document ID, so a new daily budget begins at UTC midnight.
 - TTL policy on the `expiresAt` field is declared for `appCheckChallengeGlobalBudgets`.
-- The global budget is checked by create, complete and token-issuance services only when the separate server parameter is explicitly true.
+- The global budget is checked by create, complete and token-issuance services only when the separate server parameter is explicitly true. For token issuance, the one-time credential claim happens before charging the budget.
 - Both bootstrap switches default to false; this budget does not enable challenge callables.
 - A random shard can fill early and reject requests before all other shards are exhausted. That conservative fail-closed trade-off is accepted for the low-volume POC.
 
 
 ## Bootstrap transport note
 
-The bootstrap routes are plain HTTPS `onRequest` endpoints, not Firebase callables. The extension sends its Firebase ID token in the `Authorization` header; Firebase Admin verifies the token and its revocation status and checks the verified-email claim. The hosted Turnstile iframe never receives that ID token, the session ID or the one-time polling credential. The extension's exact origin is allowlisted by the server CORS policy; CORS is not treated as user authentication.
+The bootstrap routes are plain Firebase Functions HTTPS `onRequest` endpoints, not Firebase callables. The extension sends its Firebase ID token in the `Authorization` header; Firebase Admin verifies the token and its revocation status and checks the verified-email claim. The hosted Turnstile iframe never receives that ID token, the session ID or the one-time polling credential. The extension's exact origin is allowlisted by the server CORS policy; CORS is not treated as user authentication.
