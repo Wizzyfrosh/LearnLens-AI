@@ -24,6 +24,7 @@ const challengeAppId = defineString("APP_CHECK_CHALLENGE_APP_ID");
 const challengeHostname = defineString("APP_CHECK_CHALLENGE_HOSTNAME");
 const challengeAction = defineString("APP_CHECK_CHALLENGE_ACTION", { default: "learnlens_app_check" });
 const challengeBootstrapEnabled = defineBoolean("APP_CHECK_CHALLENGE_ENABLED", { default: false });
+const challengeGlobalBudgetEnabled = defineBoolean("APP_CHECK_CHALLENGE_GLOBAL_BUDGET_ENABLED", { default: false });
 
 function toHttpsError(cause: unknown): HttpsError {
   if (cause instanceof SyncBackendError) {
@@ -135,7 +136,9 @@ export const createAppCheckChallengeSession = onCall(
           appId: challengeAppId.value(),
           action: challengeAction.value()
         },
-        database
+        database,
+        Date.now(),
+        challengeGlobalBudgetEnabled.value()
       );
     } catch (cause) {
       throw toHttpsError(cause);
@@ -186,7 +189,10 @@ export const completeAppCheckChallenge = onCall(
           hostname: challengeHostname.value(),
           secret: turnstileSecret.value()
         },
-        database
+        database,
+        Date.now(),
+        undefined,
+        challengeGlobalBudgetEnabled.value()
       );
     } catch (cause) {
       throw toHttpsError(cause);
@@ -225,7 +231,9 @@ export const claimAppCheckChallengeSession = onCall(
         challengeAppId.value(),
         challengeAction.value(),
         appCheck,
-        database
+        database,
+        Date.now(),
+        challengeGlobalBudgetEnabled.value()
       );
     } catch (cause) {
       throw toHttpsError(cause);
