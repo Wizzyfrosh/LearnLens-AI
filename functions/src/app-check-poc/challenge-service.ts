@@ -35,7 +35,8 @@ export interface ChallengeCompletionInput {
 
 /**
  * Creates a challenge only for a Firebase-authenticated, verified account.
- * The caller must pass UID from callable auth context, never request.data.
+ * The caller must pass UID returned by server-side Firebase ID-token verification,
+ * never a UID supplied in the HTTP request body.
  */
 export async function createAuthenticatedChallengeSession(
   uid: string,
