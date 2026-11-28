@@ -119,3 +119,8 @@ Final integrated verification is [run 46133642749](https://github.com/Wizzyfrosh
 
 
 The final workflow [46133642749](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749) also verified Functions installation/build on Node 22 and the Auth/Functions emulator integration on the Node 22 runtime. The only branch changes after its tested executable commit were documentation updates.
+
+
+## Latest integrated verification
+
+[Run 46133642749 passed](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749). The Functions build and emulator stages now run on Node.js 22 to match the deployed Functions runtime; the hosted page and browser test tooling use Node.js 24. All 82 automated tests and the Auth/Functions/Firestore HTTP emulator integration passed.
