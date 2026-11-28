@@ -8,7 +8,6 @@ on:
       - "functions/**"
       - "poc/turnstile-hosted/**"
       - "poc/turnstile-extension/**"
-      - "poc/turnstile-extension/**"
       - "scripts/verify-turnstile-hosted.mjs"
       - "package.json"
       - "firestore.rules"
