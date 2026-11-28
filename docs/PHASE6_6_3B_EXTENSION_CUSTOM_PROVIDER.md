@@ -1,6 +1,6 @@
 # Phase 6.6.3B — Extension CustomProvider coordinator
 
-**Status:** Implemented in isolated POC; latest CI verification pending  
+**Status:** Implemented in isolated POC and CI-verified — [run 46131641231 passed](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46131641231)  
 **Branch:** `phase-6-6-2-turnstile-custom-provider-poc`  
 **PR:** #2 (draft; not merged)
 
@@ -50,7 +50,7 @@ File: `poc/turnstile-extension/src/iframe-challenge.ts`
 - Creates a dialog overlay in the foreground extension UI (side panel) and loads the hosted HTTPS page in an iframe. It must not run in the background service worker or offscreen document because those contexts do not have a DOM.
 - Validates the exact HTTPS origin and `event.source === iframe.contentWindow`.
 - Requires protocol version 1 and the active request UUID.
-- Accepts valid public Turnstile site keys up to 256 characters; key contents are passed through unchanged.
+- Accepts public Turnstile site keys of 16–32 allowed characters; key contents are passed through unchanged.
 - Rejects extra fields, invalid token types and tokens over 2 KB.
 - Sends only the public site key, action, cdata and request ID to the hosted page.
 - The session ID, Firebase UID, ID token and one-time poll credential remain in the extension process.
@@ -85,7 +85,7 @@ File: `poc/turnstile-extension/src/firebase-integration.ts`
 - Hosted page: allowlisted extension origin, strict initialization/control message schemas and no Firebase secret/credential leakage.
 - Functions: HTTPS boundary, verified ID token, CORS allowlist, request size/body validation, challenge flow and Firestore emulator tests.
 
-The latest workflow must pass all suites before marking this slice CI-verified.
+Integrated CI run 46131641231 passed: 6 hosted-page protocol tests, 19 extension HTTP/iframe/CustomProvider tests, 11 Firestore Rules tests, 8 Turnstile validator tests and 37 Firestore Emulator tests. Functions TypeScript build, TTL validation, hosted static bundle verification and extension TypeScript checks also passed.
 
 ## Remaining blockers before Chrome/browser test
 
@@ -108,7 +108,7 @@ The latest workflow must pass all suites before marking this slice CI-verified.
 - No cloud resource is deployed and no real App Check token has been minted.
 - PR #2 remains draft and unmerged.
 
-## Next action after CI
+## Next action after CI — manual and non-production verification
 
 Run the isolated coordinator and hosted page in desktop Chrome using a dedicated non-production Firebase project and Turnstile widget. Validate the stable test extension ID first; repeat origin/CSP checks later using the final published ID. Keep automatic token refresh disabled until manual acquisition, retry, cancellation and expiry behavior pass.
 
@@ -130,3 +130,12 @@ Official Chrome references:
 Run [46131641231](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46131641231) passed for the current implementation code: Functions TypeScript build; Firestore TTL configuration; hosted-page suite (6 tests); extension CustomProvider suite (19 tests); Firestore Security Rules (11 tests); Turnstile validator (8 tests); and Firestore Emulator suites (37 tests). That is 81 passing tests across the new suites. The run also built the hosted page and verified that its bundle contains no Firebase credentials or polling credential.
 
 This is still unit/CI and emulator evidence. It is not a live Cloudflare Siteverify test, a real Firebase App Check token mint, an end-to-end Firebase Auth + Functions Emulator browser test, or a desktop Chrome runtime test.
+
+
+## CI evidence and scope
+
+The run was executed at commit `aba2553abbfc35e49fddfe4235114eff21211422`. The branch changes after that commit were documentation-only; the executable files at the current branch head are covered by this run.
+
+The successful run proves compilation, static bundle validation, message-contract/unit tests, Firestore Rules tests and emulator-backed session/service/rate-limit/global-budget/HTTP boundary behavior. It does not prove a real Turnstile widget, live Firebase Admin App Check token issuance, deployed CORS configuration, deployed TTL policies, extension iframe CSP or real Chrome runtime behavior.
+
+The emulator client accepts local HTTP only for loopback hosts with the exact Functions Emulator base shape `/<project-id>/<region>`; other HTTP hosts and malformed paths are rejected. Production endpoints must use HTTPS.
