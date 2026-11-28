@@ -60,6 +60,7 @@ describe("Turnstile hosted-page message contract", () => {
       { ...validInit, requestId: "not-a-uuid" },
       { ...validInit, siteKey: "short" },
       { ...validInit, action: "LearnLens-App-Check" },
+      { ...validInit, action: "a".repeat(33) },
       { ...validInit, cdata: "contains spaces" },
       { ...validInit, version: 2 },
       { ...validInit, cdata: "x".repeat(256) }
