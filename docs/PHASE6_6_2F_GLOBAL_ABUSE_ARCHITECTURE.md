@@ -1,6 +1,6 @@
 # Phase 6.6.2F — Global abuse and cost-control architecture decision
 
-**Status:** Architecture decision recorded; implementation not started  
+**Status:** Sharded global daily budget implemented; CI verification pending  
 **Branch:** `phase-6-6-2-turnstile-custom-provider-poc`  
 **PR:** #2 (draft; not merged)
 
@@ -8,7 +8,7 @@
 
 Do not add a Cloudflare Worker or a single global Durable Object to the current Firebase callable bootstrap path yet.
 
-Keep Firebase callable functions as the only challenge/token endpoints for the current POC. Retain the transactional per-UID limits already implemented. Add a bounded, sharded Firestore global budget in a later isolated implementation slice before any live enablement.
+Keep Firebase callable functions as the only challenge/token endpoints for the current POC. Retain the transactional per-UID limits already implemented. Add a bounded, sharded Firestore global budget before any live enablement. The first implementation is now in the isolated POC branch.
 
 ## Why not a Cloudflare Rate Limiting binding as the strict global cap?
 
@@ -44,11 +44,11 @@ Keep the existing per-UID per-scope 60-second limit. Add a second independent gl
 
 Use UTC-day-scoped shard documents and a server-generated cryptographically random shard selection. Each shard has a transactional counter and a fixed hard ceiling. The sum of all shard ceilings is the maximum accepted daily operations, so the budget cannot be exceeded even though requests are distributed. This can reject early if a shard fills before others; that is an intentional availability trade-off for a hard upper bound.
 
-The first implementation should use conservative, configurable test-only ceilings and an explicit disabled-by-default server parameter. It must not create a single hot Firestore document.
+The implementation uses 64 server-randomized shards with a hard ceiling of 100 operations per shard per UTC day (maximum 6,400 operations/day). It uses flat documents in the `appCheckChallengeGlobalBudgets` collection so Firestore TTL can clean them. The feature is controlled by `APP_CHECK_CHALLENGE_GLOBAL_BUDGET_ENABLED`, default false. This is a prototype ceiling and must be reviewed against expected traffic before any live enablement.
 
 Each request should consume the global budget before calling Cloudflare or Firebase token minting. A failed upstream request still consumes budget because the upstream work/cost may already have occurred. No automatic refund is allowed unless an operation is provably not attempted.
 
-The global budget is a coarse service-wide circuit breaker, not a user quota. Keep per-UID throttling independently.
+The global budget is a coarse service-wide circuit breaker, not a user quota. Keep per-UID throttling independently. Each request consumes one unit before Siteverify or token minting; failed upstream attempts are not refunded. Session creation also consumes a unit when the global budget switch is enabled.
 
 ## Network/IP controls
 
@@ -100,3 +100,16 @@ References:
 - Existing sync callables retain `enforceAppCheck: true`.
 - All four cloud-sync gates remain disabled.
 - This remains bot-abuse friction, not cryptographic extension-package attestation.
+
+
+## Implementation details
+
+- Module: `functions/src/app-check-poc/global-challenge-budget.ts`
+- Tests: `functions/tests/global-challenge-budget.test.ts`
+- The service selects the shard with Node's cryptographic `randomInt`; the client cannot choose it.
+- Firestore transactions enforce each shard's 100-operation ceiling under concurrency.
+- UTC day is part of the document ID, so a new daily budget begins at UTC midnight.
+- TTL policy on the `expiresAt` field is declared for `appCheckChallengeGlobalBudgets`.
+- The global budget is checked by create, complete and token-issuance services only when the separate server parameter is explicitly true.
+- Both bootstrap switches default to false; this budget does not enable challenge callables.
+- A random shard can fill early and reject requests before all other shards are exhausted. That conservative fail-closed trade-off is accepted for the low-volume POC.
