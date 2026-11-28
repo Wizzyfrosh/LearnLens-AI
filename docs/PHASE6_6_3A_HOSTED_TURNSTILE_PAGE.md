@@ -112,4 +112,7 @@ The bootstrap routes are plain HTTPS `onRequest` endpoints, not Firebase callabl
 
 ## Integrated CI verification
 
-[CI run 46131641231 completed successfully](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46131641231). It verified the Functions build, TTL configuration, hosted page typecheck/protocol tests/build/static bundle, extension coordinator typecheck and tests, 11 Firestore Rules tests, 8 Turnstile validator tests and 37 Firestore Emulator tests (challenge sessions, authenticated service, rate limits, global budget and HTTP boundary). No live Cloudflare or Firebase deployment or desktop Chrome test occurred.
+[CI run 46133462394 completed successfully](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46131641231). It verified the Functions build, TTL configuration, hosted page typecheck/protocol tests/build/static bundle, extension coordinator typecheck and tests, 11 Firestore Rules tests, 8 Turnstile validator tests and 37 Firestore Emulator tests (challenge sessions, authenticated service, rate limits, global budget and HTTP boundary). No live Cloudflare or Firebase deployment or desktop Chrome test occurred.
+
+
+Final integrated verification is [run 46133462394](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133462394), which also builds and verifies the separate Chrome test lab and executes the Auth/Functions/Firestore HTTP emulator integration. The current branch head after that run contains documentation-only changes.
