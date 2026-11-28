@@ -21,7 +21,7 @@ export type HostedPageMessage =
 const EXTENSION_ORIGIN_PATTERN = /^chrome-extension:\/\/[a-p]{32}$/;
 const REQUEST_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CDATA_PATTERN = /^[A-Za-z0-9_-]{16,255}$/;
-const ACTION_PATTERN = /^[a-z][a-z0-9_]{2,31}$/;
+const ACTION_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/;
 
 export function parseAllowedExtensionOrigins(value: string | undefined): string[] {
   if (!value) return [];
