@@ -1,3 +1,4 @@
+import "./iframe-challenge.css";
 import {
   TURNSTILE_MESSAGE_VERSION,
   type TurnstileHostedInit
