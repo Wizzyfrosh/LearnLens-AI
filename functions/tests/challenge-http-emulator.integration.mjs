@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { deleteApp, initializeApp } from "firebase-admin/app";
-import { getAuth, type Auth } from "firebase-admin/auth";
-import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 
 const PROJECT_ID = "demo-learnlens-emulator";
 const AUTH_EMULATOR = "http://127.0.0.1:9099";
@@ -16,17 +16,11 @@ process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8080";
 process.env.GCLOUD_PROJECT = PROJECT_ID;
 
 const adminApp = initializeApp({ projectId: PROJECT_ID }, "learnlens-challenge-http-integration");
-const auth: Auth = getAuth(adminApp);
-const database: Firestore = getFirestore(adminApp);
+const auth = getAuth(adminApp);
+const database = getFirestore(adminApp);
 const baseUrl = `${FUNCTIONS_EMULATOR}/${PROJECT_ID}/${REGION}`;
 
-interface TestAccount {
-  uid: string;
-  email: string;
-  idToken: string;
-}
-
-async function createAccount(emailVerified: boolean): Promise<TestAccount> {
+async function createAccount(emailVerified) {
   const suffix = randomUUID();
   const email = `challenge-${suffix}@example.test`;
   const password = `Test-${randomUUID()}-Aa1!`;
@@ -45,7 +39,7 @@ async function createAccount(emailVerified: boolean): Promise<TestAccount> {
       body: JSON.stringify({ email, password, returnSecureToken: true })
     }
   );
-  const payload = await response.json() as { idToken?: string; localId?: string; error?: { message?: string } };
+  const payload = await response.json();
   assert.equal(response.status, 200, payload.error?.message ?? "Auth Emulator sign-in failed.");
   assert.equal(payload.localId, user.uid);
   assert.ok(typeof payload.idToken === "string" && payload.idToken.length > 100);
@@ -53,13 +47,8 @@ async function createAccount(emailVerified: boolean): Promise<TestAccount> {
   return { uid: user.uid, email, idToken: payload.idToken };
 }
 
-async function callEndpoint(
-  operation: string,
-  idToken: string | undefined,
-  body: Record<string, unknown>,
-  origin = EXTENSION_ORIGIN
-): Promise<{ status: number; payload: Record<string, unknown> }> {
-  const headers: Record<string, string> = {
+async function callEndpoint(operation, idToken, body, origin = EXTENSION_ORIGIN) {
+  const headers = {
     origin,
     "content-type": "application/json"
   };
@@ -71,26 +60,26 @@ async function callEndpoint(
     body: JSON.stringify(body),
     redirect: "error"
   });
-  const payload = await response.json() as Record<string, unknown>;
+  const payload = await response.json();
   return { status: response.status, payload };
 }
 
-function errorCode(payload: Record<string, unknown>): string | undefined {
+function errorCode(payload) {
   const error = payload.error;
   return error && typeof error === "object" && "code" in error
-    ? String((error as { code: unknown }).code)
+    ? String(error.code)
     : undefined;
 }
 
-async function cleanup(accounts: TestAccount[]): Promise<void> {
+async function cleanup(accounts) {
   await Promise.all(accounts.map(async (account) => {
     await auth.deleteUser(account.uid).catch(() => undefined);
   }));
   await deleteApp(adminApp);
 }
 
-async function main(): Promise<void> {
-  const accounts: TestAccount[] = [];
+async function main() {
+  const accounts = [];
   try {
     // Missing credentials must fail before any session record is written.
     const unauthenticated = await callEndpoint("createAppCheckChallengeSession", undefined, {});
@@ -127,7 +116,7 @@ async function main(): Promise<void> {
     assert.equal(created.status, 200, JSON.stringify(created.payload));
     assert.ok(created.payload.data && typeof created.payload.data === "object");
 
-    const session = created.payload.data as Record<string, unknown>;
+    const session = created.payload.data;
     assert.equal(session.appId, "1:123456789:web:learnlens-emulator");
     assert.equal(session.action, "learnlens_app_check");
     assert.ok(typeof session.sessionId === "string");
@@ -136,7 +125,7 @@ async function main(): Promise<void> {
     assert.ok(Number.isSafeInteger(session.expiresAtMs));
 
     const sessionSnapshot = await database.doc(
-      `appCheckChallengeSessions/${session.sessionId as string}`
+      `appCheckChallengeSessions/${session.sessionId}`
     ).get();
     assert.equal(sessionSnapshot.exists, true);
     const storedSession = sessionSnapshot.data();
@@ -206,7 +195,7 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
+main().catch((error) => {
   console.error("Challenge HTTP emulator integration failed:", error instanceof Error ? error.message : "unknown error");
   process.exitCode = 1;
 });
