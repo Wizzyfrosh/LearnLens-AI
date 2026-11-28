@@ -123,7 +123,10 @@ export class IframeTurnstilePresenter implements TurnstileChallengePresenter {
         else if (token) resolve(token);
         else reject(new Error("The security verification did not return a response."));
       };
-      const onCancel = () => finish(new Error("Security verification was cancelled."));
+      const onCancel = () => {
+        postControl("LEARNLENS_TURNSTILE_CANCEL");
+        finish(new Error("Security verification was cancelled."));
+      };
       const postControl = (type: "LEARNLENS_TURNSTILE_CANCEL") => {
         iframe.contentWindow?.postMessage({
           type,
@@ -186,14 +189,7 @@ export class IframeTurnstilePresenter implements TurnstileChallengePresenter {
       this.windowObject.addEventListener("message", onMessage);
       this.documentObject.body.append(overlay);
 
-      // The hosted page has no access to Firebase session data. Only this
-      // scoped init message contains the public site key and server cdata.
-      iframe.addEventListener("load", () => {
-        // The page will emit READY once its script and protocol are initialized.
-      }, { once: true });
-
-      // Keep cancellation control scoped to the request ID and validated origin.
-      void postControl;
+      // No auth token, session ID or polling credential is passed into the iframe.
     });
   }
 }
