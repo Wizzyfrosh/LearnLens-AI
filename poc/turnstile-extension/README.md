@@ -12,7 +12,7 @@ This directory contains an isolated client-side proof of concept. It is not impo
 ## Required runtime configuration
 
 The integrator must supply values at runtime:
-- `functionsBaseUrl`: HTTPS origin of the Firebase Functions endpoints, with no path/query/credentials. Local HTTP is accepted only for localhost emulator tests.
+- `functionsBaseUrl`: HTTPS origin of the Firebase Functions endpoints, with no path/query/credentials. This client is HTTPS-only; local Functions Emulator URL support is not implemented.
 - `hostedPageUrl`: clean HTTPS URL of the deployed hosted challenge page.
 - `siteKey`: public Turnstile site key. It is not secret.
 - Existing Firebase Auth instance and the same Firebase App instance used for App Check.
