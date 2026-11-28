@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
 const configuredOrigin = process.env.VITE_HOSTED_CHALLENGE_ORIGIN || "https://verify.example.test";
+const configuredFunctionsOrigin = process.env.VITE_FUNCTIONS_ORIGIN || "https://us-central1-example-test.cloudfunctions.net";
 let hostedOrigin;
 try {
   const parsed = new URL(configuredOrigin);
@@ -16,6 +17,24 @@ try {
   hostedOrigin = parsed.origin;
 } catch {
   throw new Error("Set VITE_HOSTED_CHALLENGE_ORIGIN to the exact HTTPS origin of the hosted Turnstile page.");
+}
+
+let functionsOrigin;
+try {
+  const parsed = new URL(configuredFunctionsOrigin);
+  if (
+    parsed.protocol !== "https:" ||
+    !parsed.hostname.endsWith(".cloudfunctions.net") ||
+    parsed.hostname === "cloudfunctions.net" ||
+    parsed.username ||
+    parsed.password ||
+    parsed.pathname !== "/" ||
+    parsed.search ||
+    parsed.hash
+  ) throw new Error("The Functions origin must be a clean Firebase Cloud Functions HTTPS origin.");
+  functionsOrigin = parsed.origin;
+} catch {
+  throw new Error("Set VITE_FUNCTIONS_ORIGIN to the exact Firebase Cloud Functions HTTPS origin.");
 }
 
 const manifest = {
@@ -48,4 +67,4 @@ const manifest = {
 const outputPath = resolve("poc/turnstile-extension-lab/dist/manifest.json");
 await mkdir(dirname(outputPath), { recursive: true });
 await writeFile(outputPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
-console.log("Wrote test-only MV3 manifest with exact hosted frame origin:", hostedOrigin);
+console.log("Wrote test-only MV3 manifest with exact hosted frame and Functions origins:", hostedOrigin, functionsOrigin);
