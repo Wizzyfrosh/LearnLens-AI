@@ -6,6 +6,7 @@ const root = "poc/turnstile-extension-lab/dist";
 const manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
 const html = await readFile(join(root, "index.html"), "utf8");
 const hostedOrigin = new URL(process.env.VITE_HOSTED_CHALLENGE_ORIGIN || "https://verify.example.test").origin;
+const functionsOrigin = new URL(process.env.VITE_FUNCTIONS_ORIGIN || "https://us-central1-example-test.cloudfunctions.net").origin;
 
 assert.equal(manifest.manifest_version, 3);
 assert.equal(manifest.version, "0.0.1");
