@@ -6,7 +6,7 @@
 
 ## Endpoint behavior
 
-The authenticated callable `claimAppCheckChallengeSession` now issues the first Firebase App Check token instead of returning only consumed-session metadata.
+The authenticated HTTPS endpoint `claimAppCheckChallengeSession` now issues the first Firebase App Check token instead of returning only consumed-session metadata.
 
 The callable still requires:
 - Firebase Authentication.
@@ -82,3 +82,8 @@ CI run 46085254191 passed: 11 Firestore Rules tests, 8 Turnstile validator tests
 - All four cloud-sync gates remain disabled.
 - No secrets, parameters, TTL policies, functions or hosted pages are deployed.
 - Extension version remains `0.1.0`.
+
+
+## Bootstrap transport note
+
+The bootstrap routes are plain HTTPS `onRequest` endpoints, not Firebase callables. The extension sends its Firebase ID token in the `Authorization` header; Firebase Admin verifies the token and its revocation status and checks the verified-email claim. The hosted Turnstile iframe never receives that ID token, the session ID or the one-time polling credential. The extension's exact origin is allowlisted by the server CORS policy; CORS is not treated as user authentication.
