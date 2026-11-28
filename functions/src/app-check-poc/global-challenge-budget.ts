@@ -40,7 +40,7 @@ export async function consumeGlobalChallengeBudget(
 
   const day = new Date(nowMs).toISOString().slice(0, 10).replaceAll("-", "");
   const ref = database.doc(
-    "appCheckChallengeGlobalBudgets/" + day + "/shards/" + String(shardIndex).padStart(2, "0")
+    "appCheckChallengeGlobalBudgets/" + day + "_" + String(shardIndex).padStart(2, "0")
   );
   const expiresAtMs = Date.parse(
     new Date(Date.UTC(
