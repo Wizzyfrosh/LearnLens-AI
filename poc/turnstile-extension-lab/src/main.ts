@@ -117,7 +117,7 @@ function parseConfiguration(): LabConfig {
     config.siteKey.length > 256 ||
     !/^[A-Za-z0-9_-]+$/.test(config.siteKey)
   ) {
-    throw new Error("The Turnstile site key must be a valid 16–256 character public test key.");
+    throw new Error("The Turnstile site key must be a valid 16–32 character public test key.");
   }
 
   let functionsUrl: URL;
