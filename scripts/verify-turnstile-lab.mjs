@@ -13,12 +13,11 @@ assert.equal(manifest.version, "0.0.1");
 assert.equal(manifest.options_page, "index.html");
 assert.ok(manifest.host_permissions.includes("https://identitytoolkit.googleapis.com/*"));
 assert.ok(manifest.host_permissions.includes("https://securetoken.googleapis.com/*"));
-assert.ok(manifest.optional_host_permissions.includes("https://*.cloudfunctions.net/*"));
-assert.ok(manifest.optional_host_permissions.includes("http://127.0.0.1:5001/*"));
-assert.ok(manifest.optional_host_permissions.includes("http://localhost:5001/*"));
-assert.ok(!manifest.optional_host_permissions.includes("https://*/*"), "The lab must not request optional access to every HTTPS website.");
+assert.deepEqual(manifest.optional_host_permissions, [functionsOrigin + "/*"]);
 assert.ok(manifest.content_security_policy.extension_pages.includes("script-src 'self'"));
-assert.ok(manifest.content_security_policy.extension_pages.includes("https://*.cloudfunctions.net"));
+assert.ok(manifest.content_security_policy.extension_pages.includes(
+  "connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com " + functionsOrigin + ";"
+));
 const connectDirective = manifest.content_security_policy.extension_pages
   .split(";")
   .find((directive) => directive.trim().startsWith("connect-src "));
@@ -26,7 +25,9 @@ assert.ok(connectDirective, "The lab CSP must define connect-src.");
 assert.ok(!/(?:^|\s)https:(?:\s|$)/.test(connectDirective), "The lab CSP must not allow the generic HTTPS scheme.");
 assert.ok(connectDirective.includes("https://identitytoolkit.googleapis.com"));
 assert.ok(connectDirective.includes("https://securetoken.googleapis.com"));
-assert.ok(connectDirective.includes("https://*.cloudfunctions.net"));
+assert.ok(connectDirective.includes(functionsOrigin));
+assert.ok(!connectDirective.includes("*.cloudfunctions.net"), "The lab CSP must not allow every Firebase Functions host.");
+assert.ok(!connectDirective.includes("127.0.0.1") && !connectDirective.includes("localhost"), "The manual browser lab must not allow local emulator connections.");
 assert.ok(manifest.content_security_policy.extension_pages.includes("frame-src 'self' " + hostedOrigin));
 assert.ok(!manifest.content_security_policy.extension_pages.includes("script-src 'self' https:"));
 assert.ok(!html.includes("https://challenges.cloudflare.com/turnstile/v0/api.js"), "Cloudflare's script must run only on the hosted page.");
