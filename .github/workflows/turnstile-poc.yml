@@ -6,6 +6,9 @@ on:
       - phase-6-6-2-turnstile-custom-provider-poc
     paths:
       - "functions/**"
+      - "poc/turnstile-hosted/**"
+      - "scripts/verify-turnstile-hosted.mjs"
+      - "package.json"
       - "firestore.rules"
       - "firebase.json"
       - "firestore.indexes.json"
@@ -75,6 +78,9 @@ jobs:
             throw new Error("Missing Firestore TTL policies: " + [...expected].join(", "));
           }
           NODE
+
+      - name: Verify hosted Turnstile challenge page
+        run: npm run poc:turnstile-hosted:verify
 
       - name: Run Firestore Security Rules tests
         run: npm run test:rules
