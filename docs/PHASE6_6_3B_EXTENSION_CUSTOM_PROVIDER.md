@@ -1,6 +1,6 @@
 # Phase 6.6.3B — Extension CustomProvider coordinator
 
-**Status:** Implemented in isolated POC and CI-verified — [run 46132875645 passed](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46132875645)  
+**Status:** Implemented in isolated POC and CI-verified — [run 46133264121 passed](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133264121)  
 **Branch:** `phase-6-6-2-turnstile-custom-provider-poc`  
 **PR:** #2 (draft; not merged)
 
@@ -85,7 +85,7 @@ File: `poc/turnstile-extension/src/firebase-integration.ts`
 - Hosted page: allowlisted extension origin, strict initialization/control message schemas and no Firebase secret/credential leakage.
 - Functions: HTTPS boundary, verified ID token, CORS allowlist, request size/body validation, challenge flow and Firestore emulator tests.
 
-Integrated CI run 46132875645 passed: 6 hosted-page protocol tests, 19 extension HTTP/iframe/CustomProvider tests, 11 Firestore Rules tests, 8 Turnstile validator tests and 37 Firestore Emulator tests. Functions TypeScript build, TTL validation, hosted static bundle verification and extension TypeScript checks also passed.
+Integrated CI run 46133264121 passed: 6 hosted-page protocol tests, 20 extension HTTP/iframe/CustomProvider tests, 11 Firestore Rules tests, 8 Turnstile validator tests and 37 Firestore Emulator tests. Functions TypeScript build, TTL validation, hosted static bundle verification and extension TypeScript checks also passed.
 
 ## Remaining blockers before Chrome/browser test
 
@@ -127,7 +127,7 @@ Official Chrome references:
 
 ## Latest CI verification
 
-Run [46132875645](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46132875645) passed for the current implementation code: Functions TypeScript build; Firestore TTL configuration; hosted-page suite (6 tests); extension CustomProvider suite (19 tests); Firestore Security Rules (11 tests); Turnstile validator (8 tests); and Firestore Emulator suites (37 tests). That is 81 passing tests across the new suites. The run also built the hosted page and verified that its bundle contains no Firebase credentials or polling credential.
+Run [46133264121](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133264121) passed for the current implementation code: Functions TypeScript build; Firestore TTL configuration; hosted-page suite (6 tests); extension CustomProvider suite (20 tests); Firestore Security Rules (11 tests); Turnstile validator (8 tests); and Firestore Emulator suites (37 tests). That is 82 passing tests across the new suites. The run also built the hosted page and verified that its bundle contains no Firebase credentials or polling credential.
 
 This is still unit/CI and emulator evidence. It is not a live Cloudflare Siteverify test, a real Firebase App Check token mint, an end-to-end Firebase Auth + Functions Emulator browser test, or a desktop Chrome runtime test.
 
@@ -206,7 +206,7 @@ References:
 
 ## Latest full CI and emulator verification
 
-[CI run 46132875645 passed](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46132875645):
+[CI run 46133264121 passed](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133264121):
 - Functions TypeScript build and Firestore TTL configuration validation.
 - Hosted page: 6 protocol tests, static build and bundle verification.
 - Extension coordinator: 19 tests and TypeScript check.
@@ -219,3 +219,23 @@ References:
 That is 81 automated unit/emulator tests, plus the Auth/Functions HTTP integration scenario. The integration verified bearer-token authentication, email verification, exact-origin CORS, real Firestore session persistence, owner checks, pending-session rejection, and no-store headers. It intentionally stopped before a successful Cloudflare Siteverify request and before Firebase Admin token minting.
 
 No live Cloudflare request, live Firebase token mint, deployed endpoint, or desktop Chrome browser test has occurred.
+
+
+## Final verification after site-key and cache disclosure corrections
+
+[CI run 46133264121](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133264121) completed successfully on commit `21ade71a94f01db1be8ca55b97ae40974f988e10`.
+
+- Functions TypeScript build and Firestore TTL configuration check: passed.
+- Hosted Turnstile page: 6 protocol tests, build and static bundle verification passed.
+- Extension coordinator: 20 tests and strict TypeScript check passed, including rejection of site keys longer than Cloudflare's 32-character maximum.
+- Chrome test lab: TypeScript check, Vite build, generated MV3 manifest, exact Functions-origin permission, CSP and hosted-frame-origin verification passed.
+- Firestore Security Rules: 11 tests passed.
+- Turnstile validator: 8 tests passed.
+- Session/service/rate-limit/global-budget/HTTP boundary Firestore emulator suites: 37 tests passed.
+- Auth + Functions + Firestore HTTP emulator integration passed using Auth Emulator-issued Firebase ID tokens.
+
+**82 automated tests passed**, plus the dedicated Auth/Functions/Firestore HTTP integration scenario. The integration proves the current HTTP endpoint boundary against emulators; it intentionally stops before successful Cloudflare Siteverify and Firebase Admin App Check token minting.
+
+## App Check token persistence note
+
+Firebase Auth uses `inMemoryPersistence` in the test lab. Firebase App Check has a separate SDK-managed cache: the Web SDK checks memory and then IndexedDB for a valid token. That IndexedDB persistence is expected and is not controlled by this custom coordinator. The lab never displays or logs token values, passwords, Firebase ID tokens or one-time challenge credentials. See the [Firebase App Check JavaScript reference](https://firebase.google.com/docs/reference/js/app-check).
