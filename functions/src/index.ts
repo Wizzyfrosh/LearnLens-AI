@@ -155,7 +155,10 @@ async function handleChallengeHttpRequest(
     assertChallengeHttpPostJson({
       method: request.method,
       headers: request.headers,
-      body: request.body
+      body: request.body,
+      rawBody: "rawBody" in request && request.rawBody instanceof Uint8Array
+        ? request.rawBody
+        : undefined
     });
     assertChallengeBootstrapEnabled(challengeBootstrapEnabled.value());
 
