@@ -30,7 +30,7 @@ All three endpoints are Firebase HTTPS `onRequest` handlers, not `onCall` callab
 - Accepts exactly the session ID and polling credential.
 - Applies a transactional rate limit of five claims per authenticated UID per minute.
 - Atomically consumes the verified session using the UID and high-entropy polling credential.
-- Does not mint or return an App Check token yet.
+- Mints and returns one App Check token only after a successful claim. A minting failure leaves the session consumed; the caller must start a fresh challenge.
 
 ## Endpoint design correction
 
