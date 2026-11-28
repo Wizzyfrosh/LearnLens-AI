@@ -40,11 +40,8 @@ function parseFunctionsBaseUrl(value: string): string {
   } catch {
     throw new Error("The Firebase Functions base URL is invalid.");
   }
-  const isLocalEmulator =
-    (url.hostname === "localhost" || url.hostname === "127.0.0.1") &&
-    url.protocol === "http:";
   if (
-    (url.protocol !== "https:" && !isLocalEmulator) ||
+    url.protocol !== "https:" ||
     url.username ||
     url.password ||
     url.search ||
