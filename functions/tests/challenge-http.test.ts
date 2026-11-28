@@ -50,13 +50,13 @@ describe("Authenticated challenge HTTP boundary", () => {
   });
 
   it("rejects a large raw body even when Content-Length is absent", () => {
-    await assert.rejects(
-      Promise.resolve().then(() => assertChallengeHttpPostJson({
+    assert.throws(
+      () => assertChallengeHttpPostJson({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: {},
         rawBody: new Uint8Array(9000)
-      })),
+      }),
       (error: unknown) => error instanceof SyncBackendError && error.code === "invalid-argument"
     );
   });
