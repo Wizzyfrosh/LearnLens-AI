@@ -135,7 +135,10 @@ describe("ChallengeHttpClient", () => {
     const client = new ChallengeHttpClient({
       functionsBaseUrl: "https://us-central1-demo-project.cloudfunctions.net",
       getCurrentUser: () => user(),
-      fetchImpl: async () => jsonResponse({ error: { message: "Verify your email address first." } }, 412)
+      fetchImpl: async () => new Response(
+        JSON.stringify({ error: { code: "failed-precondition", message: "Verify your email address first." } }),
+        { status: 412, headers: { "content-type": "application/json" } }
+      )
     });
     await expect(client.createChallengeSession()).rejects.toThrow("Verify your email address first.");
   });
