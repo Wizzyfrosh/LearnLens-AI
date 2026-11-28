@@ -22,9 +22,9 @@ export interface CustomProviderCoordinatorOptions {
  * coordinator. The Firebase SDK owns token caching; this class only
  * coalesces concurrent in-flight acquisitions.
  */
-export function createTurnstileCustomProvider(
+export function createTurnstileTokenGetter(
   options: CustomProviderCoordinatorOptions
-): CustomProvider {
+): () => Promise<AppCheckToken> {
   let inFlight: Promise<AppCheckToken> | null = null;
 
   const acquire = async (): Promise<AppCheckToken> => {
@@ -78,15 +78,19 @@ export function createTurnstileCustomProvider(
     }
   };
 
-  return new CustomProvider({
-    getToken: () => {
-      if (!inFlight) {
-        const current = acquire().finally(() => {
-          if (inFlight === current) inFlight = null;
-        });
-        inFlight = current;
-      }
-      return inFlight;
+  return () => {
+    if (!inFlight) {
+      const current = acquire().finally(() => {
+        if (inFlight === current) inFlight = null;
+      });
+      inFlight = current;
     }
-  });
+    return inFlight;
+  };
+}
+
+export function createTurnstileCustomProvider(
+  options: CustomProviderCoordinatorOptions
+): CustomProvider {
+  return new CustomProvider({ getToken: createTurnstileTokenGetter(options) });
 }
