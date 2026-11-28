@@ -8,7 +8,10 @@ on:
       - "functions/**"
       - "poc/turnstile-hosted/**"
       - "poc/turnstile-extension/**"
+      - "poc/turnstile-extension-lab/**"
       - "scripts/verify-turnstile-hosted.mjs"
+      - "scripts/write-turnstile-lab-manifest.mjs"
+      - "scripts/verify-turnstile-lab.mjs"
       - "package.json"
       - "firestore.rules"
       - "firebase.json"
@@ -93,6 +96,9 @@ jobs:
 
       - name: Verify Turnstile CustomProvider coordinator
         run: npm run poc:turnstile-extension:verify
+
+      - name: Build and verify CustomProvider Chrome test lab
+        run: npm run poc:turnstile-lab:verify
 
       - name: Run Firestore Security Rules tests
         run: npm run test:rules
