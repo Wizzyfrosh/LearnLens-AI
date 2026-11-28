@@ -159,10 +159,8 @@ describe("Hosted Turnstile iframe presenter", () => {
       requestId: init.requestId,
       token: "x".repeat(2049)
     });
-    // A token with an invalid length is ignored by the host message parser;
-    // the presenter remains pending until cancellation or its deadline.
-    invalid.closeButton.dispatch("click");
-    await expect(invalid.promise).rejects.toThrow("cancelled");
+    // Oversized tokens are rejected before they can reach the Firebase endpoint.
+    await expect(invalid.promise).rejects.toThrow("invalid response");
   });
 
   it("sends request-bound cancellation before removing the iframe", async () => {
