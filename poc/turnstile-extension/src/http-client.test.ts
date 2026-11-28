@@ -127,6 +127,7 @@ describe("ChallengeHttpClient", () => {
   it("rejects insecure or path-bearing Functions base URLs", () => {
     const valid = { getCurrentUser: () => user() };
     expect(() => new ChallengeHttpClient({ ...valid, functionsBaseUrl: "http://example.com" })).toThrow("HTTPS");
+    expect(() => new ChallengeHttpClient({ ...valid, functionsBaseUrl: "http://127.0.0.1:5001/demo-project/us-central1" })).toThrow("HTTPS");
     expect(() => new ChallengeHttpClient({ ...valid, functionsBaseUrl: "https://example.com/path" })).toThrow("HTTPS");
     expect(() => new ChallengeHttpClient({ ...valid, functionsBaseUrl: "https://user:pass@example.com" })).toThrow("HTTPS");
   });
