@@ -48,18 +48,15 @@ const manifest = {
     "https://identitytoolkit.googleapis.com/*",
     "https://securetoken.googleapis.com/*"
   ],
-  // Optional permissions are deliberately restricted to Firebase Functions
-  // hosts and the two local Functions Emulator loopback addresses. The UI
-  // requests only the exact configured Functions origin after user consent.
+  // Ask only for the one Firebase Functions host selected at build time.
+  // Chrome still prompts the tester before this origin is granted.
   optional_host_permissions: [
-    "https://*.cloudfunctions.net/*",
-    "http://127.0.0.1:5001/*",
-    "http://localhost:5001/*"
+    functionsOrigin + "/*"
   ],
   content_security_policy: {
     extension_pages:
       "script-src 'self'; object-src 'self'; base-uri 'self'; " +
-      "connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://*.cloudfunctions.net http://127.0.0.1:5001 http://localhost:5001; " +
+      "connect-src 'self' https://identitytoolkit.googleapis.com https://securetoken.googleapis.com " + functionsOrigin + "; " +
       "frame-src 'self' " + hostedOrigin + ";"
   }
 };
