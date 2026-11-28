@@ -146,6 +146,20 @@ describe("ChallengeHttpClient", () => {
     expect(() => new ChallengeHttpClient({ ...valid, functionsBaseUrl: "https://user:pass@example.com" })).toThrow("HTTPS");
   });
 
+  it("builds endpoint URLs beneath a validated local Functions Emulator base", async () => {
+    let requestedUrl = "";
+    const client = new ChallengeHttpClient({
+      functionsBaseUrl: "http://127.0.0.1:5001/demo-project/us-central1",
+      getCurrentUser: () => user(),
+      fetchImpl: async (input) => {
+        requestedUrl = String(input);
+        return jsonResponse(SESSION);
+      }
+    });
+    await client.createChallengeSession();
+    expect(requestedUrl).toBe("http://127.0.0.1:5001/demo-project/us-central1/createAppCheckChallengeSession");
+  });
+
   it("surfaces bounded server errors without exposing an unbounded response body", async () => {
     const client = new ChallengeHttpClient({
       functionsBaseUrl: "https://us-central1-demo-project.cloudfunctions.net",
