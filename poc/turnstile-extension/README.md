@@ -12,7 +12,7 @@ This directory contains an isolated client-side proof of concept. It is not impo
 ## Required runtime configuration
 
 The integrator must supply values at runtime:
-- `functionsBaseUrl`: HTTPS origin of the Firebase Functions endpoints, with no path/query/credentials. This client is HTTPS-only; local Functions Emulator URL support is not implemented.
+- `functionsBaseUrl`: HTTPS origin of the Firebase Functions endpoints, with no path/query/credentials. For local Functions Emulator tests only, loopback HTTP is allowed when the URL includes the exact `/<project-id>/<region>` base path, such as `http://127.0.0.1:5001/demo-learnlens/us-central1`. All non-loopback HTTP hosts and malformed emulator paths are rejected.
 - `hostedPageUrl`: clean HTTPS URL of the deployed hosted challenge page.
 - `siteKey`: public Turnstile site key. It is not secret.
 - Existing Firebase Auth instance and the same Firebase App instance used for App Check.
@@ -39,7 +39,7 @@ After the final published Chrome extension ID and hosted domain are selected:
 2. Add only the Firebase Functions hostname to extension host permissions, scoped to the bootstrap functions if Chrome's match-pattern rules permit.
 3. Build the hosted page with `VITE_ALLOWED_PARENT_ORIGINS=chrome-extension://<final-id>`.
 4. Configure the host's HTTP `Content-Security-Policy: frame-ancestors chrome-extension://<final-id>`, `Referrer-Policy: no-referrer`, and `X-Content-Type-Options: nosniff`.
-5. Keep `script-src` on the hosted site limited to `'self' https://challenges.cloudflare.com`; no remote executable scripts are added to the extension.
+5. Keep `script-src` on the hosted site limited to `'self' https://challenges.cloudflare.com`; no remote executable scripts are added to the extension. Local emulator-only tests also require a temporary test-manifest host permission for the loopback Functions Emulator URL.
 6. Register the hosted page hostname in the Turnstile widget's allowed domains.
 7. Configure the server-side Turnstile secret only in the test Firebase project's secret manager.
 
