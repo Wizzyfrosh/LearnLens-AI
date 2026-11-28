@@ -195,9 +195,9 @@ async function handleChallengeHttpRequest(
 /**
  * Creates a short-lived challenge session.
  *
- * Request: POST { "data": {} } is not used here; the plain HTTP contract is
- * an exact empty JSON object. Authentication is a verified Firebase ID token
- * in the Authorization bearer header. No App Check token is required.
+ * Request body: an exact empty JSON object. Authentication is a verified
+ * Firebase ID token in the Authorization bearer header. No App Check token
+ * is required for this bootstrap operation.
  */
 export const createAppCheckChallengeSession = onRequest(
   { cors: false, maxInstances: 3, memory: "256MiB", timeoutSeconds: 15 },
