@@ -23,7 +23,7 @@ const connectDirective = manifest.content_security_policy.extension_pages
   .split(";")
   .find((directive) => directive.trim().startsWith("connect-src "));
 assert.ok(connectDirective, "The lab CSP must define connect-src.");
-assert.ok(!/(?:^|\\s)https:(?:\\s|$)/.test(connectDirective), "The lab CSP must not allow the generic HTTPS scheme.");
+assert.ok(!/(?:^|\s)https:(?:\s|$)/.test(connectDirective), "The lab CSP must not allow the generic HTTPS scheme.");
 assert.ok(connectDirective.includes("https://identitytoolkit.googleapis.com"));
 assert.ok(connectDirective.includes("https://securetoken.googleapis.com"));
 assert.ok(connectDirective.includes("https://*.cloudfunctions.net"));
