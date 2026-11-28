@@ -127,28 +127,19 @@ function parseConfiguration(): LabConfig {
     throw new Error("The Turnstile site key must be a valid public test key.");
   }
 
-  const functionsUrl = new URL(config.functionsBaseUrl);
-  const isLoopback =
-    (functionsUrl.hostname === "localhost" || functionsUrl.hostname === "127.0.0.1") &&
-    functionsUrl.port === "5001" &&
-    functionsUrl.protocol === "http:";
-  const normalizedPath = functionsUrl.pathname.replace(/\/$/, "");
-  const validEmulatorPath =
-    /^\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/us-[a-z0-9-]+$/.test(normalizedPath);
-  const isFirebaseFunctionsHost =
-    functionsUrl.protocol === "https:" &&
-    functionsUrl.hostname.endsWith(".cloudfunctions.net") &&
-    functionsUrl.hostname !== "cloudfunctions.net" &&
-    (functionsUrl.port === "" || functionsUrl.port === "443") &&
-    normalizedPath === "";
+  let functionsUrl: URL;
+  try { functionsUrl = new URL(config.functionsBaseUrl); } catch {
+    throw new Error("Enter a valid Firebase Functions HTTPS origin.");
+  }
   if (
+    functionsUrl.protocol !== "https:" ||
     functionsUrl.username ||
     functionsUrl.password ||
+    functionsUrl.pathname !== "/" ||
     functionsUrl.search ||
-    functionsUrl.hash ||
-    !(isFirebaseFunctionsHost || (isLoopback && validEmulatorPath))
+    functionsUrl.hash
   ) {
-    throw new Error("Use a Firebase Cloud Functions HTTPS host or a valid loopback Emulator URL with /<project-id>/<region>.");
+    throw new Error("This Chrome lab requires a deployed Firebase Functions HTTPS origin with no path or credentials.");
   }
 
   return config;
