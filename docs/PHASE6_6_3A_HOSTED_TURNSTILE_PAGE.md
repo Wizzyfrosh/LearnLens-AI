@@ -1,6 +1,6 @@
 # Phase 6.6.3A — Hosted Turnstile challenge page
 
-**Status:** Implemented and CI-verified — [run 46131641231](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46131641231)  
+**Status:** Implemented and CI-verified — [run 46133642749](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749)  
 **Branch:** `phase-6-6-2-turnstile-custom-provider-poc`  
 **PR:** #2 (draft; not merged)
 
@@ -68,7 +68,7 @@ The extension integration must validate:
 - `npm run poc:turnstile-hosted:build`
 - `npm run poc:turnstile-hosted:verify`
 
-The isolated workflow now runs the hosted page verification when its source or supporting package script changes. CI run 46131641231 passed all six hosted-page protocol tests, the Vite build and static bundle verification.
+The isolated workflow now runs the hosted page verification when its source or supporting package script changes. CI run 46133642749 passed all six hosted-page protocol tests, the Vite build and static bundle verification.
 
 ## Deployment blockers
 
@@ -112,10 +112,10 @@ The bootstrap routes are plain HTTPS `onRequest` endpoints, not Firebase callabl
 
 ## Integrated CI verification
 
-[CI run 46133642749 completed successfully](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46131641231). It verified the Functions build, TTL configuration, hosted page typecheck/protocol tests/build/static bundle, extension coordinator typecheck and tests, 11 Firestore Rules tests, 8 Turnstile validator tests and 37 Firestore Emulator tests (challenge sessions, authenticated service, rate limits, global budget and HTTP boundary). No live Cloudflare or Firebase deployment or desktop Chrome test occurred.
+[CI run 46133642749 completed successfully](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749). It verified the Functions build, TTL configuration, hosted page typecheck/protocol tests/build/static bundle, extension coordinator typecheck and tests, 11 Firestore Rules tests, 8 Turnstile validator tests and 37 Firestore Emulator tests (challenge sessions, authenticated service, rate limits, global budget and HTTP boundary). No live Cloudflare or Firebase deployment or desktop Chrome test occurred.
 
 
-Final integrated verification is [run 46133642749](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749), which also builds and verifies the separate Chrome test lab and executes the Auth/Functions/Firestore HTTP emulator integration. The current branch head after that run contains documentation-only changes.
+Final integrated verification is [run 46133642749](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749), which also builds and verifies the separate Chrome test lab and executes the Auth/Functions/Firestore HTTP emulator integration. It splits Node 24 browser tooling from Node 22 Functions install/build and emulator runtime. The current branch head after that run contains documentation-only changes.
 
 
 The final workflow [46133642749](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749) also verified Functions installation/build on Node 22 and the Auth/Functions emulator integration on the Node 22 runtime. The only branch changes after its tested executable commit were documentation updates.
