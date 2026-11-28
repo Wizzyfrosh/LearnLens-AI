@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>LearnLens Turnstile CustomProvider Lab</title>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div class="brand-mark" aria-hidden="true">LL</div>
+        <div>
+          <p class="eyebrow">LEARNLENS AI · ISOLATED TEST EXTENSION</p>
+          <h1>Custom App Check lab</h1>
+          <p class="intro">Test the Turnstile-backed Firebase CustomProvider without changing your installed LearnLens extension.</p>
+        </div>
+      </header>
+
+      <section class="warning">
+        <strong>Non-production test only</strong>
+        <p>Use a dedicated Firebase test project, a verified test account, a test Functions deployment and a test Turnstile widget. Do not use production credentials or your personal password.</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div><span class="step">01</span><h2>Firebase and challenge configuration</h2></div>
+          <span id="connection-state" class="state">Not connected</span>
+        </div>
+        <form id="config-form">
+          <div class="field-grid">
+            <label>Firebase Web API key<input id="api-key" autocomplete="off" spellcheck="false" required /></label>
+            <label>Firebase Auth domain<input id="auth-domain" autocomplete="off" spellcheck="false" placeholder="project.firebaseapp.com" required /></label>
+            <label>Firebase project ID<input id="project-id" autocomplete="off" spellcheck="false" required /></label>
+            <label>Firebase Web App ID<input id="app-id" autocomplete="off" spellcheck="false" placeholder="1:123456789:web:abcdef" required /></label>
+            <label class="full">Firebase Functions base URL<input id="functions-url" autocomplete="off" spellcheck="false" placeholder="https://us-central1-project.cloudfunctions.net" required /></label>
+            <label class="full">Hosted Turnstile challenge page URL<input id="hosted-url" autocomplete="off" spellcheck="false" placeholder="https://verify.example.com/turnstile/" required /></label>
+            <label class="full">Cloudflare Turnstile site key<input id="site-key" autocomplete="off" spellcheck="false" required /></label>
+          </div>
+          <div class="origin-row"><span>Test extension origin</span><code id="extension-origin">Loading…</code></div>
+          <p class="hint">The hosted URL must use the exact HTTPS origin compiled into this test extension. Rebuild the lab for a different hosted origin. The Functions origin receives an optional host permission only after you press Connect.</p>
+          <button id="connect-button" type="submit">Connect to test Firebase project</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading"><div><span class="step">02</span><h2>Sign in with a verified test account</h2></div></div>
+        <form id="auth-form">
+          <div class="field-grid auth-grid">
+            <label>Test account email<input id="email" type="email" autocomplete="username" required /></label>
+            <label>Test account password<input id="password" type="password" autocomplete="current-password" required /></label>
+          </div>
+          <div class="button-row">
+            <button id="sign-in-button" type="submit" disabled>Sign in</button>
+            <button id="sign-out-button" class="secondary" type="button" disabled>Sign out</button>
+          </div>
+          <p id="auth-state" class="hint">Connect the Firebase configuration first.</p>
+        </form>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading"><div><span class="step">03</span><h2>Request an App Check token</h2></div></div>
+        <p class="hint">Automatic token refresh is disabled. This button explicitly starts one challenge flow. Firebase's SDK remains responsible for caching the resulting token.</p>
+        <button id="token-button" type="button" disabled>Run security challenge and request token</button>
+        <p id="token-state" class="result-state">No token request has been made.</p>
+      </section>
+
+      <section class="panel log-panel">
+        <div class="panel-heading"><div><h2>Test log</h2></div><button id="clear-log" class="text-button" type="button">Clear log</button></div>
+        <ol id="log" class="log" aria-live="polite"></ol>
+      </section>
+
+      <footer>
+        <p>Test-only build · no Firebase credentials, passwords, challenge credentials or App Check tokens are written to extension storage or printed to this log.</p>
+      </footer>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
