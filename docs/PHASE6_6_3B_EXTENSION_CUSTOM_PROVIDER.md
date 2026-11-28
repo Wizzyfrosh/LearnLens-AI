@@ -1,0 +1,110 @@
+# Phase 6.6.3B — Extension CustomProvider coordinator
+
+**Status:** Implemented in isolated POC; latest CI verification pending  
+**Branch:** `phase-6-6-2-turnstile-custom-provider-poc`  
+**PR:** #2 (draft; not merged)
+
+## Why the bootstrap transport is direct HTTPS
+
+Firebase's callable-functions SDK prepares auth, messaging and App Check headers for every callable request. When App Check is initialized, its context provider calls `AppCheck.getToken()`. Therefore, calling `httpsCallable` from inside Firebase `CustomProvider.getToken()` can recurse into the same provider before the first token exists.
+
+The three bootstrap endpoints have been changed to HTTPS `onRequest` handlers:
+- `createAppCheckChallengeSession`
+- `completeAppCheckChallenge`
+- `claimAppCheckChallengeSession`
+
+They are authenticated by the Firebase ID token in `Authorization: Bearer <id-token>`. Firebase Admin verifies token signature, expiry and revocation (`verifyIdToken(token, true)`) and requires `email_verified === true`. Exact extension-origin CORS is an additional browser boundary, not authentication. Existing sync callables remain `enforceAppCheck: true`.
+
+## Server HTTP boundary
+
+File: `functions/src/app-check-poc/challenge-http.ts`
+
+- Exact configured `chrome-extension://<id>` origin only.
+- Explicit OPTIONS preflight support.
+- POST and JSON content type only.
+- 8 KB request body cap, checking content length and parsed raw bytes where available.
+- Strict exact-key JSON payload validation.
+- Bounded bearer ID-token length and syntax.
+- Sanitized auth failure details and bounded status mapping.
+- No caller-supplied UID is accepted.
+
+The production bootstrap parameter remains disabled by default. The extension-origin parameter defaults to empty and therefore denies browser origins until explicitly configured.
+
+## Client HTTP wrapper
+
+File: `poc/turnstile-extension/src/http-client.ts`
+
+- Uses direct `fetch`; no `httpsCallable`.
+- Sends ID token in the Authorization header only.
+- `credentials: "omit"`, `cache: "no-store"`, `redirect: "error"`, and `referrerPolicy: "no-referrer"`.
+- Validates function base URL, response envelope, schema, challenge expiry and App Check token expiry.
+- Limits response bodies to 32 KB and response token length to 16 KB.
+- The hosted iframe never sees the Firebase ID token.
+
+## Hosted challenge presenter
+
+File: `poc/turnstile-extension/src/iframe-challenge.ts`
+
+- Creates a dialog overlay in the extension UI and loads the hosted HTTPS page in an iframe.
+- Validates the exact HTTPS origin and `event.source === iframe.contentWindow`.
+- Requires protocol version 1 and the active request UUID.
+- Rejects extra fields, invalid token types and tokens over 2 KB.
+- Sends only the public site key, action, cdata and request ID to the hosted page.
+- The session ID, Firebase UID, ID token and one-time poll credential remain in the extension process.
+- Supports cancellation and a bounded 120-second challenge timeout.
+
+## CustomProvider coordinator
+
+File: `poc/turnstile-extension/src/custom-provider.ts`
+
+1. Requires a currently signed-in Firebase Auth user with verified email.
+2. Creates a short-lived challenge session over direct HTTPS.
+3. Opens the hosted Turnstile page and waits for a one-time response.
+4. Sends the response token to the authenticated completion endpoint; Cloudflare Siteverify remains server-side.
+5. Claims the verified session with the one-time poll credential.
+6. Returns `{ token, expireTimeMillis }` to Firebase's custom provider.
+7. Clears local references to the one-time response and poll credential in `finally`.
+
+Concurrent `getToken()` calls are coalesced while a single challenge flow is in flight. This is not a second cache: after a flow completes, the Firebase App Check SDK remains responsible for token caching and refresh.
+
+File: `poc/turnstile-extension/src/firebase-integration.ts`
+
+- Initializes App Check with the custom Turnstile provider.
+- Requires Firebase Auth and App Check to share the same Firebase App.
+- Leaves `isTokenAutoRefreshEnabled: false`.
+- Exposes explicit foreground token acquisition for controlled testing.
+
+## Automated tests being run
+
+- HTTP client: bearer token/header, allowed URLs, exact payloads, response envelope and bounded errors.
+- Custom provider: correct operation order, single-flight concurrency, verified-email gate, no second token cache and invalid token rejection.
+- iframe presenter: exact host origin/source, request ID, extra fields, cancellation, expiry, token length and URL safety.
+- Hosted page: allowlisted extension origin, strict initialization/control message schemas and no Firebase secret/credential leakage.
+- Functions: HTTPS boundary, verified ID token, CORS allowlist, request size/body validation, challenge flow and Firestore emulator tests.
+
+The latest workflow must pass all suites before marking this slice CI-verified.
+
+## Remaining blockers before Chrome/browser test
+
+1. LearnLens is not yet published, so its final Chrome Web Store extension ID is unavailable.
+2. No production/QA hosted domain has been chosen.
+3. No non-production Turnstile widget/site key/secret has been created.
+4. No dedicated non-production Firebase project has been configured for the HTTP endpoints.
+5. No function parameters/secrets have been set and no Functions deployment has happened.
+6. The production extension Manifest V3 CSP/host permissions have not been changed; they must be updated only after the final hosted domain and stable extension ID are known.
+7. The hosted domain must return an HTTP `frame-ancestors` header restricted to the exact extension origin.
+
+## Safeguards
+
+- This client integration is isolated under `poc/turnstile-extension/`.
+- No production side-panel imports this code.
+- Main extension version remains `0.1.0`.
+- Existing sync callables retain App Check enforcement.
+- All four production sync gates remain disabled.
+- Both challenge bootstrap and global budget flags default to false.
+- No cloud resource is deployed and no real App Check token has been minted.
+- PR #2 remains draft and unmerged.
+
+## Next action after CI
+
+Run the isolated coordinator and hosted page in desktop Chrome using a dedicated non-production Firebase project and Turnstile widget. Validate the stable test extension ID first; repeat origin/CSP checks later using the final published ID. Keep automatic token refresh disabled until manual acquisition, retry, cancellation and expiry behavior pass.
