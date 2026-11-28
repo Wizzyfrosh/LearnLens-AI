@@ -18,7 +18,10 @@
     "poc:turnstile-hosted:typecheck": "tsc --project poc/turnstile-hosted/tsconfig.json --pretty",
     "poc:turnstile-hosted:test": "vitest run poc/turnstile-hosted/src/protocol.test.ts",
     "poc:turnstile-hosted:build": "vite build --config poc/turnstile-hosted/vite.config.ts",
-    "poc:turnstile-hosted:verify": "npm run poc:turnstile-hosted:typecheck && npm run poc:turnstile-hosted:test && npm run poc:turnstile-hosted:build && node scripts/verify-turnstile-hosted.mjs"
+    "poc:turnstile-hosted:verify": "npm run poc:turnstile-hosted:typecheck && npm run poc:turnstile-hosted:test && npm run poc:turnstile-hosted:build && node scripts/verify-turnstile-hosted.mjs",
+    "poc:turnstile-extension:typecheck": "tsc --project poc/turnstile-extension/tsconfig.json --pretty",
+    "poc:turnstile-extension:test": "vitest run poc/turnstile-extension/src",
+    "poc:turnstile-extension:verify": "npm run poc:turnstile-extension:typecheck && npm run poc:turnstile-extension:test"
   },
   "dependencies": {
     "firebase": "^13.0.0",
