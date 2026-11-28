@@ -9,7 +9,7 @@ It reuses the isolated coordinator from `poc/turnstile-extension/src/` and provi
 - initialize the Firebase CustomProvider;
 - manually request one App Check token through the hosted Turnstile challenge.
 
-The Firebase Auth session uses in-memory persistence. The lab does not manually persist Firebase config, passwords, challenge credentials or Turnstile response tokens, and it never prints token values. Important distinction: Firebase's App Check SDK manages its own token cache/persistence after a token is issued. This lab does not override or disable that SDK-managed cache.
+The Firebase Auth session uses in-memory persistence. The lab does not manually persist Firebase config, passwords, challenge credentials or Turnstile response tokens, and it never prints token values. Important distinction: Firebase's App Check SDK manages its own token cache in IndexedDB after a token is issued. The lab does not override or disable that SDK-managed persistence. Token values are never displayed or written to the test log.
 
 ## 1. Select the hosted challenge origin
 

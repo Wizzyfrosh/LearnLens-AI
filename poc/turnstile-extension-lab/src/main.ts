@@ -293,7 +293,7 @@ tokenButton.addEventListener("click", async () => {
     const result = await requestTurnstileAppCheckToken(appCheck, true);
     if (!result.token) throw new Error("Firebase returned an empty App Check token.");
     setText(tokenState, "PASS — Firebase returned an App Check token. Token value was not displayed.");
-    log("PASS — App Check token acquired. Token value was not printed or persisted.", "success");
+    log("PASS — App Check token acquired. Token value was not displayed or logged; Firebase SDK manages its own token cache.", "success");
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "The App Check challenge failed.";
     setText(tokenState, message);

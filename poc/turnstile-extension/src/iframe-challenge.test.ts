@@ -178,6 +178,28 @@ describe("Hosted Turnstile iframe presenter", () => {
     expect(h.overlay.removed).toBe(true);
   });
 
+
+  it("rejects site keys longer than Cloudflare's 32-character maximum", async () => {
+    const fakeWindow = new FakeWindow();
+    const fakeBody = new FakeElement();
+    const fakeDocument = {
+      body: fakeBody,
+      createElement: () => new FakeElement()
+    };
+    const presenter = new IframeTurnstilePresenter({
+      hostedPageUrl: "https://verify.example/turnstile/",
+      windowObject: fakeWindow as unknown as Window,
+      documentObject: fakeDocument as unknown as Document
+    });
+
+    await expect(presenter.getResponse({
+      siteKey: "A".repeat(33),
+      action: "learnlens_app_check",
+      cdata: "A".repeat(43)
+    })).rejects.toThrow("invalid");
+    expect(fakeBody.children).toHaveLength(0);
+  });
+
   it("rejects non-HTTPS, query-bearing or credential-bearing hosted page URLs", () => {
     const fakeWindow = new FakeWindow() as unknown as Window;
     const fakeDocument = { body: new FakeElement(), createElement: () => new FakeElement() } as unknown as Document;
