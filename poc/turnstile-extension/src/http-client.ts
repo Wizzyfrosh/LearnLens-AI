@@ -74,7 +74,7 @@ function readSession(value: unknown, nowMs: number): CreatedChallengeSession {
     typeof value.cdata !== "string" ||
     !/^[A-Za-z0-9_-]{16,255}$/.test(value.cdata) ||
     typeof value.action !== "string" ||
-    !/^[a-z][a-z0-9_]{2,63}$/.test(value.action) ||
+    !/^[a-z][a-z0-9_-]{0,31}$/.test(value.action) ||
     typeof value.appId !== "string" ||
     value.appId.length < 8 ||
     !Number.isSafeInteger(value.createdAtMs) ||
