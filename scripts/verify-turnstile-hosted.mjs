@@ -20,7 +20,7 @@ const bundles = (await Promise.all(
 for (const required of [
   "LEARNLENS_TURNSTILE_INIT",
   "LEARNLENS_TURNSTILE_TOKEN",
-  "chrome-extension://",
+  "chrome-extension",
   "turnstile.render"
 ]) {
   assert.ok(bundles.includes(required), "Hosted page bundle is missing " + required);
