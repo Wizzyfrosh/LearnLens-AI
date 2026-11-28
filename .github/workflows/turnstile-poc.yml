@@ -30,6 +30,10 @@ on:
       - "tests/firestore.rules.test.mjs"
       - ".github/workflows/turnstile-poc.yml"
 
+concurrency:
+  group: turnstile-poc-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -49,7 +53,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24.12.0
 
       - name: Install root dependencies
         run: npm install --no-audit --no-fund --legacy-peer-deps
