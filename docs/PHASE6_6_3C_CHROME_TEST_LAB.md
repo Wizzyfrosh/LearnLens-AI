@@ -119,3 +119,8 @@ Final workflow: [46133642749](https://github.com/Wizzyfrosh/LearnLens-AI/actions
 ## Final Node.js-aligned CI result
 
 [Run 46133642749 passed](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749) with Node.js 22 used for Functions install/build and emulator execution. All 82 automated tests passed, including the Auth + Functions + Firestore HTTP integration. The manual desktop Chrome test remains outstanding.
+
+
+## Final runtime split
+
+The final passing workflow [46133642749](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749) uses Node 24.12.0 for the root browser/Firebase SDK toolchain, Node 22.23.5 for Functions dependency installation/build, then Node 22.23.5 again for Functions Emulator runtime behavior. This matches the separate engine requirements instead of accepting npm engine warnings.
