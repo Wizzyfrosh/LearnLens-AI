@@ -103,3 +103,8 @@ It will:
 - All four cloud sync gates remain disabled.
 - Production extension version remains `0.1.0`.
 - PR #2 remains draft and unmerged.
+
+
+## Bootstrap transport note
+
+The bootstrap routes are plain HTTPS `onRequest` endpoints, not Firebase callables. The extension sends its Firebase ID token in the `Authorization` header; Firebase Admin verifies the token and its revocation status and checks the verified-email claim. The hosted Turnstile iframe never receives that ID token, the session ID or the one-time polling credential. The extension's exact origin is allowlisted by the server CORS policy; CORS is not treated as user authentication.
