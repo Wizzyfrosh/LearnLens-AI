@@ -84,5 +84,11 @@ describe("Turnstile hosted-page message contract", () => {
       version: TURNSTILE_MESSAGE_VERSION,
       requestId: "other"
     }, requestId)).toBeNull();
+    expect(parseTurnstileControlMessage({
+      type: "LEARNLENS_TURNSTILE_RESET",
+      version: TURNSTILE_MESSAGE_VERSION,
+      requestId,
+      pollCredential: "must-not-cross-the-page-boundary"
+    }, requestId)).toBeNull();
   });
 });
