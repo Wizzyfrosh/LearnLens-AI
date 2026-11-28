@@ -124,10 +124,24 @@ describe("ChallengeHttpClient", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("rejects insecure or path-bearing Functions base URLs", () => {
+  it("allows the Firebase Functions Emulator path only on localhost", async () => {
+    let url = "";
+    const client = new ChallengeHttpClient({
+      functionsBaseUrl: "http://127.0.0.1:5001/demo-learnlens/us-central1/",
+      getCurrentUser: () => user(),
+      fetchImpl: async (input) => {
+        url = String(input);
+        return jsonResponse(SESSION);
+      }
+    });
+    await client.createChallengeSession();
+    expect(url).toBe("http://127.0.0.1:5001/demo-learnlens/us-central1/createAppCheckChallengeSession");
+  });
+
+  it("rejects insecure or malformed Functions base URLs", () => {
     const valid = { getCurrentUser: () => user() };
     expect(() => new ChallengeHttpClient({ ...valid, functionsBaseUrl: "http://example.com" })).toThrow("HTTPS");
-    expect(() => new ChallengeHttpClient({ ...valid, functionsBaseUrl: "http://127.0.0.1:5001/demo-project/us-central1" })).toThrow("HTTPS");
+    expect(() => new ChallengeHttpClient({ ...valid, functionsBaseUrl: "http://127.0.0.1:5001/invalid" })).toThrow("emulator");
     expect(() => new ChallengeHttpClient({ ...valid, functionsBaseUrl: "https://example.com/path" })).toThrow("HTTPS");
     expect(() => new ChallengeHttpClient({ ...valid, functionsBaseUrl: "https://user:pass@example.com" })).toThrow("HTTPS");
   });
