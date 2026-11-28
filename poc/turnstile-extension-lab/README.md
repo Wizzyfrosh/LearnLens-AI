@@ -93,26 +93,61 @@ In Firebase:
 
 The lab uses the Firebase Auth SDK with in-memory persistence. A page reload signs the test account out. The manual Chrome lab requires a deployed HTTPS Functions endpoint; it does not connect Firebase Auth Emulator, so do not point this UI at a local Functions Emulator URL.
 
-## 6. Configure the test Functions environment
+## 6. Configure and deploy the test Functions environment
 
-Deploy the three bootstrap HTTPS endpoints from this POC branch to the dedicated test project:
-- `createAppCheckChallengeSession`
-- `completeAppCheckChallenge`
-- `claimAppCheckChallengeSession`
+Perform this only in the dedicated test Firebase project. Do not point these commands at the main LearnLens project.
 
-Set the required server parameters:
-- `APP_CHECK_CHALLENGE_APP_ID`: the test Firebase Web App ID.
-- `APP_CHECK_CHALLENGE_HOSTNAME`: the exact hosted page hostname, without scheme or path.
-- `APP_CHECK_CHALLENGE_EXTENSION_ORIGIN`: `chrome-extension://<test-extension-id>`.
-- `APP_CHECK_CHALLENGE_ACTION`: `learnlens_app_check` (or the exact action configured for the test widget).
-- `APP_CHECK_CHALLENGE_ENABLED`: enable only in this dedicated test project, after review.
-- `APP_CHECK_CHALLENGE_GLOBAL_BUDGET_ENABLED`: leave disabled initially; the budget's behavior is covered by emulator tests.
+From the repository root, select the test project:
 
-Set `TURNSTILE_SECRET` as a Firebase Functions secret. Never place it in the Vite build environment, extension manifest, lab page or Git repository.
+```powershell
+firebase use <TEST_PROJECT_ID>
+```
 
-Deploy the Firestore Rules and TTL/index configuration to the test project. Confirm TTL policies are active in that project; a successful local config validation does not deploy them.
+Create an untracked file at `functions/.env.<TEST_PROJECT_ID>` containing the test-only parameter values:
 
-The bootstrap endpoints authenticate the extension using its Firebase ID token in the Authorization bearer header. They verify the token and revocation status and require `email_verified === true`. Exact origin CORS is an additional browser boundary, not the authentication mechanism.
+```dotenv
+APP_CHECK_CHALLENGE_APP_ID=1:<TEST_NUMERIC_PROJECT_ID>:web:<TEST_WEB_APP_SUFFIX>
+APP_CHECK_CHALLENGE_HOSTNAME=verify.example.com
+APP_CHECK_CHALLENGE_EXTENSION_ORIGIN=chrome-extension://<TEST_EXTENSION_ID>
+APP_CHECK_CHALLENGE_ACTION=learnlens_app_check
+APP_CHECK_CHALLENGE_ENABLED=true
+APP_CHECK_CHALLENGE_GLOBAL_BUDGET_ENABLED=false
+```
+
+Replace every placeholder. The hostname is only the hosted page hostname—no scheme, port or path. The extension origin must exactly match the ID shown by `chrome://extensions`. Protect this file and do not commit it. Firebase's parameterized configuration loader reads `.env.<project-id>` from the `functions/` directory; otherwise the CLI prompts for parameter values during deployment. <https://firebase.google.com/docs/functions/config-env>
+
+Set the Cloudflare secret through Firebase Secret Manager:
+
+```powershell
+firebase functions:secrets:set TURNSTILE_SECRET --project <TEST_PROJECT_ID>
+```
+
+Paste only the Turnstile widget's **secret key** into the CLI prompt. Do not put it in the lab, Vite environment, manifest, source code or Git repository.
+
+Deploy Firestore Rules and index/TTL configuration to the test project:
+
+```powershell
+firebase deploy --only firestore --project <TEST_PROJECT_ID>
+```
+
+Then deploy only the three bootstrap HTTPS functions—not every export in `functions/src/index.ts`:
+
+```powershell
+firebase deploy --only functions:createAppCheckChallengeSession,functions:completeAppCheckChallenge,functions:claimAppCheckChallengeSession --project <TEST_PROJECT_ID>
+```
+
+Firebase CLI supports deploying individual named functions with the comma-separated `--only functions:<name>` syntax. <https://firebase.google.com/docs/functions/manage-functions>
+
+After deployment, confirm in Firebase Console that:
+- all three HTTPS functions are deployed in the intended region;
+- `APP_CHECK_CHALLENGE_ENABLED` is true only in this dedicated test project;
+- `APP_CHECK_CHALLENGE_GLOBAL_BUDGET_ENABLED` remains false for the first manual test;
+- `TURNSTILE_SECRET` is bound to the completion function;
+- Firestore TTL policies for challenge sessions, per-user rate limits and global budget are active.
+
+A successful CI TTL configuration check does not deploy TTL policies to Firebase. The emulator integration in CI uses fake local secrets and does not contact Cloudflare.
+
+The bootstrap endpoints authenticate the extension using its Firebase ID token in the Authorization bearer header. Firebase Admin verifies the token and revocation status and requires `email_verified === true`. Exact origin CORS is an additional browser boundary, not the authentication mechanism.
 
 ## 7. Run the lab in Chrome
 
