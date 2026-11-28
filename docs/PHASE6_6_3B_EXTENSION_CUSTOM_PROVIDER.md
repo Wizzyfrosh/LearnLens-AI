@@ -50,7 +50,7 @@ File: `poc/turnstile-extension/src/iframe-challenge.ts`
 - Creates a dialog overlay in the foreground extension UI (side panel) and loads the hosted HTTPS page in an iframe. It must not run in the background service worker or offscreen document because those contexts do not have a DOM.
 - Validates the exact HTTPS origin and `event.source === iframe.contentWindow`.
 - Requires protocol version 1 and the active request UUID.
-- Accepts public Turnstile site keys of 16–32 allowed characters; key contents are passed through unchanged.
+- Accepts public Turnstile site keys of 16–256 allowed characters; key contents are passed through unchanged.
 - Rejects extra fields, invalid token types and tokens over 2 KB.
 - Sends only the public site key, action, cdata and request ID to the hosted page.
 - The session ID, Firebase UID, ID token and one-time poll credential remain in the extension process.
