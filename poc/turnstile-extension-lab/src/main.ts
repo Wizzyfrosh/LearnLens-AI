@@ -12,7 +12,7 @@ import type { AppCheck } from "firebase/app-check";
 import {
   initializeTurnstileAppCheck,
   requestTurnstileAppCheckToken
-} from "../turnstile-extension/src/firebase-integration";
+} from "../../turnstile-extension/src/firebase-integration";
 import "./style.css";
 
 interface LabConfig {
@@ -28,37 +28,29 @@ interface LabConfig {
 const compiledHostedOrigin = import.meta.env.VITE_HOSTED_CHALLENGE_ORIGIN || "";
 const extensionOrigin = chrome.runtime.getURL("").replace(/\/$/, "");
 
-const configForm = document.getElementById("config-form");
-const authForm = document.getElementById("auth-form");
-const connectButton = document.getElementById("connect-button");
-const signInButton = document.getElementById("sign-in-button");
-const signOutButton = document.getElementById("sign-out-button");
-const tokenButton = document.getElementById("token-button");
-const clearLogButton = document.getElementById("clear-log");
-const logList = document.getElementById("log");
-const extensionOriginElement = document.getElementById("extension-origin");
-const connectionState = document.getElementById("connection-state");
-const authState = document.getElementById("auth-state");
-const tokenState = document.getElementById("token-state");
-
-if (
-  !(configForm instanceof HTMLFormElement) ||
-  !(authForm instanceof HTMLFormElement) ||
-  !(connectButton instanceof HTMLButtonElement) ||
-  !(signInButton instanceof HTMLButtonElement) ||
-  !(signOutButton instanceof HTMLButtonElement) ||
-  !(tokenButton instanceof HTMLButtonElement) ||
-  !(clearLogButton instanceof HTMLButtonElement) ||
-  !(logList instanceof HTMLOListElement) ||
-  !(extensionOriginElement instanceof HTMLElement) ||
-  !(connectionState instanceof HTMLElement) ||
-  !(authState instanceof HTMLElement) ||
-  !(tokenState instanceof HTMLElement)
-) {
-  throw new Error("The Turnstile lab page is incomplete.");
+function requireElement<T extends HTMLElement>(
+  id: string,
+  elementType: { new (): T }
+): T {
+  const element = document.getElementById(id);
+  if (!(element instanceof elementType)) {
+    throw new Error(`The Turnstile lab element "${id}" is missing or has the wrong type.`);
+  }
+  return element;
 }
 
-const logElement = logList as HTMLOListElement;
+const configForm = requireElement("config-form", HTMLFormElement);
+const authForm = requireElement("auth-form", HTMLFormElement);
+const connectButton = requireElement("connect-button", HTMLButtonElement);
+const signInButton = requireElement("sign-in-button", HTMLButtonElement);
+const signOutButton = requireElement("sign-out-button", HTMLButtonElement);
+const tokenButton = requireElement("token-button", HTMLButtonElement);
+const clearLogButton = requireElement("clear-log", HTMLButtonElement);
+const logElement = requireElement("log", HTMLOListElement);
+const extensionOriginElement = requireElement("extension-origin", HTMLElement);
+const connectionState = requireElement("connection-state", HTMLElement);
+const authState = requireElement("auth-state", HTMLElement);
+const tokenState = requireElement("token-state", HTMLElement);
 extensionOriginElement.textContent = extensionOrigin;
 
 let firebaseApp: FirebaseApp | null = null;
