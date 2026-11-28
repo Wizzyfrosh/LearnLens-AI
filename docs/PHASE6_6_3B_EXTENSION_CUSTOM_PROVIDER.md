@@ -239,3 +239,6 @@ No live Cloudflare request, live Firebase token mint, deployed endpoint, or desk
 ## App Check token persistence note
 
 Firebase Auth uses `inMemoryPersistence` in the test lab. Firebase App Check has a separate SDK-managed cache: the Web SDK checks memory and then IndexedDB for a valid token. That IndexedDB persistence is expected and is not controlled by this custom coordinator. The lab never displays or logs token values, passwords, Firebase ID tokens or one-time challenge credentials. See the [Firebase App Check JavaScript reference](https://firebase.google.com/docs/reference/js/app-check).
+
+
+The separate unpacked Chrome test lab is documented in `docs/PHASE6_6_3C_CHROME_TEST_LAB.md`. It is not the product extension and has not yet been run by the user in desktop Chrome.
