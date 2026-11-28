@@ -82,15 +82,15 @@ Do not deploy or connect the production extension yet:
 
 ## Next implementation slice
 
-**Phase 6.6.3B — Extension iframe parent and challenge coordinator.**
+**Phase 6.6.3B — Extension iframe parent and challenge coordinator — implemented and CI-verified.**
 
-It will:
+The isolated implementation now:
 1. Create the challenge session from the extension's existing authenticated Firebase Auth context.
 2. Keep session ID and polling credential in extension memory only.
 3. Open an extension-owned challenge page with an iframe to the hosted HTTPS page.
 4. Transfer only site key, action, cdata and request ID to the hosted page.
 5. Validate the iframe's origin, source window, message schema and request ID.
-6. Call the Firebase completion and one-time claim callables from the extension using Firebase SDK callables, which automatically attach Auth credentials.
+6. Call the authenticated Firebase HTTPS completion and one-time claim endpoints using direct `fetch` with the Firebase ID token in the Authorization bearer header. Do not use `httpsCallable` inside `CustomProvider.getToken()` because the callable SDK itself attempts App Check token retrieval.
 7. Return the minted App Check token to the Firebase CustomProvider.
 8. Keep automatic token refresh disabled until manual challenge acquisition, retry and expiry paths have passed tests.
 
@@ -108,3 +108,8 @@ It will:
 ## Bootstrap transport note
 
 The bootstrap routes are plain HTTPS `onRequest` endpoints, not Firebase callables. The extension sends its Firebase ID token in the `Authorization` header; Firebase Admin verifies the token and its revocation status and checks the verified-email claim. The hosted Turnstile iframe never receives that ID token, the session ID or the one-time polling credential. The extension's exact origin is allowlisted by the server CORS policy; CORS is not treated as user authentication.
+
+
+## Integrated CI verification
+
+[CI run 46131641231 completed successfully](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46131641231). It verified the Functions build, TTL configuration, hosted page typecheck/protocol tests/build/static bundle, extension coordinator typecheck and tests, 11 Firestore Rules tests, 8 Turnstile validator tests and 37 Firestore Emulator tests (challenge sessions, authenticated service, rate limits, global budget and HTTP boundary). No live Cloudflare or Firebase deployment or desktop Chrome test occurred.
