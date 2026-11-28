@@ -34,7 +34,7 @@ The token is not logged or persisted in Firestore. The App ID comes from the ser
 
 The prototype requests a 30-minute token lifetime, the minimum supported by the Firebase Admin App Check custom-token API. The returned `ttlMillis` is validated and used to calculate `expireTimeMillis`.
 
-This is a deliberate conservative choice for a POC. Shorter than 30 minutes is not supported by this API. A short token lifetime means the custom provider must perform challenge acquisition more frequently; the client integration is not implemented yet.
+This is a deliberate conservative choice for a POC. Shorter than 30 minutes is not supported by this API. A short token lifetime means the custom provider must obtain a fresh token when the SDK requests one. The isolated client coordinator exists, but automatic refresh remains disabled until foreground Chrome testing passes.
 
 Reference:
 - https://firebase.google.com/docs/reference/admin/node/firebase-admin.app-check.appchecktokenoptions
