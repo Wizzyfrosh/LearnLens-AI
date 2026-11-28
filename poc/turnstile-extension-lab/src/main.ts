@@ -121,27 +121,34 @@ function parseConfiguration(): LabConfig {
 
   if (
     config.siteKey.length < 16 ||
-    config.siteKey.length > 32 ||
+    config.siteKey.length > 256 ||
     !/^[A-Za-z0-9_-]+$/.test(config.siteKey)
   ) {
-    throw new Error("The Turnstile site key must be a valid 16–32 character public test key.");
+    throw new Error("The Turnstile site key must be a valid public test key.");
   }
 
   const functionsUrl = new URL(config.functionsBaseUrl);
-  const isLoopback = functionsUrl.hostname === "localhost" || functionsUrl.hostname === "127.0.0.1";
+  const isLoopback =
+    (functionsUrl.hostname === "localhost" || functionsUrl.hostname === "127.0.0.1") &&
+    functionsUrl.port === "5001" &&
+    functionsUrl.protocol === "http:";
   const normalizedPath = functionsUrl.pathname.replace(/\/$/, "");
   const validEmulatorPath =
-    /^\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/[a-z]+-[a-z0-9-]+$/.test(normalizedPath);
+    /^\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/us-[a-z0-9-]+$/.test(normalizedPath);
+  const isFirebaseFunctionsHost =
+    functionsUrl.protocol === "https:" &&
+    functionsUrl.hostname.endsWith(".cloudfunctions.net") &&
+    functionsUrl.hostname !== "cloudfunctions.net" &&
+    (functionsUrl.port === "" || functionsUrl.port === "443") &&
+    normalizedPath === "";
   if (
     functionsUrl.username ||
     functionsUrl.password ||
     functionsUrl.search ||
     functionsUrl.hash ||
-    (functionsUrl.protocol === "https:"
-      ? normalizedPath !== ""
-      : !(isLoopback && functionsUrl.protocol === "http:" && validEmulatorPath))
+    !(isFirebaseFunctionsHost || (isLoopback && validEmulatorPath))
   ) {
-    throw new Error("Use an HTTPS Functions origin or a loopback Emulator URL with /<project-id>/<region>.");
+    throw new Error("Use a Firebase Cloud Functions HTTPS host or a valid loopback Emulator URL with /<project-id>/<region>.");
   }
 
   return config;
