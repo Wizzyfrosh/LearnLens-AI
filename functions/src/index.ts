@@ -131,6 +131,13 @@ async function handleChallengeHttpRequest(
   response: Response,
   handler: (uid: string) => Promise<unknown>
 ): Promise<void> {
+  // These endpoints return single-use session credentials and App Check tokens.
+  // Ensure browsers, shared proxies and intermediary caches never retain them.
+  response.setHeader("Cache-Control", "no-store, max-age=0");
+  response.setHeader("Pragma", "no-cache");
+  response.setHeader("X-Content-Type-Options", "nosniff");
+  response.setHeader("Referrer-Policy", "no-referrer");
+
   const corsHeaders = getChallengeCorsHeaders(
     request.headers.origin,
     challengeExtensionOrigin.value()
