@@ -1,7 +1,6 @@
 import { CustomProvider, type AppCheckToken } from "firebase/app-check";
 import type {
   AppCheckChallengeToken,
-  CreatedChallengeSession,
   ChallengeHttpClient
 } from "./types";
 import type { TurnstileChallengePresenter } from "./iframe-challenge";
@@ -19,22 +18,6 @@ export interface CustomProviderCoordinatorOptions {
   >;
   challengePresenter: TurnstileChallengePresenter;
   siteKey: string;
-}
-
-export interface ChallengeHttpClient {
-  createChallengeSession(): Promise<CreatedChallengeSession>;
-  completeChallenge(sessionId: string, responseToken: string): Promise<void>;
-  claimAppCheckToken(sessionId: string, pollCredential: string): Promise<AppCheckChallengeToken>;
-}
-
-export interface CreatedChallengeSession {
-  sessionId: string;
-  pollCredential: string;
-  cdata: string;
-  action: string;
-  appId: string;
-  createdAtMs: number;
-  expiresAtMs: number;
 }
 
 /**
