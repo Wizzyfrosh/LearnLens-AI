@@ -88,7 +88,7 @@ In Firebase:
 4. Create a dedicated test user and verify its email address.
 5. Keep any production users and project separate from this lab.
 
-The lab uses the Firebase Auth SDK with in-memory persistence. A page reload signs the test account out.
+The lab uses the Firebase Auth SDK with in-memory persistence. A page reload signs the test account out. The manual Chrome lab requires a deployed HTTPS Functions endpoint; it does not connect Firebase Auth Emulator, so do not point this UI at a local Functions Emulator URL.
 
 ## 6. Configure the test Functions environment
 
