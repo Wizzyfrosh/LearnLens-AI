@@ -1,6 +1,6 @@
 # Phase 6.6.3C — Isolated Chrome CustomProvider test lab
 
-**Status:** Implemented and CI-verified — [run 46133462394 passed](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133462394)  
+**Status:** Implemented and CI-verified — [run 46133642749 passed](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749)  
 **Branch:** `phase-6-6-2-turnstile-custom-provider-poc`  
 **PR:** #2 (draft; not merged)
 
@@ -79,7 +79,7 @@ The manual procedure has not been run in desktop Chrome yet. No test Firebase pr
 
 ## CI verification
 
-[Run 46133462394 passed](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133264121) at executable commit `21ade71a94f01db1be8ca55b97ae40974f988e10`. The current branch changes after that code commit are documentation-only.
+[Run 46133642749 passed](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749) at executable commit `1d67389366ddbce7d5e1279b1688447f9048dd63`. The current branch changes after that code commit are documentation-only.
 
 Verified:
 - Functions TypeScript build and Firestore TTL configuration (Node 24 build stage; Functions emulator runs on Node 22).
@@ -113,4 +113,9 @@ This does not constitute a real Cloudflare Siteverify call, a live Firebase Admi
 - Product extension manifest/version remains unchanged at 0.1.0.
 
 
-Final workflow: [46133462394](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133462394). It uses Node 24 for the extension/browser toolchain and switches to Node 22 for Functions emulator behavior, matching the Functions runtime declaration. The source commit exercised by this run is b7b009df2ae65ee331deafc7a0a329b91b5588f1; the branch updates after it are documentation-only.
+Final workflow: [46133642749](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749). It uses Node 24 for the extension/browser toolchain and switches to Node 22 for Functions emulator behavior, matching the Functions runtime declaration. The source commit exercised by this run is 1d67389366ddbce7d5e1279b1688447f9048dd63; the branch updates after it are documentation-only.
+
+
+## Final Node.js-aligned CI result
+
+[Run 46133642749 passed](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749) with Node.js 22 used for Functions install/build and emulator execution. All 82 automated tests passed, including the Auth + Functions + Firestore HTTP integration. The manual desktop Chrome test remains outstanding.
