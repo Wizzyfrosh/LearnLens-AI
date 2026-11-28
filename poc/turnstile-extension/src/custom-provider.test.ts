@@ -39,7 +39,7 @@ function providerHarness() {
 
 describe("LearnLens Turnstile CustomProvider coordinator", () => {
   it("returns the Firebase custom-provider token shape in the correct security order", async () => {
-    const { provider, client, presenter } = providerHarness();
+    const { getToken, client, presenter } = providerHarness();
     const result = await getToken();
 
     expect(result.token).toBe("firebase-app-check-token");
@@ -55,7 +55,7 @@ describe("LearnLens Turnstile CustomProvider coordinator", () => {
   });
 
   it("coalesces concurrent getToken calls into one challenge flow", async () => {
-    const { provider, client, presenter } = providerHarness();
+    const { getToken, client, presenter } = providerHarness();
     let release: ((value: string) => void) | undefined;
     presenter.getResponse = vi.fn(() => new Promise<string>((resolve) => {
       release = resolve;
@@ -85,7 +85,7 @@ describe("LearnLens Turnstile CustomProvider coordinator", () => {
   });
 
   it("does not retain its own token cache between completed provider invocations", async () => {
-    const { provider, client } = providerHarness();
+    const { getToken, client } = providerHarness();
     await getToken();
     await getToken();
     expect(client.createChallengeSession).toHaveBeenCalledTimes(2);
@@ -93,7 +93,7 @@ describe("LearnLens Turnstile CustomProvider coordinator", () => {
   });
 
   it("rejects an invalid provider token response", async () => {
-    const { provider, client } = providerHarness();
+    const { getToken, client } = providerHarness();
     client.claimAppCheckToken = vi.fn(async () => ({
       token: "",
       expireTimeMillis: Date.now() + 30 * 60 * 1000
