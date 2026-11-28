@@ -6,7 +6,7 @@
 
 ## Decision
 
-Do not add a Cloudflare Worker or a single global Durable Object to the current Firebase callable bootstrap path yet.
+Do not add a Cloudflare Worker or a single global Durable Object to the current Firebase HTTPS bootstrap path yet.
 
 Keep Firebase callable functions as the only challenge/token endpoints for the current POC. Retain the transactional per-UID limits already implemented. Add a bounded, sharded Firestore global budget before any live enablement. The first implementation is now in the isolated POC branch.
 
@@ -113,3 +113,8 @@ References:
 - The global budget is checked by create, complete and token-issuance services only when the separate server parameter is explicitly true.
 - Both bootstrap switches default to false; this budget does not enable challenge callables.
 - A random shard can fill early and reject requests before all other shards are exhausted. That conservative fail-closed trade-off is accepted for the low-volume POC.
+
+
+## Bootstrap transport note
+
+The bootstrap routes are plain HTTPS `onRequest` endpoints, not Firebase callables. The extension sends its Firebase ID token in the `Authorization` header; Firebase Admin verifies the token and its revocation status and checks the verified-email claim. The hosted Turnstile iframe never receives that ID token, the session ID or the one-time polling credential. The extension's exact origin is allowlisted by the server CORS policy; CORS is not treated as user authentication.
