@@ -22,7 +22,10 @@
     "poc:turnstile-extension:typecheck": "tsc --project poc/turnstile-extension/tsconfig.json --pretty",
     "poc:turnstile-extension:test": "vitest run poc/turnstile-extension/src",
     "poc:turnstile-extension:verify": "npm run poc:turnstile-extension:typecheck && npm run poc:turnstile-extension:test",
-    "test:challenge-http-emulator": "firebase emulators:exec --only auth,firestore,functions --project demo-learnlens-emulator \"node functions/tests/challenge-http-emulator.integration.mjs\""
+    "test:challenge-http-emulator": "firebase emulators:exec --only auth,firestore,functions --project demo-learnlens-emulator \"node functions/tests/challenge-http-emulator.integration.mjs\"",
+    "poc:turnstile-lab:typecheck": "tsc --project poc/turnstile-extension-lab/tsconfig.json --pretty",
+    "poc:turnstile-lab:build": "vite build --config poc/turnstile-extension-lab/vite.config.ts && node scripts/write-turnstile-lab-manifest.mjs",
+    "poc:turnstile-lab:verify": "npm run poc:turnstile-lab:typecheck && npm run poc:turnstile-lab:build && node scripts/verify-turnstile-lab.mjs"
   },
   "dependencies": {
     "firebase": "^13.0.0",
