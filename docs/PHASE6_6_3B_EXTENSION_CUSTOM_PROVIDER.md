@@ -139,3 +139,56 @@ The run was executed at commit `aba2553abbfc35e49fddfe4235114eff21211422`. The b
 The successful run proves compilation, static bundle validation, message-contract/unit tests, Firestore Rules tests and emulator-backed session/service/rate-limit/global-budget/HTTP boundary behavior. It does not prove a real Turnstile widget, live Firebase Admin App Check token issuance, deployed CORS configuration, deployed TTL policies, extension iframe CSP or real Chrome runtime behavior.
 
 The emulator client accepts local HTTP only for loopback hosts with the exact Functions Emulator base shape `/<project-id>/<region>`; other HTTP hosts and malformed paths are rejected. Production endpoints must use HTTPS.
+
+
+## Auth + Functions + Firestore Emulator integration
+
+An additional integration harness exercises the real HTTP handlers with a local Firebase Emulator Suite:
+
+- Authentication emulator issues signed-in test ID tokens.
+- Functions emulator runs the deployed-shape HTTPS onRequest handlers.
+- Firestore emulator stores the generated challenge session.
+- Admin SDK verifies the test ID tokens with revocation checking enabled.
+
+The test verifies:
+1. Missing bearer token is rejected.
+2. An unapproved Origin is rejected and not reflected by CORS.
+3. A signed-in user whose email is not verified is rejected.
+4. A verified user can create a session through the actual HTTP endpoint.
+5. The session is persisted under that user's UID.
+6. Firestore stores only the polling-credential hash, never the raw credential.
+7. Another verified user cannot complete a session they do not own.
+8. Empty/malformed Turnstile responses are rejected before Siteverify.
+9. A pending challenge cannot be claimed for an App Check token.
+10. OPTIONS preflight returns exact-origin CORS and Cache-Control: no-store.
+
+This integration does not simulate a successful Turnstile verification or App Check token mint. It deliberately stops before the Cloudflare Siteverify request and Firebase Admin createToken call. The previous unit tests cover those services with injected fake dependencies. No live service is contacted.
+
+### Run locally (Windows PowerShell)
+
+Create the project-scoped Functions emulator configuration:
+
+~~~powershell
+@'
+APP_CHECK_CHALLENGE_APP_ID=1:123456789:web:learnlens-emulator
+APP_CHECK_CHALLENGE_HOSTNAME=verify.example.test
+APP_CHECK_CHALLENGE_ACTION=learnlens_app_check
+APP_CHECK_CHALLENGE_EXTENSION_ORIGIN=chrome-extension://abcdefghijklmnopabcdefghijklmnop
+APP_CHECK_CHALLENGE_ENABLED=true
+APP_CHECK_CHALLENGE_GLOBAL_BUDGET_ENABLED=false
+'@ | Set-Content functions/.env.demo-learnlens-emulator
+
+@'
+TURNSTILE_SECRET=local-emulator-only-not-a-real-secret
+'@ | Set-Content functions/.secret.local
+
+npm run test:challenge-http-emulator
+~~~
+
+Both files are local-only and ignored by Git. The secret value above is a dummy used only to satisfy the emulator secret binding; it is not a valid Cloudflare credential. The CLI starts only Auth, Functions and Firestore emulators and stops them when the test exits.
+
+The integration script creates temporary Auth Emulator accounts and deletes them in its cleanup. Challenge documents are stored only in the disposable Firestore Emulator instance.
+
+### CI
+
+The same script runs in GitHub Actions using dynamically-created .env.demo-learnlens-emulator and .secret.local files. The workflow removes these files when the job finishes. The emulator project ID is demo-learnlens-emulator and cannot access a live Firebase project.
