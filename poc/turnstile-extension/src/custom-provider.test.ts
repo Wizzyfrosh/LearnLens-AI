@@ -65,7 +65,7 @@ describe("LearnLens Turnstile CustomProvider coordinator", () => {
     const second = getToken();
     await Promise.resolve();
     expect(client.createChallengeSession).toHaveBeenCalledOnce();
-    expect(presenter.getResponse).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(presenter.getResponse).toHaveBeenCalledOnce());
     release?.("turnstile-response-token");
 
     const [a, b] = await Promise.all([first, second]);
