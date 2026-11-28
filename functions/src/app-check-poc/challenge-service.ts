@@ -1,6 +1,7 @@
 import type { Firestore } from "firebase-admin/firestore";
 import { SyncBackendError } from "../errors";
 import { enforceChallengeRateLimit } from "./challenge-rate-limit";
+import { consumeGlobalChallengeBudget } from "./global-challenge-budget";
 import {
   completeChallengeSession,
   consumeChallengeSession,
@@ -40,9 +41,11 @@ export async function createAuthenticatedChallengeSession(
   uid: string,
   config: Pick<ChallengeServerConfig, "appId" | "action">,
   database: Firestore,
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  globalBudgetEnabled = false
 ) {
   await enforceChallengeRateLimit("create", uid, database, nowMs);
+  if (globalBudgetEnabled) await consumeGlobalChallengeBudget(database, { nowMs });
   return createChallengeSession(uid, config.appId, config.action, database, nowMs);
 }
 
@@ -56,7 +59,8 @@ export async function completeAuthenticatedChallengeSession(
   config: ChallengeServerConfig,
   database: Firestore,
   nowMs = Date.now(),
-  fetchImpl?: typeof fetch
+  fetchImpl?: typeof fetch,
+  globalBudgetEnabled = false
 ): Promise<{ verified: true; expiresAtMs: number }> {
   if (typeof uid !== "string" || uid.length === 0 || uid.length > 128) {
     throw new SyncBackendError("unauthenticated", "Sign in before completing the security challenge.");
@@ -90,6 +94,8 @@ export async function completeAuthenticatedChallengeSession(
   ) {
     throw new SyncBackendError("failed-precondition", "The challenge session configuration is invalid.");
   }
+
+  if (globalBudgetEnabled) await consumeGlobalChallengeBudget(database, { nowMs });
 
   const verified = await verifyTurnstileResponse(input.responseToken, {
     secret: config.secret,
@@ -135,7 +141,8 @@ export async function issueAuthenticatedAppCheckToken(
   expectedAction: string,
   tokenIssuer: AppCheckTokenIssuer,
   database: Firestore,
-  nowMs = Date.now()
+  nowMs = Date.now(),
+  globalBudgetEnabled = false
 ): Promise<{ token: string; expireTimeMillis: number }> {
   if (typeof uid !== "string" || uid.length === 0 || uid.length > 128) {
     throw new SyncBackendError("unauthenticated", "Sign in before requesting an App Check token.");
@@ -165,6 +172,8 @@ export async function issueAuthenticatedAppCheckToken(
   if (context.appId !== expectedAppId || context.action !== expectedAction) {
     throw new SyncBackendError("failed-precondition", "The challenge session does not match the configured Firebase app.");
   }
+
+  if (globalBudgetEnabled) await consumeGlobalChallengeBudget(database, { nowMs });
 
   const consumed = await consumeChallengeSession(
     uid,
