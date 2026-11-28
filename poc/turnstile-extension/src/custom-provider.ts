@@ -1,8 +1,5 @@
 import { CustomProvider, type AppCheckToken } from "firebase/app-check";
-import type {
-  AppCheckChallengeToken,
-  ChallengeHttpClient
-} from "./types";
+import type { ChallengeHttpClient } from "./types";
 import type { TurnstileChallengePresenter } from "./iframe-challenge";
 
 export interface CurrentFirebaseUser {
