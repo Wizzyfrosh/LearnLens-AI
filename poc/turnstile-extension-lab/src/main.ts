@@ -65,6 +65,7 @@ let firebaseApp: FirebaseApp | null = null;
 let firebaseAuth: Auth | null = null;
 let appCheck: AppCheck | null = null;
 let activeConfig: LabConfig | null = null;
+let stopAuthObserver: (() => void) | null = null;
 
 function setText(element: HTMLElement, value: string): void {
   element.textContent = value;
@@ -153,9 +154,8 @@ function endpointPermissionPattern(functionsBaseUrl: string): string {
 
 async function requestEndpointPermission(functionsBaseUrl: string): Promise<void> {
   const pattern = endpointPermissionPattern(functionsBaseUrl);
-  const alreadyGranted = await chrome.permissions.contains({ origins: [pattern] });
-  if (alreadyGranted) return;
-
+  // Call permissions.request directly from the Connect click handler, before
+  // any asynchronous work, so Chrome sees a user gesture.
   const granted = await chrome.permissions.request({ origins: [pattern] });
   if (!granted) {
     throw new Error("Chrome did not grant access to the configured Firebase Functions host.");
@@ -192,9 +192,13 @@ configForm.addEventListener("submit", async (event) => {
     // declares this as an optional host permission, so Chrome prompts here.
     await requestEndpointPermission(config.functionsBaseUrl);
 
-    const existing = firebaseApp;
-    if (existing && firebaseAuth) {
+    stopAuthObserver?.();
+    if (firebaseApp && firebaseAuth) {
       await signOut(firebaseAuth).catch(() => undefined);
+      const oldApp = firebaseApp;
+      firebaseApp = null;
+      firebaseAuth = null;
+      await (await import("firebase/app")).deleteApp(oldApp);
     }
 
     firebaseApp = initializeApp({
@@ -207,6 +211,7 @@ configForm.addEventListener("submit", async (event) => {
     firebaseAuth = getAuth(firebaseApp);
     // Test credentials and the Auth session are memory-only in this isolated lab.
     await setPersistence(firebaseAuth, inMemoryPersistence);
+    stopAuthObserver = onAuthStateChanged(firebaseAuth, updateAuthUi);
 
     activeConfig = config;
     appCheck = null;
@@ -301,10 +306,6 @@ tokenButton.addEventListener("click", async () => {
 });
 
 clearLogButton.addEventListener("click", () => logElement.replaceChildren());
-
-onAuthStateChanged(getAuth(), (user) => {
-  updateAuthUi(user);
-});
 
 setText(extensionOriginElement, extensionOrigin);
 log("Lab ready. Use only a dedicated non-production Firebase project and test account.", "info");
