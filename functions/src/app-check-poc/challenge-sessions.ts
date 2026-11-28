@@ -95,7 +95,7 @@ function parseSession(value: unknown): ChallengeSessionDocument {
     data.appId.length < 8 ||
     data.appId.length > 256 ||
     typeof data.action !== "string" ||
-    !/^[a-z][a-z0-9_]{2,63}$/.test(data.action) ||
+    !/^[a-z][a-z0-9_-]{0,31}$/.test(data.action) ||
     typeof data.cdata !== "string" ||
     !CDATA_PATTERN.test(data.cdata) ||
     typeof data.pollCredentialHash !== "string" ||
@@ -128,7 +128,7 @@ export async function createChallengeSession(
   if (typeof appId !== "string" || appId.length < 8 || appId.length > 256) {
     throw new SyncBackendError("failed-precondition", "The LearnLens Firebase App ID is not configured.");
   }
-  if (typeof action !== "string" || !/^[a-z][a-z0-9_]{2,63}$/.test(action)) {
+  if (typeof action !== "string" || !/^[a-z][a-z0-9_-]{0,31}$/.test(action)) {
     throw new SyncBackendError("failed-precondition", "The challenge action is not configured.");
   }
 
