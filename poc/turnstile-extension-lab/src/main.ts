@@ -219,7 +219,7 @@ configForm.addEventListener("submit", async (event) => {
     setText(authState, "Sign in with a verified test account.");
     setText(tokenState, "App Check is not initialized yet.");
     log("Firebase configuration accepted. The exact Functions host permission is granted.", "success");
-    log("Configuration and auth persistence remain in memory; no storage write was made.", "info");
+    log("Configuration and Firebase Auth use in-memory handling. The App Check SDK manages its own token cache after issuance.", "info");
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "Could not connect to the test project.";
     setText(connectionState, "Connection failed");
