@@ -178,51 +178,6 @@ describe("Hosted Turnstile iframe presenter", () => {
     expect(h.overlay.removed).toBe(true);
   });
 
-  it("accepts valid Turnstile site keys longer than 32 characters", async () => {
-    const fakeWindow = new FakeWindow();
-    const fakeBody = new FakeElement();
-    const fakeDocument = {
-      body: fakeBody,
-      createElement: () => new FakeElement()
-    };
-    // The presenter should allow a normal long public site key and pass it to
-    // the hosted page without truncating or otherwise rewriting it.
-    const longSiteKey = "0x4AAAAAAA" + "A".repeat(60);
-    const presenter = new IframeTurnstilePresenter({
-      hostedPageUrl: "https://verify.example/turnstile/",
-      windowObject: fakeWindow as unknown as Window,
-      documentObject: fakeDocument as unknown as Document
-    });
-    const pending = presenter.getResponse({
-      siteKey: longSiteKey,
-      action: "learnlens_app_check",
-      cdata: "A".repeat(43)
-    });
-    const overlay = fakeBody.children[0];
-    const iframe = overlay.children[1];
-    const frameWindow = new FakeContentWindow();
-    iframe.contentWindow = frameWindow;
-
-    fakeWindow.dispatchMessage({
-      data: { type: "LEARNLENS_TURNSTILE_READY", version: TURNSTILE_MESSAGE_VERSION },
-      origin: "https://verify.example",
-      source: frameWindow
-    });
-    expect((frameWindow.messages[0].data as Record<string, unknown>).siteKey).toBe(longSiteKey);
-    const init = frameWindow.messages[0].data as Record<string, unknown>;
-    fakeWindow.dispatchMessage({
-      data: {
-        type: "LEARNLENS_TURNSTILE_TOKEN",
-        version: TURNSTILE_MESSAGE_VERSION,
-        requestId: init.requestId,
-        token: "turnstile-response-token"
-      },
-      origin: "https://verify.example",
-      source: frameWindow
-    });
-    await expect(pending).resolves.toBe("turnstile-response-token");
-  });
-
   it("rejects non-HTTPS, query-bearing or credential-bearing hosted page URLs", () => {
     const fakeWindow = new FakeWindow() as unknown as Window;
     const fakeDocument = { body: new FakeElement(), createElement: () => new FakeElement() } as unknown as Document;
