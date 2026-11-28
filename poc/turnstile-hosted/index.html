@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="color-scheme" content="light" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data: https://challenges.cloudflare.com; object-src 'none'; base-uri 'none'; form-action 'none'" />
+    <title>LearnLens security verification</title>
+    <link rel="stylesheet" href="/src/style.css" />
+    <script
+      src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+      async
+      defer
+      data-turnstile-script
+    ></script>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="verification-card" aria-labelledby="page-title">
+        <div class="brand-mark" aria-hidden="true">LL</div>
+        <p class="eyebrow">LEARNLENS AI</p>
+        <h1 id="page-title">Security verification</h1>
+        <p id="status" class="status" role="status" aria-live="polite">
+          Waiting for a secure connection from LearnLens…
+        </p>
+        <div id="turnstile-widget" class="widget" aria-label="Cloudflare security challenge"></div>
+        <p class="privacy-note">
+          This check helps protect the security of your LearnLens session.
+          Your account credentials are not shared with this page.
+        </p>
+      </section>
+      <footer>LearnLens AI security check</footer>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
