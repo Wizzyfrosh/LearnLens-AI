@@ -1,4 +1,4 @@
-import { initializeApp, type FirebaseApp } from "firebase/app";
+import { deleteApp, initializeApp, type FirebaseApp } from "firebase/app";
 import {
   getAuth,
   inMemoryPersistence,
@@ -198,7 +198,7 @@ configForm.addEventListener("submit", async (event) => {
       const oldApp = firebaseApp;
       firebaseApp = null;
       firebaseAuth = null;
-      await (await import("firebase/app")).deleteApp(oldApp);
+      await deleteApp(oldApp);
     }
 
     firebaseApp = initializeApp({
