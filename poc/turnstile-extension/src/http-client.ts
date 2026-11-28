@@ -60,7 +60,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function readSession(value: unknown): CreatedChallengeSession {
+function readSession(value: unknown, nowMs: number): CreatedChallengeSession {
   if (!isRecord(value)) throw new Error("Firebase returned an invalid challenge session.");
   const keys = ["sessionId", "pollCredential", "cdata", "action", "appId", "createdAtMs", "expiresAtMs"];
   if (
@@ -79,7 +79,8 @@ function readSession(value: unknown): CreatedChallengeSession {
     value.appId.length < 8 ||
     !Number.isSafeInteger(value.createdAtMs) ||
     !Number.isSafeInteger(value.expiresAtMs) ||
-    (value.expiresAtMs as number) <= (value.createdAtMs as number)
+    (value.expiresAtMs as number) <= (value.createdAtMs as number) ||
+    (value.expiresAtMs as number) <= nowMs
   ) {
     throw new Error("Firebase returned an invalid challenge session.");
   }
