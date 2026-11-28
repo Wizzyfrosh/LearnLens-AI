@@ -72,13 +72,13 @@ The hosted page must never receive:
 - One-time polling credential.
 - App Check token.
 
-It receives only the public site key, action, cdata and random request ID. The one-time response token is sent to the direct parent and is not written to a URL, DOM attribute, log, analytics system or browser storage. The extension must validate the hosted origin, iframe source, request ID and token length before calling the authenticated Firebase completion callable.
+It receives only the public site key, action, cdata and random request ID. The one-time response token is sent to the direct parent and is not written to a URL, DOM attribute, log, analytics system or browser storage. The extension must validate the hosted origin, iframe source, request ID and token length before calling the authenticated Firebase HTTPS completion endpoint.
 
 No Firebase SDK is imported into this page. No Turnstile secret, Firebase credential or server-only value is bundled.
 
 ## Not yet deployed
 
-No domain, Turnstile widget, site key, hosted-page deployment or production extension ID has been configured. The page is a CI-tested implementation slice only. The parent extension integration and end-to-end Chrome test are still pending.
+No domain, Turnstile widget, site key, hosted-page deployment or production extension ID has been configured. The page is a CI-tested implementation slice only. The isolated extension coordinator and separate MV3 test lab now exist, but the end-to-end Chrome test is still pending.
 
 
 ## Bootstrap transport note
