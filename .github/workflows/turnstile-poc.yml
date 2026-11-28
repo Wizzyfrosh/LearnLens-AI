@@ -59,7 +59,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22.23.5
+          node-version: 24.12.0
 
       - name: Install root dependencies
         run: npm install --no-audit --no-fund --legacy-peer-deps
@@ -109,6 +109,14 @@ jobs:
       - name: Run isolated Turnstile validator tests
         working-directory: functions
         run: node --test lib/functions/tests/turnstile-validation.test.js
+
+      # The root browser/Firebase SDK toolchain requires Node 24. Cloud
+      # Functions is configured for Node 22, so switch the emulator host
+      # before exercising Functions runtime behavior.
+      - name: Switch to the deployed Functions Node.js 22 runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.5
 
       - name: Run challenge-session, service, rate-limit and global-budget Firestore emulator tests
         run: npx firebase emulators:exec --only firestore --project demo-learnlens-functions "node --test functions/lib/functions/tests/app-check-challenge-sessions.test.js functions/lib/functions/tests/app-check-challenge-service.test.js functions/lib/functions/tests/challenge-rate-limit.test.js functions/lib/functions/tests/global-challenge-budget.test.js functions/lib/functions/tests/challenge-http.test.js"
