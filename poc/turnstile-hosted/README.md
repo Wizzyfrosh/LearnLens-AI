@@ -79,3 +79,8 @@ No Firebase SDK is imported into this page. No Turnstile secret, Firebase creden
 ## Not yet deployed
 
 No domain, Turnstile widget, site key, hosted-page deployment or production extension ID has been configured. The page is a CI-tested implementation slice only. The parent extension integration and end-to-end Chrome test are still pending.
+
+
+## Bootstrap transport note
+
+The bootstrap routes are plain HTTPS `onRequest` endpoints, not Firebase callables. The extension sends its Firebase ID token in the `Authorization` header; Firebase Admin verifies the token and its revocation status and checks the verified-email claim. The hosted Turnstile iframe never receives that ID token, the session ID or the one-time polling credential. The extension's exact origin is allowlisted by the server CORS policy; CORS is not treated as user authentication.
