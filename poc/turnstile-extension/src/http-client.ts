@@ -41,23 +41,24 @@ function parseFunctionsBaseUrl(value: string): string {
     throw new Error("The Firebase Functions base URL is invalid.");
   }
 
-  const isLocalEmulator =
-    (url.hostname === "localhost" || url.hostname === "127.0.0.1") &&
-    url.protocol === "http:";
+  const isLoopbackHost = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  const isLocalEmulator = isLoopbackHost && url.protocol === "http:";
   const normalizedPath = url.pathname.replace(/\/$/, "");
-  const validEmulatorPath = /^\/[a-z][a-z0-9-]{2,62}\/[a-z0-9-]+$/.test(normalizedPath);
+  const validEmulatorPath =
+    /^\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/[a-z]+-[a-z0-9-]+$/.test(normalizedPath);
 
   if (
-    (url.protocol !== "https:" && !isLocalEmulator) ||
     url.username ||
     url.password ||
     url.search ||
     url.hash ||
     (isLocalEmulator
-      ? normalizedPath !== "" && !validEmulatorPath
-      : normalizedPath !== "")
+      ? !validEmulatorPath
+      : url.protocol !== "https:" || normalizedPath !== "")
   ) {
-    throw new Error("The Firebase Functions URL must be HTTPS, or a valid local emulator URL, without query or credentials.");
+    throw new Error(
+      "The Firebase Functions URL must be an HTTPS origin or a loopback emulator URL with /<project-id>/<region>, without query or credentials."
+    );
   }
 
   return url.origin + normalizedPath;
