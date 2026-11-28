@@ -221,7 +221,7 @@ That is 82 automated unit/emulator tests, plus the Auth/Functions HTTP integrati
 No live Cloudflare request, live Firebase token mint, deployed endpoint, or desktop Chrome browser test has occurred.
 
 
-## Final verification after site-key and cache disclosure corrections
+## Final verification after site-key, cache-disclosure and runtime-split corrections
 
 [CI run 46133642749](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749) completed successfully on commit `1d67389366ddbce7d5e1279b1688447f9048dd63`.
 
@@ -257,3 +257,8 @@ Changes on the current branch after the tested commit are documentation-only.
 
 
 Final CI run [46133642749](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749) installed and built the Functions package under Node 22, then used Node 24 for frontend tooling and Node 22 for emulator execution. All workflow stages passed. Changes to the branch after the tested executable commit are documentation-only.
+
+
+## Runtime compatibility verification
+
+The final workflow installs the root browser/Firebase SDK toolchain under Node 24.12.0, installs/builds the Functions package under Node 22.23.5 (matching `functions/package.json`), returns to Node 24 for Vite/client tests, then switches back to Node 22 for Functions Emulator execution. The final run completed without `EBADENGINE` package-engine warnings or Functions runtime-version mismatch warnings.
