@@ -5,6 +5,7 @@ import { join } from "node:path";
 const root = "poc/turnstile-extension-lab/dist";
 const manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
 const html = await readFile(join(root, "index.html"), "utf8");
+const labSource = await readFile("poc/turnstile-extension-lab/src/main.ts", "utf8");
 const hostedOrigin = new URL(process.env.VITE_HOSTED_CHALLENGE_ORIGIN || "https://verify.example.test").origin;
 const functionsOrigin = new URL(process.env.VITE_FUNCTIONS_ORIGIN || "https://us-central1-example-test.cloudfunctions.net").origin;
 
@@ -30,6 +31,8 @@ assert.ok(!connectDirective.includes("*.cloudfunctions.net"), "The lab CSP must 
 assert.ok(!connectDirective.includes("127.0.0.1") && !connectDirective.includes("localhost"), "The manual browser lab must not allow local emulator connections.");
 assert.ok(manifest.content_security_policy.extension_pages.includes("frame-src 'self' " + hostedOrigin));
 assert.ok(!manifest.content_security_policy.extension_pages.includes("script-src 'self' https:"));
+assert.ok(labSource.includes("config.siteKey.length < 16") && labSource.includes("config.siteKey.length > 32"), "The lab must enforce Cloudflare's 16–32 character site-key range.");
+assert.ok(labSource.includes("functionsUrl.origin !== compiledFunctionsOrigin"), "The lab must restrict the Functions endpoint to the compiled origin.");
 assert.ok(!html.includes("https://challenges.cloudflare.com/turnstile/v0/api.js"), "Cloudflare's script must run only on the hosted page.");
 
 const assets = await readdir(join(root, "assets"));
