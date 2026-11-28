@@ -44,8 +44,8 @@ function parseFunctionsBaseUrl(value: string): string {
   const isLocalEmulator =
     (url.hostname === "localhost" || url.hostname === "127.0.0.1") &&
     url.protocol === "http:";
-  const normalizedPath = url.pathname.replace(/\\/$/, "");
-  const validEmulatorPath = /^\\/[a-z][a-z0-9-]{2,62}\\/[a-z0-9-]+$/.test(normalizedPath);
+  const normalizedPath = url.pathname.replace(/\/$/, "");
+  const validEmulatorPath = /^\/[a-z][a-z0-9-]{2,62}\/[a-z0-9-]+$/.test(normalizedPath);
 
   if (
     (url.protocol !== "https:" && !isLocalEmulator) ||
