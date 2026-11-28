@@ -26,6 +26,7 @@ File: `functions/src/app-check-poc/challenge-http.ts`
 - Strict exact-key JSON payload validation.
 - Bounded bearer ID-token length and syntax.
 - Sanitized auth failure details and bounded status mapping.
+- Explicit `Cache-Control: no-store`, `Pragma: no-cache`, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer` on bootstrap responses.
 - No caller-supplied UID is accepted.
 
 The production bootstrap parameter remains disabled by default. The extension-origin parameter defaults to empty and therefore denies browser origins until explicitly configured.
@@ -38,6 +39,7 @@ File: `poc/turnstile-extension/src/http-client.ts`
 - Sends ID token in the Authorization header only.
 - `credentials: "omit"`, `cache: "no-store"`, `redirect: "error"`, and `referrerPolicy: "no-referrer"`.
 - Validates function base URL, response envelope, schema, challenge expiry and App Check token expiry.
+- Production accepts an HTTPS Functions origin only. Local development accepts only `localhost`/`127.0.0.1` with the exact emulator path `/<project-id>/<region>`; all other HTTP URLs and malformed paths are rejected.
 - Limits response bodies to 32 KB and response token length to 16 KB.
 - The hosted iframe never sees the Firebase ID token.
 
@@ -45,9 +47,10 @@ File: `poc/turnstile-extension/src/http-client.ts`
 
 File: `poc/turnstile-extension/src/iframe-challenge.ts`
 
-- Creates a dialog overlay in the extension UI and loads the hosted HTTPS page in an iframe.
+- Creates a dialog overlay in the foreground extension UI (side panel) and loads the hosted HTTPS page in an iframe. It must not run in the background service worker or offscreen document because those contexts do not have a DOM.
 - Validates the exact HTTPS origin and `event.source === iframe.contentWindow`.
 - Requires protocol version 1 and the active request UUID.
+- Accepts valid public Turnstile site keys up to 256 characters; key contents are passed through unchanged.
 - Rejects extra fields, invalid token types and tokens over 2 KB.
 - Sends only the public site key, action, cdata and request ID to the hosted page.
 - The session ID, Firebase UID, ID token and one-time poll credential remain in the extension process.
@@ -91,7 +94,7 @@ The latest workflow must pass all suites before marking this slice CI-verified.
 3. No non-production Turnstile widget/site key/secret has been created.
 4. No dedicated non-production Firebase project has been configured for the HTTP endpoints.
 5. No function parameters/secrets have been set and no Functions deployment has happened.
-6. The production extension Manifest V3 CSP/host permissions have not been changed; they must be updated only after the final hosted domain and stable extension ID are known.
+6. The production extension Manifest V3 CSP/host permissions have not been changed; they must be updated only after the final hosted domain and stable extension ID are known. A later integration must add the narrowly-scoped Functions host permission for `fetch` and ensure the hosted page can be embedded, without adding Cloudflare's remote script to the extension's `script-src`.
 7. The hosted domain must return an HTTP `frame-ancestors` header restricted to the exact extension origin.
 
 ## Safeguards
@@ -108,3 +111,15 @@ The latest workflow must pass all suites before marking this slice CI-verified.
 ## Next action after CI
 
 Run the isolated coordinator and hosted page in desktop Chrome using a dedicated non-production Firebase project and Turnstile widget. Validate the stable test extension ID first; repeat origin/CSP checks later using the final published ID. Keep automatic token refresh disabled until manual acquisition, retry, cancellation and expiry behavior pass.
+
+
+## Manifest and foreground-context integration notes
+
+Chrome's extension documentation states that host permissions enable cross-origin `fetch()` from extension pages and workers. For this flow, the eventual product manifest should include only the exact Firebase Functions host needed by the three bootstrap requests. The iframe host must also be permitted by the extension page's effective frame policy. The hosted Turnstile page executes its own scripts on its HTTPS origin; the extension must not load Cloudflare's script as an extension script or add it to the extension's `script-src`.
+
+The current extension architecture has a foreground side panel, a background service worker and an offscreen document. The custom provider must initialize and run only in the side panel, where the interactive iframe can be rendered. If background work later requires an App Check token, it needs a runtime-message handoff to the foreground side panel; it must not initialize an interactive CustomProvider in the service worker/offscreen context.
+
+Official Chrome references:
+- https://developer.chrome.com/docs/extensions/develop/concepts/declare-permissions/
+- https://developer.chrome.com/docs/extensions/reference/manifest/content-security-policy/
+- https://developer.chrome.com/docs/extensions/develop/migrate/improve-security/
