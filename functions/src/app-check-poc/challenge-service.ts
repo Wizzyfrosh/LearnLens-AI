@@ -152,7 +152,7 @@ export async function issueAuthenticatedAppCheckToken(
     expectedAppId.length < 8 ||
     expectedAppId.length > 256 ||
     typeof expectedAction !== "string" ||
-    !/^[a-z][a-z0-9_]{2,63}$/.test(expectedAction)
+    !/^[a-z][a-z0-9_-]{0,31}$/.test(expectedAction)
   ) {
     throw new SyncBackendError("failed-precondition", "The App Check challenge configuration is invalid.");
   }
