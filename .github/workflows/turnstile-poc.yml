@@ -7,6 +7,7 @@ on:
     paths:
       - "functions/**"
       - "poc/turnstile-hosted/**"
+      - "poc/turnstile-extension/**"
       - "scripts/verify-turnstile-hosted.mjs"
       - "package.json"
       - "firestore.rules"
@@ -81,6 +82,9 @@ jobs:
 
       - name: Verify hosted Turnstile challenge page
         run: npm run poc:turnstile-hosted:verify
+
+      - name: Verify Turnstile CustomProvider coordinator
+        run: npm run poc:turnstile-extension:verify
 
       - name: Run Firestore Security Rules tests
         run: npm run test:rules
