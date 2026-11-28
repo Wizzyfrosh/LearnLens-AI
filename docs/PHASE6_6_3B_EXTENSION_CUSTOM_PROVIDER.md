@@ -254,3 +254,6 @@ The final Node-version-aligned run is [46133642749](https://github.com/Wizzyfros
 Verified counts: 6 hosted-page tests, 20 extension coordinator tests, 11 Firestore Rules tests, 8 Turnstile validator tests and 37 Functions/Firestore emulator tests — **82 automated tests passed**. The Auth + Functions + Firestore HTTPS integration also passed with emulator-issued Firebase ID tokens.
 
 Changes on the current branch after the tested commit are documentation-only.
+
+
+Final CI run [46133642749](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133642749) installed and built the Functions package under Node 22, then used Node 24 for frontend tooling and Node 22 for emulator execution. All workflow stages passed. Changes to the branch after the tested executable commit are documentation-only.
