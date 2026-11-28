@@ -78,6 +78,7 @@ export class IframeTurnstilePresenter implements TurnstileChallengePresenter {
       request.siteKey.length < 16 ||
       request.siteKey.length > 32 ||
       !/^[A-Za-z0-9_-]+$/.test(request.siteKey) ||
+      !/^[A-Za-z0-9_-]+$/.test(request.siteKey) ||
       typeof request.action !== "string" ||
       !/^[a-z][a-z0-9_-]{0,31}$/.test(request.action) ||
       typeof request.cdata !== "string" ||
