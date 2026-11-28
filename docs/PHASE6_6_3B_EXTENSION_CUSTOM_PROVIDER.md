@@ -242,3 +242,6 @@ Firebase Auth uses `inMemoryPersistence` in the test lab. Firebase App Check has
 
 
 The separate unpacked Chrome test lab is documented in `docs/PHASE6_6_3C_CHROME_TEST_LAB.md`. It is not the product extension and has not yet been run by the user in desktop Chrome.
+
+
+The final Node-version-aligned run is [46133462394](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46133462394). Only documentation files changed after the executable commit tested by that run.
