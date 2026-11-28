@@ -118,3 +118,8 @@ References:
 ## Bootstrap transport note
 
 The bootstrap routes are plain Firebase Functions HTTPS `onRequest` endpoints, not Firebase callables. The extension sends its Firebase ID token in the `Authorization` header; Firebase Admin verifies the token and its revocation status and checks the verified-email claim. The hosted Turnstile iframe never receives that ID token, the session ID or the one-time polling credential. The extension's exact origin is allowlisted by the server CORS policy; CORS is not treated as user authentication.
+
+
+## Latest combined verification
+
+The later integration workflow [46131641231](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46131641231) passed all 81 tests across the hosted-page, extension coordinator, Firestore Rules, Turnstile validator and Functions/Firestore Emulator suites, along with the Functions build and TTL configuration validation.
