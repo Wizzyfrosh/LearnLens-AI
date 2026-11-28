@@ -6,9 +6,9 @@
 
 ## Endpoint behavior
 
-The authenticated HTTPS endpoint `claimAppCheckChallengeSession` now issues the first Firebase App Check token instead of returning only consumed-session metadata.
+The authenticated HTTPS `onRequest` endpoint `claimAppCheckChallengeSession` issues the first Firebase App Check token after a verified session has been atomically consumed.
 
-The callable still requires:
+The HTTP endpoint still requires:
 - Firebase Authentication.
 - A verified email.
 - `APP_CHECK_CHALLENGE_ENABLED === true`.
@@ -25,8 +25,8 @@ The client cannot choose the target Firebase App ID, token TTL, or claims.
 2. Read the server-owned session context.
 3. Validate account owner, verified state, expiry, configured App ID and action.
 4. Atomically consume the session with its one-time polling credential.
-5. Call Firebase Admin `getAppCheck(adminApp).createToken(appId, { ttlMillis })`.
-6. Return only `{ token, expireTimeMillis }` to the authenticated extension caller.
+5. If enabled, consume one unit from the sharded global budget after successful session consumption and before token signing.\n6. Call Firebase Admin `getAppCheck(adminApp).createToken(appId, { ttlMillis })`.
+7. Return only `{ token, expireTimeMillis }` to the authenticated extension caller.
 
 The token is not logged or persisted in Firestore. The App ID comes from the server-owned session and is checked against the current server parameter. The action is also checked.
 
@@ -67,13 +67,13 @@ CI run 46085254191 passed: 11 Firestore Rules tests, 8 Turnstile validator tests
 
 ## Explicit non-goals / remaining work
 
-- No Firebase custom-provider client is initialized in LearnLens.
-- No extension challenge-popup/hosted-page bridge exists yet.
+- The isolated client-side CustomProvider coordinator and Firebase initializer now exist under `poc/turnstile-extension/`; they are not imported by the production side panel.
+- The isolated extension iframe presenter and hosted-page bridge now exist under `poc/turnstile-extension/` and `poc/turnstile-hosted/`; no end-to-end browser test has run.
 - No real token is requested from a deployed Firebase project.
 - No live Cloudflare challenge is configured or verified.
 - No production sync gates are changed or enabled.
 - The Turnstile flow remains an abuse-friction layer, not proof of a genuine installed extension.
-- Global/perimeter abuse and cost controls remain necessary before any live rollout.
+- The sharded global budget has been implemented but remains disabled by default; live test/production rollout still requires deployment and abuse review.
 
 ## Safeguards
 
@@ -86,4 +86,4 @@ CI run 46085254191 passed: 11 Firestore Rules tests, 8 Turnstile validator tests
 
 ## Bootstrap transport note
 
-The bootstrap routes are plain HTTPS `onRequest` endpoints, not Firebase callables. The extension sends its Firebase ID token in the `Authorization` header; Firebase Admin verifies the token and its revocation status and checks the verified-email claim. The hosted Turnstile iframe never receives that ID token, the session ID or the one-time polling credential. The extension's exact origin is allowlisted by the server CORS policy; CORS is not treated as user authentication.
+The bootstrap routes are plain Firebase Functions HTTPS `onRequest` endpoints, not Firebase callables. The extension sends its Firebase ID token in the `Authorization` header; Firebase Admin verifies the token and its revocation status and checks the verified-email claim. The hosted Turnstile iframe never receives that ID token, the session ID or the one-time polling credential. The extension's exact origin is allowlisted by the server CORS policy; CORS is not treated as user authentication.
