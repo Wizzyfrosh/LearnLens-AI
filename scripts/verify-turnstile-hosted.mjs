@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 const root = "poc/turnstile-hosted/dist";
 const html = await readFile(join(root, "index.html"), "utf8");
+const source = await readFile("poc/turnstile-hosted/src/main.ts", "utf8");
 assert.match(html, /https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js\?render=explicit/);
 assert.match(html, /script-src 'self' https:\/\/challenges\.cloudflare\.com/);
 assert.match(html, /frame-src https:\/\/challenges\.cloudflare\.com/);
@@ -20,11 +21,12 @@ const bundles = (await Promise.all(
 for (const required of [
   "LEARNLENS_TURNSTILE_INIT",
   "LEARNLENS_TURNSTILE_TOKEN",
-  "chrome-extension",
-  "turnstile.render"
+  "chrome-extension"
 ]) {
   assert.ok(bundles.includes(required), "Hosted page bundle is missing " + required);
 }
+
+assert.ok(source.includes("turnstile.render(widgetElement"), "Hosted page source must explicitly render the Turnstile widget.");
 
 for (const forbidden of [
   "pollCredential",
