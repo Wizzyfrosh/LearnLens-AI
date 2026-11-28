@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTurnstileCustomProvider } from "./custom-provider";
+import { createTurnstileTokenGetter } from "./custom-provider";
 import type { ChallengeHttpClient, CreatedChallengeSession } from "./types";
 
 const SESSION: CreatedChallengeSession = {
@@ -28,19 +28,19 @@ function providerHarness() {
     emailVerified: true,
     getIdToken: vi.fn(async () => "firebase-id-token")
   };
-  const provider = createTurnstileCustomProvider({
+  const getToken = createTurnstileTokenGetter({
     getCurrentUser: () => currentUser,
     challengeClient: client,
     challengePresenter: presenter,
     siteKey: "0x4AAAAAAAExamplePublicSiteKey"
   });
-  return { provider, client, presenter, currentUser };
+  return { getToken, client, presenter, currentUser };
 }
 
 describe("LearnLens Turnstile CustomProvider coordinator", () => {
   it("returns the Firebase custom-provider token shape in the correct security order", async () => {
     const { provider, client, presenter } = providerHarness();
-    const result = await provider.getToken();
+    const result = await getToken();
 
     expect(result.token).toBe("firebase-app-check-token");
     expect(result.expireTimeMillis).toBeGreaterThan(Date.now());
@@ -61,8 +61,8 @@ describe("LearnLens Turnstile CustomProvider coordinator", () => {
       release = resolve;
     }));
 
-    const first = provider.getToken();
-    const second = provider.getToken();
+    const first = getToken();
+    const second = getToken();
     expect(client.createChallengeSession).toHaveBeenCalledOnce();
     expect(presenter.getResponse).toHaveBeenCalledOnce();
     release?.("turnstile-response-token");
@@ -74,20 +74,20 @@ describe("LearnLens Turnstile CustomProvider coordinator", () => {
 
   it("does not create a challenge for an unverified user", async () => {
     const { client } = providerHarness();
-    const provider = createTurnstileCustomProvider({
+    const getToken = createTurnstileTokenGetter({
       getCurrentUser: () => ({ emailVerified: false, getIdToken: async () => "firebase-id-token" }),
       challengeClient: client,
       challengePresenter: { getResponse: async () => "unused" },
       siteKey: "0x4AAAAAAAExamplePublicSiteKey"
     });
-    await expect(provider.getToken()).rejects.toThrow("Verify your email");
+    await expect(getToken()).rejects.toThrow("Verify your email");
     expect(client.createChallengeSession).not.toHaveBeenCalled();
   });
 
   it("does not retain its own token cache between completed provider invocations", async () => {
     const { provider, client } = providerHarness();
-    await provider.getToken();
-    await provider.getToken();
+    await getToken();
+    await getToken();
     expect(client.createChallengeSession).toHaveBeenCalledTimes(2);
     expect(client.claimAppCheckToken).toHaveBeenCalledTimes(2);
   });
@@ -98,6 +98,6 @@ describe("LearnLens Turnstile CustomProvider coordinator", () => {
       token: "",
       expireTimeMillis: Date.now() + 30 * 60 * 1000
     }));
-    await expect(provider.getToken()).rejects.toThrow("invalid App Check token");
+    await expect(getToken()).rejects.toThrow("invalid App Check token");
   });
 });
