@@ -133,13 +133,15 @@ function parseConfiguration(): LabConfig {
   }
   if (
     functionsUrl.protocol !== "https:" ||
+    !functionsUrl.hostname.endsWith(".cloudfunctions.net") ||
+    functionsUrl.hostname === "cloudfunctions.net" ||
     functionsUrl.username ||
     functionsUrl.password ||
     functionsUrl.pathname !== "/" ||
     functionsUrl.search ||
     functionsUrl.hash
   ) {
-    throw new Error("This Chrome lab requires a deployed Firebase Functions HTTPS origin with no path or credentials.");
+    throw new Error("This Chrome lab accepts only a Firebase Functions HTTPS host ending in .cloudfunctions.net, with no path or credentials.");
   }
 
   return config;
