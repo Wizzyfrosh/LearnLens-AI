@@ -3,7 +3,7 @@ import { getFirestore } from "firebase-admin/firestore";
 import { getAppCheck } from "firebase-admin/app-check";
 import { getAuth } from "firebase-admin/auth";
 import type { Request, Response } from "express";
-import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 import { defineBoolean, defineSecret, defineString } from "firebase-functions/params";
 import { requireVerifiedAppCaller } from "./auth-guards";
 import { SyncBackendError } from "./errors";
