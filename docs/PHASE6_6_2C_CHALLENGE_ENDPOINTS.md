@@ -99,3 +99,8 @@ The three bootstrap handlers now use Firebase Functions HTTPS `onRequest` instea
 The extension sends the Firebase ID token directly in the bearer header. The server validates it with `adminAuth.verifyIdToken(idToken, true)`, checks email verification, checks exact origin/CORS and validates the JSON payload. This origin check is a browser cross-origin boundary, not authentication; the verified Firebase ID token remains the authentication mechanism.
 
 Only the three bootstrap routes use this transport. Existing sync routes remain callable and retain `enforceAppCheck: true`.
+
+
+## Latest full-branch verification
+
+The combined hosted/client implementation workflow [46131641231](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46131641231) passed: Functions build, TTL configuration, 6 hosted-page tests, 19 extension coordinator tests, 11 Firestore Rules tests, 8 Turnstile validator tests and 37 Functions/Firestore Emulator tests. Bootstrap endpoints remain disabled by default and have not been deployed.
