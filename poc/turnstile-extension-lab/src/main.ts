@@ -193,8 +193,9 @@ configForm.addEventListener("submit", async (event) => {
     await requestEndpointPermission(config.functionsBaseUrl);
 
     stopAuthObserver?.();
-    if (firebaseApp && firebaseAuth) {
-      await signOut(firebaseAuth).catch(() => undefined);
+    stopAuthObserver = null;
+    if (firebaseAuth) await signOut(firebaseAuth).catch(() => undefined);
+    if (firebaseApp) {
       const oldApp = firebaseApp;
       firebaseApp = null;
       firebaseAuth = null;
