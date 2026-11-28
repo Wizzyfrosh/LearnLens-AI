@@ -26,6 +26,7 @@ interface LabConfig {
 }
 
 const compiledHostedOrigin = import.meta.env.VITE_HOSTED_CHALLENGE_ORIGIN || "";
+const compiledFunctionsOrigin = import.meta.env.VITE_FUNCTIONS_ORIGIN || "";
 const extensionOrigin = chrome.runtime.getURL("").replace(/\/$/, "");
 
 function requireElement<T extends HTMLElement>(
@@ -113,10 +114,10 @@ function parseConfiguration(): LabConfig {
 
   if (
     config.siteKey.length < 16 ||
-    config.siteKey.length > 256 ||
+    config.siteKey.length > 32 ||
     !/^[A-Za-z0-9_-]+$/.test(config.siteKey)
   ) {
-    throw new Error("The Turnstile site key must be a valid public test key.");
+    throw new Error("The Turnstile site key must be a valid 16–32 character public test key.");
   }
 
   let functionsUrl: URL;
@@ -127,13 +128,17 @@ function parseConfiguration(): LabConfig {
     functionsUrl.protocol !== "https:" ||
     !functionsUrl.hostname.endsWith(".cloudfunctions.net") ||
     functionsUrl.hostname === "cloudfunctions.net" ||
+    functionsUrl.origin !== compiledFunctionsOrigin ||
     functionsUrl.username ||
     functionsUrl.password ||
     functionsUrl.pathname !== "/" ||
     functionsUrl.search ||
     functionsUrl.hash
   ) {
-    throw new Error("This Chrome lab accepts only a Firebase Functions HTTPS host ending in .cloudfunctions.net, with no path or credentials.");
+    throw new Error(
+      "This lab requires the exact Firebase Functions HTTPS origin compiled into it: " +
+      (compiledFunctionsOrigin || "(not configured)")
+    );
   }
 
   return config;
