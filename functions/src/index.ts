@@ -201,9 +201,9 @@ export const completeAppCheckChallenge = onCall(
 );
 
 /**
- * Authenticated one-time claim. App Check is not required because no App
- * Check token has been minted yet. This consumes the session only; token
- * minting is intentionally a later implementation slice.
+ * Authenticated one-time claim and App Check token issuance. App Check is
+ * not required because this is the bootstrap operation that mints the first
+ * token. The session is consumed atomically before the Admin SDK is called.
  */
 export const claimAppCheckChallengeSession = onCall(
   { enforceAppCheck: false, maxInstances: 3, memory: "256MiB" },
