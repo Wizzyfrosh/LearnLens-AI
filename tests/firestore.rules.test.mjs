@@ -178,7 +178,8 @@ test("clients cannot read or write any sync device, artifact, receipt, or confli
     "users/user-a/syncChangePayloads/1",
     "users/user-a/syncState/changeFeed",
     "appCheckChallengeSessions/session-a",
-    "appCheckChallengeRateLimits/rate-limit-a"
+    "appCheckChallengeRateLimits/rate-limit-a",
+    "appCheckChallengeGlobalBudgets/20261127_00"
   ];
 
   for (const path of protectedPaths) {
