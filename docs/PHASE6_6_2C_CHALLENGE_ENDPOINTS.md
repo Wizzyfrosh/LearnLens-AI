@@ -1,21 +1,21 @@
-# Phase 6.6.2C — Authenticated challenge endpoint layer
+# Phase 6.6.2C — Authenticated challenge HTTPS endpoint layer
 
 **Status:** Implemented and CI-verified — [run 46084701021](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46084701021)  
 **Branch:** `phase-6-6-2-turnstile-custom-provider-poc`  
 **PR:** #2 (draft; not merged)
 
-## Exported callable endpoints
+## Exported authenticated HTTPS endpoints
 
 All three endpoints are Firebase HTTPS `onRequest` handlers, not `onCall` callables. The extension sends a Firebase ID token in `Authorization: Bearer ...`; the server verifies the token (including revocation) with Firebase Admin and requires `email_verified === true`. Exact CORS allowlisting is enforced for the configured extension origin. The handlers do not require App Check because they form the bootstrap sequence that runs before the first custom App Check token exists. They are isolated from all existing sync callables.
 
-### `createAppCheckChallengeSession`
+### `createAppCheckChallengeSession` — HTTPS POST
 - Requires a valid Firebase ID token and verified email claim.
 - Applies a transactional rate limit of five creation requests per authenticated UID per minute.
 - Takes Firebase App ID and action from server parameters, never request data.
 - Creates a five-minute pending session.
 - Returns the one-time polling credential, session ID and cdata to the extension. The polling credential must remain in extension memory and must never be placed in URLs, browser history, logs, analytics or the hosted challenge page.
 
-### `completeAppCheckChallenge`
+### `completeAppCheckChallenge` — HTTPS POST
 - Requires a valid Firebase ID token and verified email claim.
 - Accepts exactly `sessionId` and `responseToken`; response tokens are capped at 2,048 characters.
 - Rate-limits by the verified Firebase UID, not by the caller-supplied session ID.
@@ -25,7 +25,7 @@ All three endpoints are Firebase HTTPS `onRequest` handlers, not `onCall` callab
 - Requires exact configured hostname, action, cdata and a fresh challenge timestamp.
 - Moves the matching session from pending to verified transactionally only after Siteverify succeeds.
 
-### `claimAppCheckChallengeSession`
+### `claimAppCheckChallengeSession` — HTTPS POST
 - Requires a valid Firebase ID token and verified email claim.
 - Accepts exactly the session ID and polling credential.
 - Applies a transactional rate limit of five claims per authenticated UID per minute.
@@ -36,7 +36,7 @@ All three endpoints are Firebase HTTPS `onRequest` handlers, not `onCall` callab
 
 The first draft used a public HTTPS completion endpoint and rate-limited by the untrusted session ID. That could let arbitrary callers create unbounded rate-limit records using random IDs.
 
-The completion operation is now a Firebase callable requiring verified Firebase Auth. Its rate-limit key is derived from the authenticated UID, and the service independently confirms that the stored session belongs to that UID. The hosted challenge page must not receive the Firebase Auth token or polling credential; the extension calls these HTTPS endpoints directly using `fetch` and its existing Firebase Auth session. Using Firebase `httpsCallable` from `CustomProvider.getToken()` would recurse: the callable SDK's context provider itself calls `AppCheck.getToken()` when App Check is initialized.
+The completion operation is a Firebase Functions HTTPS `onRequest` endpoint authenticated with a Firebase ID token in the Authorization bearer header. Firebase Admin verifies the token and revocation status, and the server requires `email_verified === true`. Its rate-limit key is derived from the verified UID, and the service confirms the stored session belongs to that UID. The hosted challenge page never receives the Firebase ID token or polling credential. The extension calls these HTTPS endpoints directly using `fetch`. Using Firebase `httpsCallable` from `CustomProvider.getToken()` would recurse because the callable SDK attempts App Check token retrieval during its own request preparation.
 
 ## Rate limiter
 
@@ -74,21 +74,19 @@ No Cloudflare widget/site key, production secret, Firebase parameter, deployed e
 - Firestore Emulator rate-limit tests: limit boundary, clock rollback, window reset, scope isolation and malformed input.
 - Existing session lifecycle and Turnstile validator tests remain part of the isolated CI workflow.
 
-## Remaining work
+## Verification and remaining work
 
-- The Functions TypeScript build, Turnstile validator tests and all 19 Firestore Emulator tests passed in CI run 46084701021.
-- Add scheduled TTL cleanup or configure Firestore TTL for challenge and rate-limit records.
-- Add global/perimeter abuse controls suitable for multiple accounts; per-UID limits alone are not a production cost boundary.
-- Review the hosted challenge page origin, HTTPS deployment and strict extension/page messaging contract.
-- Implement App Check custom token issuance only after a consumed session, with a bounded, explicit failure/retry contract.
-- Build and test the hosted challenge page and extension flow.
-- Complete a security review before any deployment.
+- Phase 6.6.2C passed in CI run 46084701021 (19 Firestore Emulator tests).
+- Phase 6.6.2D passed in CI run 46084981427 (11 Rules tests, 8 validator tests, 20 emulator tests, Functions build and TTL config).
+- Phase 6.6.2E passed in CI run 46085254191 (11 Rules tests, 8 validator tests, 23 emulator tests, Functions build and TTL config).
+- Phase 6.6.2F passed in CI run 46086040038 (11 Rules tests, 8 validator tests, 28 emulator tests, Functions build and TTL config).
+- Remaining: full current-branch CI, local Auth/Functions/Firestore Emulator round trip, live test project, hosted domain, Turnstile widget, and desktop Chrome verification.
 
 ## Safeguards
 
 - Existing sync callables continue to use `enforceAppCheck: true`.
 - All four cloud sync gates remain disabled.
-- Challenge callables do not invoke sync operations.
+- Challenge HTTPS endpoints do not invoke sync operations.
 - No secret, site key, Firebase parameter or endpoint is configured in production.
 - Keep product extension version `0.1.0`.
 - This is a bot-abuse mitigation prototype, not cryptographic proof that the genuine extension package is installed.
