@@ -64,6 +64,13 @@ jobs:
       - name: Install root dependencies
         run: npm install --no-audit --no-fund --legacy-peer-deps
 
+      # The Functions package declares Node 22. Install and build it under
+      # the same engine version rather than relying on npm's warning mode.
+      - name: Set up Node.js 22 for Functions install and build
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.5
+
       - name: Install Functions dependencies
         working-directory: functions
         run: npm install --no-audit --no-fund
@@ -71,6 +78,13 @@ jobs:
       - name: Build Functions
         working-directory: functions
         run: npm run build
+
+      # Return to Node 24 for the browser/Firebase SDK tooling in the root
+      # package; the Functions emulator stage switches back to Node 22 below.
+      - name: Set up Node.js 24 for browser and root tooling
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.12.0
 
       - name: Validate Firestore challenge TTL configuration
         run: |
