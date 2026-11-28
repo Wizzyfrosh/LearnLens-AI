@@ -23,8 +23,11 @@ PowerShell:
 
 ```powershell
 $env:VITE_HOSTED_CHALLENGE_ORIGIN = "https://verify.example.com"
+$env:VITE_FUNCTIONS_ORIGIN = "https://us-central1-<project-id>.cloudfunctions.net"
 npm run poc:turnstile-lab:verify
 ```
+
+The lab embeds both origins in its Manifest V3 policy. Its iframe may load only the hosted page origin; network access may reach only the fixed Firebase Auth hosts and the compiled Functions origin. The Connect action requests optional permission for that exact Functions host. It does not grant or request arbitrary HTTPS origins.
 
 The lab build outputs to:
 
