@@ -65,7 +65,8 @@ jobs:
           }
           const expected = new Set([
             "appCheckChallengeSessions:expiresAt",
-            "appCheckChallengeRateLimits:expiresAt"
+            "appCheckChallengeRateLimits:expiresAt",
+            "appCheckChallengeGlobalBudgets:expiresAt"
           ]);
           for (const item of indexes.fieldOverrides ?? []) {
             if (item.ttl === true) expected.delete(item.collectionGroup + ":" + item.fieldPath);
@@ -82,5 +83,5 @@ jobs:
         working-directory: functions
         run: node --test lib/functions/tests/turnstile-validation.test.js
 
-      - name: Run challenge-session, service and rate-limit Firestore emulator tests
-        run: npx firebase emulators:exec --only firestore --project demo-learnlens-functions "node --test functions/lib/functions/tests/app-check-challenge-sessions.test.js functions/lib/functions/tests/app-check-challenge-service.test.js functions/lib/functions/tests/challenge-rate-limit.test.js"
+      - name: Run challenge-session, service, rate-limit and global-budget Firestore emulator tests
+        run: npx firebase emulators:exec --only firestore --project demo-learnlens-functions "node --test functions/lib/functions/tests/app-check-challenge-sessions.test.js functions/lib/functions/tests/app-check-challenge-service.test.js functions/lib/functions/tests/challenge-rate-limit.test.js functions/lib/functions/tests/global-challenge-budget.test.js"
