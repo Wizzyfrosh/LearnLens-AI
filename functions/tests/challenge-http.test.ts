@@ -49,6 +49,18 @@ describe("Authenticated challenge HTTP boundary", () => {
     );
   });
 
+  it("rejects a large raw body even when Content-Length is absent", () => {
+    await assert.rejects(
+      Promise.resolve().then(() => assertChallengeHttpPostJson({
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: {},
+        rawBody: new Uint8Array(9000)
+      })),
+      (error: unknown) => error instanceof SyncBackendError && error.code === "invalid-argument"
+    );
+  });
+
   it("accepts only a syntactically valid Firebase Bearer token", () => {
     assert.equal(readChallengeBearerToken("Bearer " + ID_TOKEN), ID_TOKEN);
     for (const value of [undefined, "", "Basic " + ID_TOKEN, "Bearer short", "Bearer " + "x".repeat(9000)]) {
