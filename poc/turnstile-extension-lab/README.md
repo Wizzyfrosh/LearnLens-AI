@@ -9,7 +9,7 @@ It reuses the isolated coordinator from `poc/turnstile-extension/src/` and provi
 - initialize the Firebase CustomProvider;
 - manually request one App Check token through the hosted Turnstile challenge.
 
-The Firebase Auth session uses in-memory persistence. The test page does not write Firebase config, email/password, challenge session credentials, Turnstile response tokens or App Check tokens to extension storage. The password field is cleared after each sign-in attempt. Token values are never printed.
+The Firebase Auth session uses in-memory persistence. The lab does not manually persist Firebase config, passwords, challenge credentials or Turnstile response tokens, and it never prints token values. Important distinction: Firebase's App Check SDK manages its own token cache/persistence after a token is issued. This lab does not override or disable that SDK-managed cache.
 
 ## 1. Select the hosted challenge origin
 
@@ -150,7 +150,7 @@ Check these likely failure points:
 - Its optional HTTPS host permission is requested only for the Functions origin entered by the tester. The manifest allows the browser to request an exact optional host; it does not grant every HTTPS host by default.
 - Its CSP permits the exact compiled hosted-page origin in `frame-src`; it does not permit remote executable JavaScript.
 - Firebase Auth persistence is in memory only.
-- Config, password, ID token, poll credential, Turnstile response token and App Check token are not written to extension storage or printed.
+- The lab does not manually store or print passwords, ID tokens, poll credentials, Turnstile response tokens or App Check token values. Firebase's App Check SDK separately manages the token cache/persistence as part of its normal operation.
 - No resource is deployed by the test-lab build command.
 - The product LearnLens extension remains unchanged at version 0.1.0.
 - Keep the lab on a dedicated non-production Firebase/Cloudflare environment.
