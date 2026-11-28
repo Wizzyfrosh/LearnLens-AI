@@ -1,6 +1,6 @@
 # Phase 6.6.2F — Global abuse and cost-control architecture decision
 
-**Status:** Sharded global daily budget implemented; CI verification pending  
+**Status:** Implemented and CI-verified — [run 46086040038](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46086040038)  
 **Branch:** `phase-6-6-2-turnstile-custom-provider-poc`  
 **PR:** #2 (draft; not merged)
 
@@ -46,7 +46,7 @@ Use UTC-day-scoped shard documents and a server-generated cryptographically rand
 
 The implementation uses 64 server-randomized shards with a hard ceiling of 100 operations per shard per UTC day (maximum 6,400 operations/day). It uses flat documents in the `appCheckChallengeGlobalBudgets` collection so Firestore TTL can clean them. The feature is controlled by `APP_CHECK_CHALLENGE_GLOBAL_BUDGET_ENABLED`, default false. This is a prototype ceiling and must be reviewed against expected traffic before any live enablement.
 
-Each request should consume the global budget before calling Cloudflare or Firebase token minting. A failed upstream request still consumes budget because the upstream work/cost may already have occurred. No automatic refund is allowed unless an operation is provably not attempted.
+Session creation consumes one unit before the session is created. Turnstile completion consumes one unit before calling Cloudflare Siteverify. Token issuance first atomically validates and consumes the session with its high-entropy polling credential, then consumes one budget unit before Firebase token signing. Invalid or guessed polling credentials cannot burn global capacity. If the budget is exhausted after a valid session is consumed, the caller must start a fresh challenge after the circuit breaker resets. Failed upstream attempts are not refunded.
 
 The global budget is a coarse service-wide circuit breaker, not a user quota. Keep per-UID throttling independently. Session creation consumes one unit before creating the session. Completion consumes one unit before Siteverify. Token issuance first validates and atomically consumes the session using its polling credential, then consumes one unit before calling Firebase Admin to mint the App Check token. Invalid/guessed polling credentials cannot burn global capacity. A valid session can be consumed even when the global budget has just become exhausted; that session cannot be reopened.
 
