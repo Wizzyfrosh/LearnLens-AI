@@ -123,3 +123,10 @@ Official Chrome references:
 - https://developer.chrome.com/docs/extensions/develop/concepts/declare-permissions/
 - https://developer.chrome.com/docs/extensions/reference/manifest/content-security-policy/
 - https://developer.chrome.com/docs/extensions/develop/migrate/improve-security/
+
+
+## Latest CI verification
+
+Run [46131641231](https://github.com/Wizzyfrosh/LearnLens-AI/actions/runs/46131641231) passed for the current implementation code: Functions TypeScript build; Firestore TTL configuration; hosted-page suite (6 tests); extension CustomProvider suite (19 tests); Firestore Security Rules (11 tests); Turnstile validator (8 tests); and Firestore Emulator suites (37 tests). That is 81 passing tests across the new suites. The run also built the hosted page and verified that its bundle contains no Firebase credentials or polling credential.
+
+This is still unit/CI and emulator evidence. It is not a live Cloudflare Siteverify test, a real Firebase App Check token mint, an end-to-end Firebase Auth + Functions Emulator browser test, or a desktop Chrome runtime test.
