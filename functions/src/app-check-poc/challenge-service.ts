@@ -173,8 +173,6 @@ export async function issueAuthenticatedAppCheckToken(
     throw new SyncBackendError("failed-precondition", "The challenge session does not match the configured Firebase app.");
   }
 
-  if (globalBudgetEnabled) await consumeGlobalChallengeBudget(database, { nowMs });
-
   const consumed = await consumeChallengeSession(
     uid,
     sessionId,
@@ -186,6 +184,12 @@ export async function issueAuthenticatedAppCheckToken(
     // Immutable session fields are checked both before and during the claim.
     throw new SyncBackendError("failed-precondition", "The consumed challenge session configuration is invalid.");
   }
+
+  // Charge only after the polling credential has atomically consumed its
+  // verified session. Invalid/guessed credentials cannot burn global capacity.
+  // If the budget is exhausted, this session stays consumed and the caller
+  // must create a fresh challenge after the circuit breaker resets.
+  if (globalBudgetEnabled) await consumeGlobalChallengeBudget(database, { nowMs });
 
   let issued: { token: string; ttlMillis: number };
   try {
