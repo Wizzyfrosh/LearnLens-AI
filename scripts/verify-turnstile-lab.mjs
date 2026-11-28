@@ -1,0 +1,24 @@
+import assert from "node:assert/strict";
+import { readFile, readdir } from "node:fs/promises";
+import { join } from "node:path";
+
+const root = "poc/turnstile-extension-lab/dist";
+const manifest = JSON.parse(await readFile(join(root, "manifest.json"), "utf8"));
+const html = await readFile(join(root, "index.html"), "utf8");
+const hostedOrigin = new URL(process.env.VITE_HOSTED_CHALLENGE_ORIGIN || "https://verify.example.test").origin;
+
+assert.equal(manifest.manifest_version, 3);
+assert.equal(manifest.version, "0.0.1");
+assert.equal(manifest.options_page, "index.html");
+assert.ok(manifest.host_permissions.includes("https://identitytoolkit.googleapis.com/*"));
+assert.ok(manifest.host_permissions.includes("https://securetoken.googleapis.com/*"));
+assert.ok(manifest.optional_host_permissions.includes("https://*/*"));
+assert.ok(manifest.content_security_policy.extension_pages.includes("script-src 'self'"));
+assert.ok(manifest.content_security_policy.extension_pages.includes("frame-src 'self' " + hostedOrigin));
+assert.ok(!manifest.content_security_policy.extension_pages.includes("script-src 'self' https:"));
+assert.ok(!html.includes("https://challenges.cloudflare.com/turnstile/v0/api.js"), "Cloudflare's script must run only on the hosted page.");
+
+const assets = await readdir(join(root, "assets"));
+assert.ok(assets.some((file) => file.endsWith(".js")), "Expected the packaged extension UI JavaScript bundle.");
+
+console.log("Turnstile lab extension verified: MV3 manifest, exact hosted frame origin, Firebase auth hosts and local-only executable assets.");
