@@ -58,7 +58,8 @@ export function parseTurnstileInitMessage(
     !REQUEST_ID_PATTERN.test(data.requestId) ||
     typeof data.siteKey !== "string" ||
     data.siteKey.length < 16 ||
-    data.siteKey.length > 256 ||
+    data.siteKey.length > 32 ||
+    !/^[A-Za-z0-9_-]+$/.test(data.siteKey) ||
     typeof data.action !== "string" ||
     !ACTION_PATTERN.test(data.action) ||
     typeof data.cdata !== "string" ||
